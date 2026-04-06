@@ -26,6 +26,24 @@ function indexOfMarker(rows, marker) {
   return rows.findIndex((row) => row.text.includes(marker))
 }
 
+async function pickCleanSeedRow(table) {
+  const rows = table.locator('tbody tr')
+  const count = await rows.count()
+
+  for (let i = 0; i < count; i += 1) {
+    const row = rows.nth(i)
+    const hasAddButton = (await row.getByRole('button', { name: /Add failure mode row/i }).count()) > 0
+    if (!hasAddButton) continue
+
+    const text = (await row.innerText()).replace(/\s+/g, ' ').trim()
+    if (/TREE_|MERGE_|FMORD_/i.test(text)) continue
+
+    return row
+  }
+
+  return null
+}
+
 async function maybeScreenshot(page, label) {
   const dir = path.join(process.cwd(), 'test-results')
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -56,7 +74,8 @@ async function main() {
       .locator('tbody tr')
       .filter({ has: table.locator('button[title="Add failure mode row"]') })
     const hasAddableRow = (await rowsWithAddButton.count()) > 0
-    const seedRow = hasAddableRow ? rowsWithAddButton.first() : table.locator('tbody tr').first()
+    const cleanSeedRow = hasAddableRow ? await pickCleanSeedRow(table) : null
+    const seedRow = cleanSeedRow ?? (hasAddableRow ? rowsWithAddButton.first() : table.locator('tbody tr').first())
     await seedRow.waitFor({ state: 'visible', timeout: 30000 })
 
     const fm1 = hasAddableRow
