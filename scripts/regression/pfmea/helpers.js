@@ -85,7 +85,6 @@ async function getRowIndex(row) {
 }
 
 async function clickAddOnRow(row, titlePattern) {
-  const table = row.locator('xpath=ancestor::table[1]')
   const rowIndex = await getRowIndex(row)
   await hoverRow(row)
   const addBtn = row.getByRole('button', { name: titlePattern }).first()
@@ -95,7 +94,7 @@ async function clickAddOnRow(row, titlePattern) {
   await addBtn.waitFor({ state: 'visible', timeout: 10000 })
   await addBtn.click({ force: true })
   await row.page().waitForTimeout(350)
-  return { table, rowIndex }
+  return { rowIndex }
 }
 
 function getCellLocator(row, target, type) {
@@ -207,9 +206,9 @@ async function fillTextCellInRow(page, row, textTarget, value) {
 
 async function addFailureMode(table, anchorRow, fmText) {
   const insertion = await clickAddOnRow(anchorRow, /Add failure mode row/i)
-  await activateInsertedCell(insertion.table, insertion.rowIndex, 'failure_mode')
+  await activateInsertedCell(table, insertion.rowIndex, 'failure_mode')
   await fillActiveEditor(anchorRow.page(), fmText)
-  const row = await getInsertedRow(insertion.table, insertion.rowIndex)
+  const row = await getInsertedRow(table, insertion.rowIndex)
   await waitForRowCellValue(row, 'failure_mode', fmText)
   return row
 }
@@ -227,9 +226,9 @@ async function materializeFailureMode(table, anchorRow, fmText) {
 
 async function addEffect(page, table, anchorRow, effectText, sev) {
   const insertion = await clickAddOnRow(anchorRow, /Add effect row/i)
-  await activateInsertedCell(insertion.table, insertion.rowIndex, 'effect')
+  await activateInsertedCell(table, insertion.rowIndex, 'effect')
   await fillActiveEditor(page, effectText)
-  const row = await getInsertedRow(insertion.table, insertion.rowIndex)
+  const row = await getInsertedRow(table, insertion.rowIndex)
   await waitForRowCellValue(row, 'effect', effectText)
   await selectScaleValueInRow(page, row, 'severity', sev)
   return row
@@ -237,9 +236,9 @@ async function addEffect(page, table, anchorRow, effectText, sev) {
 
 async function addCause(page, table, anchorRow, causeText, occ, prevText, detText, detVal) {
   const insertion = await clickAddOnRow(anchorRow, /Add cause row/i)
-  await activateInsertedCell(insertion.table, insertion.rowIndex, 'cause')
+  await activateInsertedCell(table, insertion.rowIndex, 'cause')
   await fillActiveEditor(page, causeText)
-  const row = await getInsertedRow(insertion.table, insertion.rowIndex)
+  const row = await getInsertedRow(table, insertion.rowIndex)
   await waitForRowCellValue(row, 'cause', causeText)
   await selectScaleValueInRow(page, row, 'occurrence', occ)
   await fillTextCellInRow(page, row, 'current_prevention', prevText)
@@ -250,9 +249,9 @@ async function addCause(page, table, anchorRow, causeText, occ, prevText, detTex
 
 async function addAction(page, table, anchorRow, actionText) {
   const insertion = await clickAddOnRow(anchorRow, /Add recommended action row/i)
-  await activateInsertedCell(insertion.table, insertion.rowIndex, 'recommended_action')
+  await activateInsertedCell(table, insertion.rowIndex, 'recommended_action')
   await fillActiveEditor(page, actionText)
-  const row = await getInsertedRow(insertion.table, insertion.rowIndex)
+  const row = await getInsertedRow(table, insertion.rowIndex)
   await waitForRowCellValue(row, 'recommended_action', actionText)
   return row
 }
