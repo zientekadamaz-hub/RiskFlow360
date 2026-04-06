@@ -208,8 +208,16 @@ jobs:
         env:
           REGRESSION_SKIP_BUILD: '1'
           REGRESSION_BROWSER_ATTEMPTS: '3'
+          REGRESSION_SKIP_PFMEA_ORDER: '1'
         run: |
           npm run regression:all
+
+      - name: Run PFMEA order diagnostic
+        continue-on-error: true
+        env:
+          REGRESSION_BROWSER_ATTEMPTS: '3'
+        run: |
+          npm run regression:pfmea:order
 
       - name: Stop app
         if: always()

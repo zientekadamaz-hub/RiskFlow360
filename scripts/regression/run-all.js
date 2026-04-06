@@ -55,10 +55,13 @@ function runStep(label, script) {
 function main() {
   const steps = [
     ['PFMEA merge', 'regression:pfmea:merge'],
-    ['PFMEA order', 'regression:pfmea:order'],
     ['PFMEA save', 'regression:pfmea:save'],
     ['PCP smoke', 'regression:pcp:smoke'],
   ]
+
+  if (process.env.REGRESSION_SKIP_PFMEA_ORDER !== '1') {
+    steps.splice(1, 0, ['PFMEA order', 'regression:pfmea:order'])
+  }
 
   if (process.env.REGRESSION_SKIP_BUILD !== '1') {
     steps.unshift(['Build', 'build'])
