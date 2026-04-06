@@ -18,8 +18,14 @@ function isBrowserRegression(script) {
   return script.startsWith('regression:pfmea:') || script === 'regression:pcp:smoke'
 }
 
+function getMaxAttempts(script) {
+  if (!isBrowserRegression(script)) return 1
+  const configured = Number.parseInt(process.env.REGRESSION_BROWSER_ATTEMPTS || '', 10)
+  return Number.isFinite(configured) && configured > 0 ? configured : 2
+}
+
 function runStep(label, script) {
-  const maxAttempts = isBrowserRegression(script) ? 2 : 1
+  const maxAttempts = getMaxAttempts(script)
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     process.stdout.write(`\n[regression] ${label}${maxAttempts > 1 ? ` (attempt ${attempt}/${maxAttempts})` : ''}\n`)
@@ -48,12 +54,15 @@ function runStep(label, script) {
 
 function main() {
   const steps = [
-    ['Build', 'build'],
     ['PFMEA merge', 'regression:pfmea:merge'],
     ['PFMEA order', 'regression:pfmea:order'],
     ['PFMEA save', 'regression:pfmea:save'],
     ['PCP smoke', 'regression:pcp:smoke'],
   ]
+
+  if (process.env.REGRESSION_SKIP_BUILD !== '1') {
+    steps.unshift(['Build', 'build'])
+  }
 
   for (const [label, script] of steps) {
     runStep(label, script)

@@ -205,11 +205,11 @@ jobs:
           exit 1
 
       - name: Run regression suite
+        env:
+          REGRESSION_SKIP_BUILD: '1'
+          REGRESSION_BROWSER_ATTEMPTS: '3'
         run: |
-          npm run regression:pfmea:merge
-          npm run regression:pfmea:order
-          npm run regression:pfmea:save
-          npm run regression:pcp:smoke
+          npm run regression:all
 
       - name: Stop app
         if: always()
