@@ -1,0 +1,133 @@
+name: Regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'scripts/regression/**'
+      - '.github/workflows/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'proxy.ts'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'scripts/regression/**'
+      - '.github/workflows/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'proxy.ts'
+
+concurrency:
+  group: regression-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+  browser-regression:
+    name: Browser Regression
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && secrets.REGRESSION_EMAIL != '' && secrets.REGRESSION_PASSWORD != '' && secrets.PFMEA_REGRESSION_PROJECT_ID != '' }}
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      REGRESSION_EMAIL: ${{ secrets.REGRESSION_EMAIL }}
+      REGRESSION_PASSWORD: ${{ secrets.REGRESSION_PASSWORD }}
+      PFMEA_REGRESSION_PROJECT_ID: ${{ secrets.PFMEA_REGRESSION_PROJECT_ID }}
+      PCP_REGRESSION_PROJECT_ID: ${{ secrets.PCP_REGRESSION_PROJECT_ID }}
+      REGRESSION_BASE_URL: http://127.0.0.1:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build app
+        run: npm run build
+
+      - name: Start app
+        run: |
+          npm run start > app.log 2>&1 &
+          echo $! > app.pid
+
+      - name: Wait for app
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:3000 > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Application did not start in time."
+          cat app.log || true
+          exit 1
+
+      - name: Run regression suite
+        run: |
+          npm run regression:pfmea:merge
+          npm run regression:pfmea:order
+          npm run regression:pfmea:save
+          npm run regression:pcp:smoke
+
+      - name: Stop app
+        if: always()
+        run: |
+          if [ -f app.pid ]; then
+            kill "$(cat app.pid)" || true
+          fi
+          pkill -f "next start" || true
+
+      - name: Upload app log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-log
+          path: app.log
+          if-no-files-found: ignore
+
+      - name: Upload regression artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-test-results
+          path: test-results
+          if-no-files-found: ignore
