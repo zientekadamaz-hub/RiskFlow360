@@ -84,7 +84,20 @@ async function getRowIndex(row) {
   })
 }
 
+async function getTableRowIds(table) {
+  const rows = table.locator('tbody tr')
+  const count = await rows.count()
+  const ids = []
+  for (let i = 0; i < count; i += 1) {
+    const id = await rows.nth(i).getAttribute('data-pfmea-row-id')
+    ids.push(id || `__missing__${i}`)
+  }
+  return ids
+}
+
 async function clickAddOnRow(row, titlePattern) {
+  const table = row.locator('xpath=ancestor::table[1]')
+  const beforeRowIds = await getTableRowIds(table)
   const rowIndex = await getRowIndex(row)
   await hoverRow(row)
   const addBtn = row.getByRole('button', { name: titlePattern }).first()
@@ -94,7 +107,7 @@ async function clickAddOnRow(row, titlePattern) {
   await addBtn.waitFor({ state: 'visible', timeout: 10000 })
   await addBtn.click({ force: true })
   await row.page().waitForTimeout(350)
-  return { rowIndex }
+  return { rowIndex, beforeRowIds }
 }
 
 function getCellLocator(row, target, type) {
@@ -156,6 +169,26 @@ async function getInsertedRow(table, anchorRowIndex) {
   })
 }
 
+async function getInsertedRowByDiff(table, beforeRowIds) {
+  return retryAction(async () => {
+    const rows = table.locator('tbody tr')
+    const count = await rows.count()
+    if (count === 0) throw new Error('PFMEA table has no rows.')
+
+    const beforeSet = new Set(beforeRowIds)
+    for (let i = 0; i < count; i += 1) {
+      const row = rows.nth(i)
+      const rowId = await row.getAttribute('data-pfmea-row-id')
+      if (rowId && !beforeSet.has(rowId)) {
+        await row.waitFor({ state: 'visible', timeout: 10000 })
+        return row
+      }
+    }
+
+    throw new Error('Could not identify inserted PFMEA row by row-id diff.')
+  })
+}
+
 async function waitForRowCellValue(row, cellKey, expectedValue) {
   const normalizedExpected = expectedValue.replace(/\s+/g, ' ').trim()
   await retryAction(async () => {
@@ -206,9 +239,14 @@ async function fillTextCellInRow(page, row, textTarget, value) {
 
 async function addFailureMode(table, anchorRow, fmText) {
   const insertion = await clickAddOnRow(anchorRow, /Add failure mode row/i)
-  await activateInsertedCell(table, insertion.rowIndex, 'failure_mode')
+  const row = await getInsertedRowByDiff(table, insertion.beforeRowIds).catch(async () => {
+    await activateInsertedCell(table, insertion.rowIndex, 'failure_mode')
+    return getInsertedRow(table, insertion.rowIndex)
+  })
+  const cell = row.locator('td[data-pfmea-col="failure_mode"]').first()
+  await cell.waitFor({ state: 'visible', timeout: 10000 })
+  await cell.click({ force: true })
   await fillActiveEditor(anchorRow.page(), fmText)
-  const row = await getInsertedRow(table, insertion.rowIndex)
   await waitForRowCellValue(row, 'failure_mode', fmText)
   return row
 }
@@ -226,9 +264,14 @@ async function materializeFailureMode(table, anchorRow, fmText) {
 
 async function addEffect(page, table, anchorRow, effectText, sev) {
   const insertion = await clickAddOnRow(anchorRow, /Add effect row/i)
-  await activateInsertedCell(table, insertion.rowIndex, 'effect')
+  const row = await getInsertedRowByDiff(table, insertion.beforeRowIds).catch(async () => {
+    await activateInsertedCell(table, insertion.rowIndex, 'effect')
+    return getInsertedRow(table, insertion.rowIndex)
+  })
+  const cell = row.locator('td[data-pfmea-col="effect"]').first()
+  await cell.waitFor({ state: 'visible', timeout: 10000 })
+  await cell.click({ force: true })
   await fillActiveEditor(page, effectText)
-  const row = await getInsertedRow(table, insertion.rowIndex)
   await waitForRowCellValue(row, 'effect', effectText)
   await selectScaleValueInRow(page, row, 'severity', sev)
   return row
@@ -236,9 +279,14 @@ async function addEffect(page, table, anchorRow, effectText, sev) {
 
 async function addCause(page, table, anchorRow, causeText, occ, prevText, detText, detVal) {
   const insertion = await clickAddOnRow(anchorRow, /Add cause row/i)
-  await activateInsertedCell(table, insertion.rowIndex, 'cause')
+  const row = await getInsertedRowByDiff(table, insertion.beforeRowIds).catch(async () => {
+    await activateInsertedCell(table, insertion.rowIndex, 'cause')
+    return getInsertedRow(table, insertion.rowIndex)
+  })
+  const cell = row.locator('td[data-pfmea-col="cause"]').first()
+  await cell.waitFor({ state: 'visible', timeout: 10000 })
+  await cell.click({ force: true })
   await fillActiveEditor(page, causeText)
-  const row = await getInsertedRow(table, insertion.rowIndex)
   await waitForRowCellValue(row, 'cause', causeText)
   await selectScaleValueInRow(page, row, 'occurrence', occ)
   await fillTextCellInRow(page, row, 'current_prevention', prevText)
@@ -249,9 +297,14 @@ async function addCause(page, table, anchorRow, causeText, occ, prevText, detTex
 
 async function addAction(page, table, anchorRow, actionText) {
   const insertion = await clickAddOnRow(anchorRow, /Add recommended action row/i)
-  await activateInsertedCell(table, insertion.rowIndex, 'recommended_action')
+  const row = await getInsertedRowByDiff(table, insertion.beforeRowIds).catch(async () => {
+    await activateInsertedCell(table, insertion.rowIndex, 'recommended_action')
+    return getInsertedRow(table, insertion.rowIndex)
+  })
+  const cell = row.locator('td[data-pfmea-col="recommended_action"]').first()
+  await cell.waitFor({ state: 'visible', timeout: 10000 })
+  await cell.click({ force: true })
   await fillActiveEditor(page, actionText)
-  const row = await getInsertedRow(table, insertion.rowIndex)
   await waitForRowCellValue(row, 'recommended_action', actionText)
   return row
 }
