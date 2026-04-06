@@ -146,6 +146,29 @@ async function activateInsertedCell(table, anchorRowIndex, cellKey) {
   await table.page().waitForTimeout(250)
 }
 
+async function getInsertedRow(table, anchorRowIndex) {
+  return retryAction(async () => {
+    const rows = table.locator('tbody tr')
+    const count = await rows.count()
+    const targetIndex = Math.min(Math.max(anchorRowIndex + 1, 0), count - 1)
+    const row = rows.nth(targetIndex)
+    await row.waitFor({ state: 'visible', timeout: 10000 })
+    return row
+  })
+}
+
+async function waitForRowCellValue(row, cellKey, expectedValue) {
+  const normalizedExpected = expectedValue.replace(/\s+/g, ' ').trim()
+  await retryAction(async () => {
+    const cell = row.locator(`td[data-pfmea-col="${cellKey}"]`).first()
+    await cell.waitFor({ state: 'visible', timeout: 10000 })
+    const actual = (await cell.innerText()).replace(/\s+/g, ' ').trim()
+    if (!actual.includes(normalizedExpected)) {
+      throw new Error(`Expected "${normalizedExpected}" in ${cellKey}, got "${actual}"`)
+    }
+  })
+}
+
 async function fillActiveEditor(page, value) {
   await retryAction(async () => {
     const editor = page.locator('.pfmeaEditor').last()
@@ -184,14 +207,10 @@ async function fillTextCellInRow(page, row, textTarget, value) {
 
 async function addFailureMode(table, anchorRow, fmText) {
   const insertion = await clickAddOnRow(anchorRow, /Add failure mode row/i)
-  try {
-    await fillActiveEditor(anchorRow.page(), fmText)
-  } catch {
-    await activateInsertedCell(insertion.table, insertion.rowIndex, 'failure_mode')
-    await fillActiveEditor(anchorRow.page(), fmText)
-  }
-  const row = rowLocator(table, fmText)
-  await row.waitFor({ state: 'visible', timeout: 10000 })
+  await activateInsertedCell(insertion.table, insertion.rowIndex, 'failure_mode')
+  await fillActiveEditor(anchorRow.page(), fmText)
+  const row = await getInsertedRow(insertion.table, insertion.rowIndex)
+  await waitForRowCellValue(row, 'failure_mode', fmText)
   return row
 }
 
@@ -208,28 +227,20 @@ async function materializeFailureMode(table, anchorRow, fmText) {
 
 async function addEffect(page, table, anchorRow, effectText, sev) {
   const insertion = await clickAddOnRow(anchorRow, /Add effect row/i)
-  try {
-    await fillActiveEditor(page, effectText)
-  } catch {
-    await activateInsertedCell(insertion.table, insertion.rowIndex, 'effect')
-    await fillActiveEditor(page, effectText)
-  }
-  const row = rowLocator(table, effectText)
-  await row.waitFor({ state: 'visible', timeout: 10000 })
+  await activateInsertedCell(insertion.table, insertion.rowIndex, 'effect')
+  await fillActiveEditor(page, effectText)
+  const row = await getInsertedRow(insertion.table, insertion.rowIndex)
+  await waitForRowCellValue(row, 'effect', effectText)
   await selectScaleValueInRow(page, row, 'severity', sev)
   return row
 }
 
 async function addCause(page, table, anchorRow, causeText, occ, prevText, detText, detVal) {
   const insertion = await clickAddOnRow(anchorRow, /Add cause row/i)
-  try {
-    await fillActiveEditor(page, causeText)
-  } catch {
-    await activateInsertedCell(insertion.table, insertion.rowIndex, 'cause')
-    await fillActiveEditor(page, causeText)
-  }
-  const row = rowLocator(table, causeText)
-  await row.waitFor({ state: 'visible', timeout: 10000 })
+  await activateInsertedCell(insertion.table, insertion.rowIndex, 'cause')
+  await fillActiveEditor(page, causeText)
+  const row = await getInsertedRow(insertion.table, insertion.rowIndex)
+  await waitForRowCellValue(row, 'cause', causeText)
   await selectScaleValueInRow(page, row, 'occurrence', occ)
   await fillTextCellInRow(page, row, 'current_prevention', prevText)
   await fillTextCellInRow(page, row, 'current_detection', detText)
@@ -239,14 +250,10 @@ async function addCause(page, table, anchorRow, causeText, occ, prevText, detTex
 
 async function addAction(page, table, anchorRow, actionText) {
   const insertion = await clickAddOnRow(anchorRow, /Add recommended action row/i)
-  try {
-    await fillActiveEditor(page, actionText)
-  } catch {
-    await activateInsertedCell(insertion.table, insertion.rowIndex, 'recommended_action')
-    await fillActiveEditor(page, actionText)
-  }
-  const row = rowLocator(table, actionText)
-  await row.waitFor({ state: 'visible', timeout: 10000 })
+  await activateInsertedCell(insertion.table, insertion.rowIndex, 'recommended_action')
+  await fillActiveEditor(page, actionText)
+  const row = await getInsertedRow(insertion.table, insertion.rowIndex)
+  await waitForRowCellValue(row, 'recommended_action', actionText)
   return row
 }
 
