@@ -169,13 +169,16 @@ async function getInsertedRow(table, anchorRowIndex) {
   })
 }
 
-async function getInsertedRowByDiff(table, beforeRowIds) {
-  return retryAction(async () => {
+async function getInsertedRowByDiff(table, beforeRowIds, timeoutMs = 15000) {
+  const beforeSet = new Set(beforeRowIds)
+  const deadline = Date.now() + timeoutMs
+  let lastSeenCount = 0
+
+  while (Date.now() < deadline) {
     const rows = table.locator('tbody tr')
     const count = await rows.count()
-    if (count === 0) throw new Error('PFMEA table has no rows.')
+    lastSeenCount = count
 
-    const beforeSet = new Set(beforeRowIds)
     for (let i = 0; i < count; i += 1) {
       const row = rows.nth(i)
       const rowId = await row.getAttribute('data-pfmea-row-id')
@@ -185,8 +188,12 @@ async function getInsertedRowByDiff(table, beforeRowIds) {
       }
     }
 
-    throw new Error('Could not identify inserted PFMEA row by row-id diff.')
-  })
+    await table.page().waitForTimeout(300)
+  }
+
+  throw new Error(
+    `Could not identify inserted PFMEA row by row-id diff within ${timeoutMs}ms. before=${beforeRowIds.length}, after=${lastSeenCount}`
+  )
 }
 
 async function waitForRowCellValue(row, cellKey, expectedValue) {
