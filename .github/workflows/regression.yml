@@ -51,12 +51,51 @@ jobs:
       - name: Build app
         run: npm run build
 
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      browser_ready: ${{ steps.check.outputs.browser_ready }}
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      REGRESSION_EMAIL: ${{ secrets.REGRESSION_EMAIL }}
+      REGRESSION_PASSWORD: ${{ secrets.REGRESSION_PASSWORD }}
+      PFMEA_REGRESSION_PROJECT_ID: ${{ secrets.PFMEA_REGRESSION_PROJECT_ID }}
+    steps:
+      - name: Check browser-regression secrets
+        id: check
+        shell: bash
+        run: |
+          missing=0
+
+          for name in \
+            NEXT_PUBLIC_SUPABASE_URL \
+            NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            REGRESSION_EMAIL \
+            REGRESSION_PASSWORD \
+            PFMEA_REGRESSION_PROJECT_ID
+          do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              echo "::warning::Missing required secret: $name"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -eq 0 ]; then
+            echo "browser_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "browser_ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
   browser-regression:
     name: Browser Regression
-    needs: build
+    needs: [build, preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    if: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL != '' && secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' && secrets.REGRESSION_EMAIL != '' && secrets.REGRESSION_PASSWORD != '' && secrets.PFMEA_REGRESSION_PROJECT_ID != '' }}
+    if: ${{ needs.preflight.outputs.browser_ready == 'true' }}
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
