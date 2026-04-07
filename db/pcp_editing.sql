@@ -3,6 +3,21 @@
 
 create extension if not exists pgcrypto;
 
+alter table if exists public.control_plan_rows
+  add column if not exists pfmea_row_id uuid null references public.pfmea_rows(id) on delete set null;
+
+alter table if exists public.control_plan_rows
+  add column if not exists failure_mode text null;
+
+alter table if exists public.control_plan_rows
+  add column if not exists class text null;
+
+alter table if exists public.control_plan_rows
+  add column if not exists current_prevention text null;
+
+alter table if exists public.control_plan_rows
+  add column if not exists current_detection text null;
+
 create table if not exists public.pcp_change_history (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -41,4 +56,3 @@ create policy "pcp_edit_sessions_all_auth"
   for all
   using (auth.uid() is not null)
   with check (auth.uid() is not null);
-

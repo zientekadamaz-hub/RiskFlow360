@@ -7,6 +7,9 @@ alter table if exists public.pfmea_rows
   add column if not exists characteristic text null;
 
 alter table if exists public.pfmea_rows
+  add column if not exists pcp boolean null;
+
+alter table if exists public.pfmea_rows
   add column if not exists row_no text null;
 
 alter table if exists public.pfmea_rows

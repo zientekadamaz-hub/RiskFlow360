@@ -43,6 +43,7 @@ type PfmeaRow = {
   effect: string
   severity: number | string | null
   characteristic: string
+  pcp: boolean | null
   class: string | null
   cause: string
   occurrence: number | string | null
@@ -161,6 +162,7 @@ type PfmeaColumnId =
   | 'effect'
   | 'sev'
   | 'characteristic'
+  | 'pcp'
   | 'class'
   | 'cause'
   | 'occ'
@@ -230,6 +232,7 @@ const PFMEA_COLUMNS: Array<{ id: PfmeaColumnId; label: string; width: number }> 
   { id: 'current_det', label: 'CURRENT CONTROLS (DET)', width: 180 },
   { id: 'det', label: 'DET', width: 50 },
   { id: 'rpn', label: 'RPN', width: 60 },
+  { id: 'pcp', label: 'PCP', width: 72 },
   { id: 'recommended_action', label: 'RECOMMENDED ACTION', width: 180 },
   { id: 'responsible', label: 'RESPONSIBLE', width: 120 },
   { id: 'target_date', label: 'TARGET DATE', width: 120 },
@@ -255,7 +258,7 @@ const PFMEA_COLUMN_FILTER_GROUPS: Array<{ title: string; ids: PfmeaColumnId[] }>
   },
   {
     title: 'Current Risk Analysis',
-    ids: ['failure_mode', 'characteristic', 'class', 'effect', 'sev', 'cause', 'occ', 'current_prev', 'current_det', 'det', 'rpn'],
+    ids: ['failure_mode', 'characteristic', 'class', 'effect', 'sev', 'cause', 'occ', 'current_prev', 'current_det', 'det', 'rpn', 'pcp'],
   },
   {
     title: 'Action Plan & Residual Risk',
@@ -273,6 +276,7 @@ const DEFAULT_VISIBLE_COLUMNS: Record<PfmeaColumnId, boolean> = {
   effect: true,
   sev: true,
   characteristic: true,
+  pcp: true,
   class: true,
   cause: true,
   occ: true,
@@ -450,6 +454,30 @@ function computeDerived(
     rpn_current: rpn_current ?? null,
     oxd_current: oxd_current ?? null,
   }
+}
+
+function getPfmeaPcpAutoReasons(row: Pick<PfmeaRow, 'pcp' | 'class' | 'severity'>, riskColor: RiskColor | null): string[] {
+  const reasons: string[] = []
+  const normalizedClass = normalizeClassValue(row.class)
+  const severity = asInt1to10(row.severity)
+
+  if (normalizedClass === 'SC' || normalizedClass === 'CC') {
+    reasons.push(`CLASS = ${normalizedClass}`)
+  }
+  if (severity != null && severity >= 9) {
+    reasons.push(`SEV = ${severity}`)
+  }
+  if (riskColor === 'orange' || riskColor === 'red') {
+    reasons.push(`RPN = ${riskColor.toUpperCase()}`)
+  }
+
+  return reasons
+}
+
+function isPfmeaSelectedForPcp(row: Pick<PfmeaRow, 'pcp' | 'class' | 'severity'>, riskColor: RiskColor | null) {
+  const override = normalizePfmeaPcpValue(row.pcp)
+  if (override != null) return override
+  return getPfmeaPcpAutoReasons(row, riskColor).length > 0
 }
 
 function pfmeaRevisionNumberFromLabel(label: string | null | undefined) {
@@ -672,6 +700,7 @@ function hydratePfmeaGroupIds(rows: PfmeaRow[]) {
   for (const row of rows) {
     hydrated.push({
       ...row,
+      pcp: normalizePfmeaPcpValue(row.pcp),
       ...derivePfmeaGroupIds(row),
     })
   }
@@ -853,6 +882,17 @@ function normalizeClassValue(raw: string | null | undefined): string | null {
   return null
 }
 
+function normalizePfmeaPcpValue(raw: unknown): boolean | null {
+  if (raw == null) return null
+  if (typeof raw === 'boolean') return raw
+  if (typeof raw === 'number') return raw === 1 ? true : raw === 0 ? false : null
+  const source = String(raw).trim().toLowerCase()
+  if (!source) return null
+  if (source === 'true' || source === 't' || source === '1' || source === 'yes') return true
+  if (source === 'false' || source === 'f' || source === '0' || source === 'no') return false
+  return null
+}
+
 function opGroupKeyFromOperation(op: Pick<Operation, 'id' | 'operation_number'>): string {
   if (typeof op.operation_number === 'number' && Number.isFinite(op.operation_number)) {
     return `no:${op.operation_number}`
@@ -999,6 +1039,7 @@ function makeEmptyPfmeaPayload(
     effect: '',
     severity: null,
     characteristic: '',
+    pcp: null,
     class: null,
     cause: '',
     occurrence: null,
@@ -1182,6 +1223,7 @@ function buildPfmeaPublishedSyncPatch(row: PfmeaRow) {
     effect: row.effect ?? '',
     severity: asInt1to10(row.severity),
     characteristic: row.characteristic ?? '',
+    pcp: normalizePfmeaPcpValue(row.pcp),
     class: normalizeClassValue(row.class),
     cause: row.cause ?? '',
     occurrence: asInt1to10(row.occurrence),
@@ -1229,6 +1271,7 @@ const PFMEA_CLONE_FIELDS: Array<keyof PfmeaRow> = [
   'effect',
   'severity',
   'characteristic',
+  'pcp',
   'class',
   'cause',
   'occurrence',
@@ -1270,6 +1313,7 @@ const PFMEA_SELECT_FIELDS = [
   'effect',
   'severity',
   'characteristic',
+  'pcp',
   'class',
   'cause',
   'occurrence',
@@ -2652,6 +2696,7 @@ function PfmeaFullPageContent() {
                 effect: clearedPatch.effect,
                 severity: clearedPatch.severity,
                 characteristic: clearedPatch.characteristic,
+                pcp: clearedPatch.pcp,
                 class: clearedPatch.class,
                 cause: clearedPatch.cause,
                 occurrence: clearedPatch.occurrence,
@@ -2684,6 +2729,7 @@ function PfmeaFullPageContent() {
                       effect: '',
                       severity: null,
                       characteristic: '',
+                      pcp: null,
                       class: null,
                       cause: '',
                       occurrence: null,
@@ -3211,6 +3257,9 @@ function PfmeaFullPageContent() {
         const n = asInt1to10(v)
         ;(guarded as any)[k] = n
       })
+      if ('pcp' in guarded) {
+        guarded.pcp = normalizePfmeaPcpValue(guarded.pcp)
+      }
       if ('class' in guarded) {
         guarded.class = normalizeClassValue((guarded.class as string | null | undefined) ?? null)
       }
@@ -4083,6 +4132,7 @@ function PfmeaFullPageContent() {
         'CURRENT CONTROLS (DET)',
         'DET',
         'RPN',
+        'PCP',
         'RECOMMENDED ACTION',
         'RESPONSIBLE',
         'TARGET DATE',
@@ -4094,6 +4144,14 @@ function PfmeaFullPageContent() {
 
       const dataRows = rowsSorted.map((r) => {
         const { currentRisk, residualRisk } = computePfmeaDerivedFromContext(r)
+        const pcpSelected = isPfmeaSelectedForPcp(
+          {
+            pcp: r.pcp,
+            class: r.class,
+            severity: r.severity,
+          },
+          getRiskColorFor(currentRisk.sev, currentRisk.doVal)
+        )
         return [
           r.operations?.operation_number ?? '',
           r.operations?.machine ?? '',
@@ -4110,6 +4168,7 @@ function PfmeaFullPageContent() {
           r.current_detection ?? '',
           asInt1to10(r.detection) ?? '',
           currentRisk.rpn ?? '',
+          pcpSelected ? 'YES' : '',
           r.recommended_action ?? '',
           r.responsible ?? '',
           r.target_date ?? '',
@@ -5123,6 +5182,7 @@ function PfmeaFullPageContent() {
                   {isColumnVisible('det') ? <Th w={widthOf('det')}>DET</Th> : null}
 
                   {isColumnVisible('rpn') ? <Th w={widthOf('rpn')}>RPN</Th> : null}
+                  {isColumnVisible('pcp') ? <Th w={widthOf('pcp')}>PCP</Th> : null}
 
                   {isColumnVisible('recommended_action') ? <Th w={widthOf('recommended_action')}>RECOMMENDED ACTION</Th> : null}
                   {isColumnVisible('responsible') ? <Th w={widthOf('responsible')}>RESPONSIBLE</Th> : null}
@@ -5184,11 +5244,19 @@ function PfmeaFullPageContent() {
                         return latestRowForHighlights
                     }
                   }
-                      const latestRowForHighlights = applyPendingCellValues(rowsRef.current.find((rowItem) => rowItem.id === r.id) ?? r)
-                      const effectiveFailureModeOwnerRow = applyPendingCellValues(failureModeOwnerRow)
-                      const effectiveFailureBlockOwnerRow = applyPendingCellValues(failureBlockOwnerRow)
-                      const effectiveActionPlanOwnerRow = applyPendingCellValues(actionPlanOwnerRow)
-                      const isMissingHighlighted = (col: keyof PfmeaRow) => highlightedMissingCells?.includes(highlightKey(r.id, col)) ?? false
+                  const latestRowForHighlights = applyPendingCellValues(rowsRef.current.find((rowItem) => rowItem.id === r.id) ?? r)
+                  const effectiveFailureModeOwnerRow = applyPendingCellValues(failureModeOwnerRow)
+                  const effectiveFailureBlockOwnerRow = applyPendingCellValues(failureBlockOwnerRow)
+                  const effectiveActionPlanOwnerRow = applyPendingCellValues(actionPlanOwnerRow)
+                  const effectivePcpSourceRow = {
+                    ...effectiveCurrentRow,
+                    class: normalizeClassValue(effectiveFailureModeOwnerRow.class),
+                    severity: asInt1to10(effectiveFailureBlockOwnerRow.severity),
+                  } as PfmeaRow
+                  const pcpAutoReasons = getPfmeaPcpAutoReasons(effectivePcpSourceRow, risk1)
+                  const pcpChecked = isPfmeaSelectedForPcp(effectivePcpSourceRow, risk1)
+                  const pcpDisabled = readOnly || isPlaceholder || !hasFailureModeContext(effectiveFailureModeOwnerRow)
+                  const isMissingHighlighted = (col: keyof PfmeaRow) => highlightedMissingCells?.includes(highlightKey(r.id, col)) ?? false
                   const runActionPlanStart = (targetCol: keyof PfmeaRow) => {
                     window.setTimeout(() => {
                       const latestRow = latestRowForHighlights
@@ -5539,6 +5607,19 @@ function PfmeaFullPageContent() {
                           style={riskRpnStyle}
                           rowSpan={actionPlanBlockSpan}
                           onClick={() => setExpandedOperationId(r.operation_id || r.operations?.id || null)}
+                        />
+                      ) : null}
+
+                      {isColumnVisible('pcp') ? (
+                        <TdPcpToggle
+                          checked={pcpChecked}
+                          reasons={pcpAutoReasons}
+                          disabled={pcpDisabled}
+                          onToggle={() => {
+                            if (pcpDisabled) return
+                            void updateCellWithDerived(r, { pcp: !pcpChecked })
+                          }}
+                          cellKey="pcp"
                         />
                       ) : null}
 
@@ -6519,6 +6600,86 @@ function TdClassSelect(props: {
                 {hoveredOptionDetails.description.map((line, idx) => (
                   <div key={`${hoveredOption?.value ?? 'option'}-detail-${idx}`} style={{ fontSize: 12, color: '#d9a86c', lineHeight: 1.35, fontWeight: 400 }}>
                     - {line}
+                  </div>
+                ))}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </td>
+  )
+}
+
+function TdPcpToggle(props: {
+  checked: boolean
+  reasons: string[]
+  disabled?: boolean
+  onToggle: () => void
+  cellKey?: string
+}) {
+  const [cellAnchorEl, setCellAnchorEl] = useState<HTMLTableCellElement | null>(null)
+  const [hoverOpen, setHoverOpen] = useState(false)
+  const popupReasons = props.checked ? (props.reasons.length > 0 ? props.reasons : ['MANUAL']) : []
+  const showPopup = hoverOpen && popupReasons.length > 0 && cellAnchorEl
+
+  return (
+    <td
+      data-pfmea-col={props.cellKey}
+      ref={setCellAnchorEl}
+      className="pfmeaTd center singleLine"
+      onMouseEnter={() => setHoverOpen(true)}
+      onMouseLeave={() => setHoverOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={props.onToggle}
+        disabled={props.disabled}
+        aria-label={props.checked ? 'Included in PCP' : 'Excluded from PCP'}
+        aria-pressed={props.checked}
+        title={popupReasons.join('\n') || undefined}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 22,
+          height: 22,
+          borderRadius: 6,
+          border: `1px solid ${props.checked ? 'rgba(217,168,108,0.55)' : 'rgba(255,255,255,0.22)'}`,
+          background: props.checked ? 'rgba(217,168,108,0.16)' : 'transparent',
+          color: props.checked ? '#f6d7a7' : 'rgba(255,255,255,0.32)',
+          fontSize: 14,
+          fontWeight: 700,
+          cursor: props.disabled ? 'not-allowed' : 'pointer',
+          opacity: props.disabled ? 0.5 : 1,
+        }}
+      >
+        {props.checked ? '✓' : ''}
+      </button>
+
+      {showPopup && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              data-pfmea-popup="true"
+              style={{
+                ...anchoredPopupStyle(cellAnchorEl, 220, 0, 240),
+                zIndex: 120,
+                borderRadius: 10,
+                border: `1px solid ${SURFACE_BORDER}`,
+                background: 'rgb(52, 57, 69)',
+                boxShadow: '0 14px 30px rgba(0,0,0,0.18)',
+                padding: 10,
+                textAlign: 'left',
+                position: 'fixed',
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#d9a86c', marginBottom: 6 }}>
+                PCP selection
+              </div>
+              <div style={{ display: 'grid', gap: 4 }}>
+                {popupReasons.map((reason, idx) => (
+                  <div key={`${reason}-${idx}`} style={{ fontSize: 12, color: '#d9a86c', lineHeight: 1.35, fontWeight: 400 }}>
+                    - {reason}
                   </div>
                 ))}
               </div>
