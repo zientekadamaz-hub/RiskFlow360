@@ -18,6 +18,9 @@ alter table if exists public.control_plan_rows
 alter table if exists public.control_plan_rows
   add column if not exists current_detection text null;
 
+alter table if exists public.control_plan_rows
+  add column if not exists sample_size text null;
+
 create table if not exists public.pcp_change_history (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,

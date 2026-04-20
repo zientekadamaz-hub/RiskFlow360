@@ -1,7 +1,8 @@
 
 'use client'
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@app/lib/supabaseBrowser'
@@ -34,9 +35,12 @@ type PcpRow = {
   failure_mode: string | null
   characteristic: string
   class: string | null
+  severity?: number | string | null
+  rpn?: number | null
   current_prevention: string | null
   current_detection: string | null
   control_method: string | null
+  sample_size: string | null
   frequency: string | null
   reaction_plan: string | null
   source: string
@@ -87,15 +91,14 @@ type PcpColumnId =
   | 'failure_mode'
   | 'characteristic'
   | 'class'
+  | 'severity'
+  | 'rpn'
   | 'current_prevention'
   | 'current_detection'
   | 'control_method'
+  | 'sample_size'
   | 'frequency'
   | 'reaction_plan'
-  | 'source'
-  | 'status'
-  | 'updated'
-  | 'delete'
 
 const PCP_VISIBLE_COLUMNS_KEY_PREFIX = '__PCP_VISIBLE_COLUMNS__'
 const EDIT_LOCK_HOURS = 48
@@ -109,27 +112,41 @@ const SURFACE_PANEL_BG = 'rgb(40, 39, 47)'
 const SURFACE_TEXT = '#f8fafc'
 const SURFACE_MUTED = 'rgba(255,255,255,0.72)'
 
-const SOURCE_OPTIONS = ['MANUAL', 'AUTO']
-const STATUS_OPTIONS = ['OPEN', 'REVIEW_REQUIRED', 'CLOSED', 'CANCELED']
 const PCP_PLACEHOLDER_PREFIX = '__pcp_placeholder__:'
+const PCP_CLASS_OPTIONS = ['', 'SC', 'CC']
+const CLASS_OPTION_DETAILS: Record<string, { title: string; description: string[] }> = {
+  SC: {
+    title: 'SC - Special Characteristic',
+    description: [
+      'A product characteristic or process parameter that requires special control because deviation may affect function, quality, compliance, performance, assembly, or downstream processing.',
+      'This characteristic should be clearly identified and included in process controls, for example in the PCP.',
+    ],
+  },
+  CC: {
+    title: 'CC - Critical Characteristic',
+    description: [
+      'A critical characteristic, which is a specific subset of SC, where deviation may cause the most severe consequences.',
+      'Examples include safety risk, non-compliance with legal requirements, or loss of a critical function.',
+    ],
+  },
+}
 
 const PCP_COLUMNS: Array<{ id: PcpColumnId; label: string; width: number }> = [
   { id: 'id', label: 'ID#', width: 60 },
   { id: 'station', label: 'STATION', width: 120 },
   { id: 'operation', label: 'OPERATION', width: 140 },
-  { id: 'process_step', label: 'PROCESS STEP', width: 170 },
-  { id: 'failure_mode', label: 'FAILURE MODE', width: 220 },
-  { id: 'characteristic', label: 'CHARACTERISTIC', width: 220 },
-  { id: 'class', label: 'CLASS', width: 90 },
-  { id: 'current_prevention', label: 'CURRENT CONTROLS (PREV)', width: 220 },
-  { id: 'current_detection', label: 'CURRENT CONTROLS (DET)', width: 220 },
-  { id: 'control_method', label: 'CONTROL METHOD', width: 200 },
-  { id: 'frequency', label: 'FREQUENCY', width: 120 },
-  { id: 'reaction_plan', label: 'REACTION PLAN', width: 220 },
-  { id: 'source', label: 'SOURCE', width: 100 },
-  { id: 'status', label: 'STATUS', width: 130 },
-  { id: 'updated', label: 'UPDATED', width: 120 },
-  { id: 'delete', label: 'DELETE', width: 55 },
+  { id: 'process_step', label: 'PROCESS STEP', width: 180 },
+  { id: 'failure_mode', label: 'FAILURE MODE', width: 180 },
+  { id: 'characteristic', label: 'CHARACTERISTIC', width: 120 },
+  { id: 'class', label: 'CLASS', width: 60 },
+  { id: 'severity', label: 'SEV', width: 60 },
+  { id: 'rpn', label: 'RPN', width: 60 },
+  { id: 'current_prevention', label: 'CURRENT CONTROLS (PREV)', width: 180 },
+  { id: 'current_detection', label: 'CURRENT CONTROLS (DET)', width: 180 },
+  { id: 'control_method', label: 'CONTROL METHOD', width: 180 },
+  { id: 'sample_size', label: 'SAMPLE SIZE', width: 100 },
+  { id: 'frequency', label: 'FREQUENCY', width: 100 },
+  { id: 'reaction_plan', label: 'REACTION PLAN', width: 180 },
 ]
 
 const PCP_COLUMNS_BY_ID: Record<PcpColumnId, { id: PcpColumnId; label: string; width: number }> = PCP_COLUMNS.reduce(
@@ -142,9 +159,8 @@ const PCP_COLUMNS_BY_ID: Record<PcpColumnId, { id: PcpColumnId; label: string; w
 
 const PCP_COLUMN_FILTER_GROUPS: Array<{ title: string; ids: PcpColumnId[] }> = [
   { title: 'Process Context', ids: ['id', 'station', 'operation', 'process_step'] },
-  { title: 'PFMEA Link', ids: ['failure_mode', 'characteristic', 'class', 'current_prevention', 'current_detection'] },
-  { title: 'Control Definition', ids: ['control_method', 'frequency', 'reaction_plan'] },
-  { title: 'Execution', ids: ['source', 'status', 'updated'] },
+  { title: 'PFMEA Link', ids: ['failure_mode', 'characteristic', 'class', 'severity', 'rpn', 'current_prevention', 'current_detection'] },
+  { title: 'Control Definition', ids: ['control_method', 'sample_size', 'frequency', 'reaction_plan'] },
 ]
 
 const DEFAULT_VISIBLE_COLUMNS: Record<PcpColumnId, boolean> = {
@@ -155,15 +171,14 @@ const DEFAULT_VISIBLE_COLUMNS: Record<PcpColumnId, boolean> = {
   failure_mode: true,
   characteristic: true,
   class: true,
+  severity: true,
+  rpn: true,
   current_prevention: true,
   current_detection: true,
   control_method: true,
+  sample_size: true,
   frequency: true,
   reaction_plan: true,
-  source: true,
-  status: true,
-  updated: true,
-  delete: true,
 }
 
 function normalizeText(v: unknown) {
@@ -211,13 +226,6 @@ function isPfmeaSeedSelectedForPcp(row: Pick<PfmeaPcpSeedRow, 'pcp' | 'class' | 
   return rpn != null && rpn > yellowMax
 }
 
-function formatDateOnly(iso: string | null | undefined) {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '-'
-  return d.toLocaleDateString('pl-PL', { year: 'numeric', month: '2-digit', day: '2-digit' })
-}
-
 function formatDateTimePL(iso: string | null | undefined) {
   if (!iso) return '-'
   const d = new Date(iso)
@@ -239,6 +247,26 @@ function nextPcpRevisionLabel(labelRaw: string | null | undefined) {
   return `${a}.${b}.${c + 1}`
 }
 
+function anchoredPopupStyle(anchorEl: HTMLElement, width: number, gap = 8, minViewportPadding = 24): React.CSSProperties {
+  const rect = anchorEl.getBoundingClientRect()
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : rect.right + width
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : rect.bottom + 240
+  const maxLeft = Math.max(minViewportPadding, viewportWidth - width - minViewportPadding)
+  const left = Math.max(minViewportPadding, Math.min(rect.left, maxLeft))
+  const estimatedHeight = 220
+  const top = rect.bottom + gap + estimatedHeight <= viewportHeight - minViewportPadding
+    ? rect.bottom + gap
+    : Math.max(minViewportPadding, rect.top - gap - estimatedHeight)
+
+  return {
+    left,
+    top,
+    width,
+    maxWidth: `calc(100vw - ${minViewportPadding * 2}px)`,
+    maxHeight: `calc(100vh - ${minViewportPadding * 2}px)`,
+  }
+}
+
 function isPlaceholderPcpRowId(id: string | null | undefined) {
   return String(id ?? '').startsWith(PCP_PLACEHOLDER_PREFIX)
 }
@@ -252,9 +280,12 @@ function makePcpPlaceholderRow(op: Operation, revisionId: string | null, seedKey
     failure_mode: normalizeText(seed?.failure_mode) || null,
     characteristic: normalizeText(seed?.characteristic),
     class: normalizeClassValue((seed?.class as string | null | undefined) ?? null),
+    severity: asInt1to10(seed?.severity),
+    rpn: typeof seed?.rpn === 'number' && Number.isFinite(seed.rpn) ? seed.rpn : null,
     current_prevention: normalizeText(seed?.current_prevention) || null,
     current_detection: normalizeText(seed?.current_detection) || null,
     control_method: null,
+    sample_size: null,
     frequency: null,
     reaction_plan: null,
     source: 'MANUAL',
@@ -265,6 +296,44 @@ function makePcpPlaceholderRow(op: Operation, revisionId: string | null, seedKey
     __placeholder: true,
     __sortIndex: sortIndex,
   }
+}
+
+function buildPcpRowPayload(row: Partial<PcpRow> & { operation_id: string; revision_id: string }) {
+  return {
+    operation_id: row.operation_id,
+    revision_id: row.revision_id,
+    pfmea_row_id: row.pfmea_row_id ?? null,
+    failure_mode: row.failure_mode ?? '',
+    characteristic: row.characteristic ?? '',
+    class: normalizeClassValue((row.class as string | null | undefined) ?? null),
+    current_prevention: row.current_prevention ?? '',
+    current_detection: row.current_detection ?? '',
+    control_method: row.control_method ?? '',
+    sample_size: row.sample_size ?? '',
+    frequency: row.frequency ?? '',
+    reaction_plan: row.reaction_plan ?? '',
+    source: normalizeText(row.source || 'MANUAL').toUpperCase(),
+    status: normalizeText(row.status || 'OPEN').toUpperCase(),
+  }
+}
+
+function isEquivalentPcpRow(a: Partial<PcpRow>, b: Partial<PcpRow>) {
+  const pfmeaA = normalizeText(a.pfmea_row_id)
+  const pfmeaB = normalizeText(b.pfmea_row_id)
+  if (pfmeaA && pfmeaB) return pfmeaA === pfmeaB
+  return (
+    normalizeText(a.operation_id) === normalizeText(b.operation_id) &&
+    normalizeText(a.failure_mode) === normalizeText(b.failure_mode) &&
+    normalizeText(a.characteristic) === normalizeText(b.characteristic) &&
+    normalizeClassValue((a.class as string | null | undefined) ?? null) === normalizeClassValue((b.class as string | null | undefined) ?? null) &&
+    normalizeText(a.current_prevention) === normalizeText(b.current_prevention) &&
+    normalizeText(a.current_detection) === normalizeText(b.current_detection)
+  )
+}
+
+function getComparableTime(value: string | null | undefined) {
+  const time = value ? new Date(value).getTime() : Number.NaN
+  return Number.isFinite(time) ? time : 0
 }
 
 export default function PcpPage() {
@@ -307,6 +376,7 @@ function PcpPageContent() {
 
   const [columnFiltersOpen, setColumnFiltersOpen] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Record<PcpColumnId, boolean>>(DEFAULT_VISIBLE_COLUMNS)
+  const [pcpYellowMax, setPcpYellowMax] = useState(168)
 
   const [edit, setEdit] = useState<{ rowId: string; col: keyof PcpRow } | null>(null)
   const [requiredRowCountByOperation, setRequiredRowCountByOperation] = useState<Record<string, number>>({})
@@ -343,10 +413,9 @@ function PcpPageContent() {
 
   const isColumnVisible = useCallback(
     (id: PcpColumnId) => {
-      if (id === 'delete') return isEditOwner
       return visibleColumns[id] !== false
     },
-    [visibleColumns, isEditOwner]
+    [visibleColumns]
   )
 
   const toggleColumnVisibility = useCallback((id: PcpColumnId, checked: boolean) => {
@@ -386,21 +455,6 @@ function PcpPageContent() {
     })
     return indexed.map((item) => item.row)
   }, [rows])
-
-  const summary = useMemo(() => {
-    let open = 0
-    let review = 0
-    let closed = 0
-    let canceled = 0
-    for (const r of rowsSorted) {
-      const s = normalizeText(r.status).toUpperCase()
-      if (s === 'OPEN') open += 1
-      else if (s === 'REVIEW_REQUIRED') review += 1
-      else if (s === 'CLOSED') closed += 1
-      else if (s === 'CANCELED') canceled += 1
-    }
-    return { total: rowsSorted.length, open, review, closed, canceled }
-  }, [rowsSorted])
 
   const loadProjectView = useCallback(async () => {
     const pr = await supabase
@@ -449,6 +503,44 @@ function PcpPageContent() {
     return typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 ? Math.trunc(raw) : 168
   }, [projectId])
 
+  const ensureDraftRowsHydrated = useCallback(async (draftRevisionId: string | null | undefined, sourceRevisionId: string | null | undefined) => {
+    const draftId = normalizeText(draftRevisionId)
+    const sourceId = normalizeText(sourceRevisionId)
+    if (!draftId || !sourceId || draftId === sourceId) return
+
+    const draftCountRes = await supabase
+      .from('control_plan_rows')
+      .select('id', { count: 'exact', head: true })
+      .eq('revision_id', draftId)
+    if ((draftCountRes.count ?? 0) > 0) return
+
+    const sourceRes = await supabase
+      .from('control_plan_rows')
+      .select('operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,sample_size,frequency,reaction_plan,source,status')
+      .eq('revision_id', sourceId)
+      .order('created_at', { ascending: true })
+    if (sourceRes.error) throw sourceRes.error
+
+    const sourceRows = (sourceRes.data ?? []) as Array<Partial<PcpRow> & { operation_id: string }>
+    if (sourceRows.length === 0) return
+
+    const insertPayload = sourceRows.map((row) => buildPcpRowPayload({ ...row, revision_id: draftId }))
+    const insertRes = await supabase.from('control_plan_rows').insert(insertPayload)
+    if (insertRes.error) throw insertRes.error
+  }, [])
+
+  const findEquivalentRowInRevision = useCallback(async (row: PcpRow, revisionId: string) => {
+    const res = await supabase
+      .from('control_plan_rows')
+      .select('id,revision_id,operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,sample_size,frequency,reaction_plan,source,status,created_at,updated_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)')
+      .eq('revision_id', revisionId)
+      .eq('operation_id', row.operation_id)
+      .order('created_at', { ascending: true })
+    if (res.error) throw res.error
+    const revisionRows = (res.data ?? []) as PcpRow[]
+    return revisionRows.find((candidate) => isEquivalentPcpRow(candidate, row)) ?? null
+  }, [])
+
   const loadUserContext = useCallback(async () => {
     if (!projectId || !userId) {
       setIsChampion(false)
@@ -474,8 +566,14 @@ function PcpPageContent() {
     if (!projectId) return null
     if (!userId) throw new Error('Not authenticated.')
     if (!isEditOwner) throw new Error('Click "Edit PCP" to start an edit session.')
-    if (draftRevisionIdOverride) return draftRevisionIdOverride
-    if (project?.current_draft_revision_id) return project.current_draft_revision_id
+    if (draftRevisionIdOverride) {
+      await ensureDraftRowsHydrated(draftRevisionIdOverride, project?.current_open_revision_id ?? workingRevisionId)
+      return draftRevisionIdOverride
+    }
+    if (project?.current_draft_revision_id) {
+      await ensureDraftRowsHydrated(project.current_draft_revision_id, project.current_open_revision_id ?? workingRevisionId)
+      return project.current_draft_revision_id
+    }
     if ((project?.status ?? 'DRAFT') === 'OBSOLETE') throw new Error('Process is OBSOLETE (read-only).')
 
     const { data, error } = await supabase.rpc('ensure_process_draft', {
@@ -487,8 +585,9 @@ function PcpPageContent() {
     const pv = await loadProjectView()
     const ensured = pv.current_draft_revision_id ?? (data as string | null) ?? null
     if (ensured) setDraftRevisionIdOverride(ensured)
+    await ensureDraftRowsHydrated(ensured, pv.current_open_revision_id ?? workingRevisionId)
     return ensured
-  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, project?.current_draft_revision_id, project?.status, loadProjectView])
+  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, project?.current_draft_revision_id, project?.current_open_revision_id, project?.status, loadProjectView, ensureDraftRowsHydrated, workingRevisionId])
 
   const loadAll = useCallback(async (forceRevisionId?: string | null) => {
     if (!projectId) return
@@ -497,6 +596,7 @@ function PcpPageContent() {
     try {
       const pv = await loadProjectView()
       const pcpYellowMax = await loadPcpSelectionThreshold()
+      setPcpYellowMax(pcpYellowMax)
       const opsRes = await supabase
         .from('operations')
         .select('id,project_id,operation_number,name,machine,operation,active')
@@ -520,7 +620,7 @@ function PcpPageContent() {
 
       const rowsRes = await supabase
         .from('control_plan_rows')
-        .select('id,revision_id,operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,frequency,reaction_plan,source,status,created_at,updated_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)')
+        .select('id,revision_id,operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,sample_size,frequency,reaction_plan,source,status,created_at,updated_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)')
         .eq('operations.project_id', projectId)
         .eq('revision_id', revId)
         .order('operation_number', { foreignTable: 'operations', ascending: true })
@@ -545,9 +645,30 @@ function PcpPageContent() {
         }))
       }
 
+      const loadLatestPfmeaRevisionId = async () => {
+        const res = await supabase
+          .from('pfmea_rows')
+          .select('revision_id,created_at,operations!inner(project_id)')
+          .eq('operations.project_id', projectId)
+          .order('created_at', { ascending: false })
+          .limit(200)
+
+        if (res.error) throw res.error
+        const rows = (res.data ?? []) as Array<{ revision_id?: string | null }>
+        return rows.find((row) => normalizeText(row.revision_id))?.revision_id ?? null
+      }
+
       let pfmeaSeedRows = revId ? await loadPfmeaSeeds(revId) : []
-      if (pfmeaSeedRows.filter((row) => isPfmeaSeedSelectedForPcp(row, pcpYellowMax)).length === 0 && pv.current_draft_revision_id && revId === pv.current_draft_revision_id && pv.current_open_revision_id && pv.current_open_revision_id !== revId) {
-        pfmeaSeedRows = await loadPfmeaSeeds(pv.current_open_revision_id)
+      if (pfmeaSeedRows.filter((row) => isPfmeaSeedSelectedForPcp(row, pcpYellowMax)).length === 0) {
+        const fallbackRevisionIds = [
+          pv.current_open_revision_id,
+          await loadLatestPfmeaRevisionId(),
+        ].filter((candidate, index, arr): candidate is string => !!candidate && arr.indexOf(candidate) === index && candidate !== revId)
+
+        for (const fallbackRevisionId of fallbackRevisionIds) {
+          pfmeaSeedRows = await loadPfmeaSeeds(fallbackRevisionId)
+          if (pfmeaSeedRows.filter((row) => isPfmeaSeedSelectedForPcp(row, pcpYellowMax)).length > 0) break
+        }
       }
 
       const requiredCounts: Record<string, number> = {}
@@ -579,9 +700,49 @@ function PcpPageContent() {
         const existing = existingByOperation.get(op.id) ?? []
         const pfmeaSeeds = seedRowsByOperation.get(op.id) ?? []
         const pfmeaSeedById = new Map(pfmeaSeeds.map((seed) => [seed.id, seed] as const))
+        const getSeedIndexForExistingRow = (row: PcpRow) => {
+          if (row.pfmea_row_id) {
+            const directIndex = pfmeaSeeds.findIndex((seed) => seed.id === row.pfmea_row_id)
+            if (directIndex >= 0) return directIndex
+          }
+          return pfmeaSeeds.findIndex((seed) =>
+            isEquivalentPcpRow(
+              {
+                operation_id: row.operation_id,
+                pfmea_row_id: row.pfmea_row_id ?? null,
+                failure_mode: row.failure_mode,
+                characteristic: row.characteristic,
+                class: row.class,
+                current_prevention: row.current_prevention,
+                current_detection: row.current_detection,
+              },
+              {
+                operation_id: seed.operation_id,
+                pfmea_row_id: seed.id,
+                failure_mode: seed.failure_mode,
+                characteristic: seed.characteristic,
+                class: seed.class,
+                current_prevention: seed.current_prevention,
+                current_detection: seed.current_detection,
+              }
+            )
+          )
+        }
+        const existingSorted = [...existing].sort((a, b) => {
+          const aSeedIndex = getSeedIndexForExistingRow(a)
+          const bSeedIndex = getSeedIndexForExistingRow(b)
+          const aHasSeed = aSeedIndex >= 0
+          const bHasSeed = bSeedIndex >= 0
+          if (aHasSeed && bHasSeed && aSeedIndex !== bSeedIndex) return aSeedIndex - bSeedIndex
+          if (aHasSeed !== bHasSeed) return aHasSeed ? -1 : 1
+          const aTime = getComparableTime(a.created_at)
+          const bTime = getComparableTime(b.created_at)
+          if (aTime !== bTime) return aTime - bTime
+          return normalizeText(a.id).localeCompare(normalizeText(b.id))
+        })
         const usedSeedIds = new Set<string>()
 
-        existing.forEach((row, index) => {
+        existingSorted.forEach((row, index) => {
           const linkedSeed =
             (row.pfmea_row_id ? pfmeaSeedById.get(row.pfmea_row_id) : null) ??
             (pfmeaSeeds[index] ?? null)
@@ -593,6 +754,8 @@ function PcpPageContent() {
             failure_mode: normalizeText(row.failure_mode) || normalizeText(linkedSeed?.failure_mode) || null,
             characteristic: normalizeText(row.characteristic) || normalizeText(linkedSeed?.characteristic),
             class: normalizeClassValue(row.class) ?? normalizeClassValue(linkedSeed?.class) ?? null,
+            severity: asInt1to10(row.severity) ?? asInt1to10(linkedSeed?.severity),
+            rpn: typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : (typeof linkedSeed?.rpn === 'number' && Number.isFinite(linkedSeed.rpn) ? linkedSeed.rpn : null),
             current_prevention: normalizeText(row.current_prevention) || normalizeText(linkedSeed?.current_prevention) || null,
             current_detection: normalizeText(row.current_detection) || normalizeText(linkedSeed?.current_detection) || null,
           }
@@ -608,13 +771,22 @@ function PcpPageContent() {
               normalizeText(row.failure_mode) !== (mergedPatch.failure_mode ?? '') ||
               normalizeText(row.characteristic) !== mergedPatch.characteristic ||
               normalizeClassValue(row.class) !== mergedPatch.class ||
+              asInt1to10(row.severity) !== (mergedPatch.severity ?? null) ||
+              (typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : null) !== (mergedPatch.rpn ?? null) ||
               normalizeText(row.current_prevention) !== (mergedPatch.current_prevention ?? '') ||
               normalizeText(row.current_detection) !== (mergedPatch.current_detection ?? '')
             )
           ) {
             pfmeaBackfillCandidates.push({
               id: row.id,
-              patch: mergedPatch,
+              patch: {
+                pfmea_row_id: mergedPatch.pfmea_row_id,
+                failure_mode: mergedPatch.failure_mode,
+                characteristic: mergedPatch.characteristic,
+                class: mergedPatch.class,
+                current_prevention: mergedPatch.current_prevention,
+                current_detection: mergedPatch.current_detection,
+              },
             })
           }
 
@@ -794,8 +966,18 @@ function PcpPageContent() {
       if ('source' in payload) payload.source = normalizeText(payload.source || 'MANUAL').toUpperCase()
       if ('status' in payload) payload.status = normalizeText(payload.status || 'OPEN').toUpperCase()
       if ('class' in payload) payload.class = normalizeClassValue((payload.class as string | null | undefined) ?? null)
+      let targetRow = row
+      let requiresReload = !hadDraftBeforeEdit
+      if (!isPlaceholderPcpRowId(row.id) && !row.__placeholder && row.revision_id !== finalRev) {
+        await ensureDraftRowsHydrated(finalRev, row.revision_id ?? project?.current_open_revision_id ?? workingRevisionId)
+        const mappedRow = await findEquivalentRowInRevision(row, finalRev)
+        if (!mappedRow) throw new Error('Failed to map PCP row into the current draft revision.')
+        targetRow = mappedRow
+        requiresReload = true
+        setEdit((prev) => (prev && prev.rowId === row.id ? { ...prev, rowId: mappedRow.id } : prev))
+      }
       if (isPlaceholderPcpRowId(row.id) || row.__placeholder) {
-        const insertPayload = {
+        const insertPayload = buildPcpRowPayload({
           operation_id: row.operation_id,
           revision_id: finalRev,
           pfmea_row_id: row.pfmea_row_id ?? null,
@@ -805,11 +987,12 @@ function PcpPageContent() {
           current_prevention: payload.current_prevention ?? row.current_prevention ?? '',
           current_detection: payload.current_detection ?? row.current_detection ?? '',
           control_method: payload.control_method ?? row.control_method ?? '',
+          sample_size: payload.sample_size ?? row.sample_size ?? '',
           frequency: payload.frequency ?? row.frequency ?? '',
           reaction_plan: payload.reaction_plan ?? row.reaction_plan ?? '',
           source: payload.source ?? row.source ?? 'MANUAL',
           status: payload.status ?? row.status ?? 'OPEN',
-        }
+        })
         const ins = await supabase.from('control_plan_rows').insert([insertPayload]).select('id,created_at,updated_at').single()
         if (ins.error) throw ins.error
         const newId = ins.data?.id
@@ -831,16 +1014,20 @@ function PcpPageContent() {
           )
         )
       } else {
-        const res = await supabase.from('control_plan_rows').update(payload).eq('id', row.id)
+        const res = await supabase.from('control_plan_rows').update(payload).eq('id', targetRow.id).eq('revision_id', finalRev)
         if (res.error) throw res.error
-        markDirty(row.id)
-        setRows((prev) => prev.map((x) => (x.id === row.id ? ({ ...x, ...payload } as PcpRow) : x)))
+        markDirty(targetRow.id)
+        if (requiresReload) {
+          await loadAll(finalRev)
+        } else {
+          setRows((prev) => prev.map((x) => (x.id === targetRow.id ? ({ ...x, ...payload } as PcpRow) : x)))
+        }
       }
-      if (!hadDraftBeforeEdit) await loadAll(finalRev)
+      if (!hadDraftBeforeEdit && (isPlaceholderPcpRowId(row.id) || row.__placeholder)) await loadAll(finalRev)
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     }
-  }, [readOnly, ensureDraftIfNeeded, project?.current_draft_revision_id, workingRevisionId, markDirty, loadAll])
+  }, [readOnly, ensureDraftIfNeeded, project?.current_draft_revision_id, project?.current_open_revision_id, workingRevisionId, markDirty, loadAll, ensureDraftRowsHydrated, findEquivalentRowInRevision])
 
   const deleteRow = useCallback(async (id: string) => {
     if (readOnly) return
@@ -856,6 +1043,7 @@ function PcpPageContent() {
       if (currentRowsForOperation.length <= requiredCount) {
         const clearPayload = {
           control_method: '',
+          sample_size: '',
           frequency: '',
           reaction_plan: '',
           source: currentRow.source || 'MANUAL',
@@ -1007,7 +1195,7 @@ function PcpPageContent() {
   const heroCard: React.CSSProperties = { ...card }
   const titleStyle: React.CSSProperties = { fontSize: 28, fontWeight: 600, letterSpacing: -0.3, color: SURFACE_TEXT }
   const subtitleStyle: React.CSSProperties = { marginTop: 4, fontSize: 13.5, color: 'rgba(255,255,255,0.78)' }
-  const frame: React.CSSProperties = { width: '94%', marginLeft: 'auto', marginRight: 'auto' }
+  const frame: React.CSSProperties = { width: '96%', marginLeft: 'auto', marginRight: 'auto' }
   const summaryTile: React.CSSProperties = {
     minHeight: 82,
     padding: '10px 12px',
@@ -1067,6 +1255,12 @@ function PcpPageContent() {
           color: inherit !important;
           padding: 0 !important;
           margin: 0 !important;
+          display: block !important;
+          line-height: inherit !important;
+          text-align: inherit !important;
+        }
+        .pfmeaTable input.pfmeaEditor {
+          height: 1.25em !important;
         }
         .pfmeaTable textarea.pfmeaEditor {
           white-space: pre-wrap !important;
@@ -1074,7 +1268,8 @@ function PcpPageContent() {
           word-break: break-word !important;
           resize: none !important;
           overflow: hidden !important;
-          min-height: 18px !important;
+          min-height: 1.25em !important;
+          height: 1.25em !important;
         }
         .pfmeaTd {
           padding: 10px 10px !important;
@@ -1088,6 +1283,11 @@ function PcpPageContent() {
           font-size: 16px;
           line-height: 1.25;
           border: 0 !important;
+        }
+        .pfmeaTd.singleLine.editable {
+          height: 45px;
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
         }
         .pfmeaRow:not(:last-child) .pfmeaTd {
           border-bottom: 1px solid rgba(255,255,255,0.14) !important;
@@ -1135,16 +1335,10 @@ function PcpPageContent() {
             <div style={titleStyle}>PCP</div>
             <div style={subtitleStyle}>Manage the Production Control Plan for the selected process and publish PCP revisions.</div>
           </div>
-          <div style={{ width: '100%', maxWidth: 1180, marginLeft: 'auto', display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) repeat(8, minmax(0, 1fr))', gap: 10, alignSelf: 'flex-start' }}>
+          <div style={{ marginLeft: 'auto', display: 'grid', gridTemplateColumns: '174px 116px 116px', gap: 10, alignSelf: 'flex-start' }}>
             <SummaryCard title="Process" value={project?.name ? 1 : 0} displayValue={project?.name ?? '-'} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={{ ...summaryValue, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
             <SummaryCard title="Revision" value={0} displayValue={(workingRevisionLabel ?? '-').split('.').at(-1) ?? '-'} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
-            <SummaryCard title="Operations" value={ops.length} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
             <SummaryCard title="PCP rows" value={rowsSorted.length} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
-            <SummaryCard title="Open" value={summary.open} bg="rgba(251,146,60,0.18)" bd="rgba(251,146,60,0.45)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
-            <SummaryCard title="Review required" value={summary.review} bg="rgba(239,68,68,0.12)" bd="rgba(239,68,68,0.35)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
-            <SummaryCard title="Closed" value={summary.closed} bg="rgba(34,197,94,0.18)" bd="rgba(34,197,94,0.45)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
-            <div />
-            <div />
           </div>
         </div>
       </div>
@@ -1158,10 +1352,10 @@ function PcpPageContent() {
           <Link href={`/pfmea?project=${projectId}`} className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }}>PFMEA</Link>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => setColumnFiltersOpen((v) => !v)}>{columnFiltersOpen ? 'Hide columns' : 'Set columns'}</button>
           {isEditOwner ? <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => { setSaveDescription(''); setShowSave(true) }} disabled={readOnly || !isDirty}>Save PCP</button> : null}
-          <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => void loadRevisionHistory().then(() => setHistoryOpen(true))} disabled={!projectId}>Revision History</button>
           <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29, opacity: sessionBusy ? 0.6 : 1 }} onClick={() => void (isEditOwner ? discardDraftAndCloseSession() : startEditSession())} disabled={sessionBusy || isObsolete || (!isEditOwner && isLockedByOther && !isChampion)}>{sessionBusy ? 'Please wait...' : isEditOwner ? 'Discard draft' : isLockedByOther ? (isChampion ? 'Take over PCP' : 'PCP locked') : 'Edit PCP'}</button>
+          <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => void loadRevisionHistory().then(() => setHistoryOpen(true))} disabled={!projectId}>Revision History</button>
+          <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => setColumnFiltersOpen((v) => !v)}>{columnFiltersOpen ? 'Hide columns' : 'Set columns'}</button>
         </div>
       </div>
 
@@ -1212,36 +1406,47 @@ function PcpPageContent() {
                 {isColumnVisible('failure_mode') ? <Th w={widthOf('failure_mode')}>FAILURE MODE</Th> : null}
                 {isColumnVisible('characteristic') ? <Th w={widthOf('characteristic')}>CHARACTERISTIC</Th> : null}
                 {isColumnVisible('class') ? <Th w={widthOf('class')}>CLASS</Th> : null}
+                {isColumnVisible('severity') ? <Th w={widthOf('severity')}>SEV</Th> : null}
+                {isColumnVisible('rpn') ? <Th w={widthOf('rpn')}>RPN</Th> : null}
                 {isColumnVisible('current_prevention') ? <Th w={widthOf('current_prevention')}>CURRENT CONTROLS (PREV)</Th> : null}
                 {isColumnVisible('current_detection') ? <Th w={widthOf('current_detection')}>CURRENT CONTROLS (DET)</Th> : null}
                 {isColumnVisible('control_method') ? <Th w={widthOf('control_method')}>CONTROL METHOD</Th> : null}
+                {isColumnVisible('sample_size') ? <Th w={widthOf('sample_size')}>SAMPLE SIZE</Th> : null}
                 {isColumnVisible('frequency') ? <Th w={widthOf('frequency')}>FREQUENCY</Th> : null}
                 {isColumnVisible('reaction_plan') ? <Th w={widthOf('reaction_plan')}>REACTION PLAN</Th> : null}
-                {isColumnVisible('source') ? <Th w={widthOf('source')}>SOURCE</Th> : null}
-                {isColumnVisible('status') ? <Th w={widthOf('status')}>STATUS</Th> : null}
-                {isColumnVisible('updated') ? <Th w={widthOf('updated')}>UPDATED</Th> : null}
-                {isColumnVisible('delete') ? <Th w={widthOf('delete')} /> : null}
               </tr>
             </thead>
             <tbody>
               {rowsSorted.map((r) => (
                 <tr key={r.id} className="pfmeaRow">
+                  {(() => {
+                    const severityValue = asInt1to10(r.severity)
+                    const severityHighlighted = severityValue != null && severityValue >= 9
+                    const rpnValue = typeof r.rpn === 'number' && Number.isFinite(r.rpn) ? r.rpn : null
+                    const rpnHighlighted = rpnValue != null && rpnValue > pcpYellowMax
+                    const highlightedMetricStyle: React.CSSProperties = {
+                      color: '#d9a86c',
+                    }
+                    return (
+                      <>
                   {isColumnVisible('id') ? <TdRead value={String(r.operations?.operation_number ?? '-')} className="pfmeaTd center gray singleLine" /> : null}
-                  {isColumnVisible('station') ? <TdRead value={r.operations?.machine ?? ''} className="pfmeaTd singleLine" /> : null}
-                  {isColumnVisible('operation') ? <TdRead value={r.operations?.operation ?? ''} className="pfmeaTd singleLine" /> : null}
-                  {isColumnVisible('process_step') ? <TdRead value={r.operations?.name ?? ''} className="pfmeaTd singleLine" /> : null}
-                  {isColumnVisible('failure_mode') ? <TdText value={r.failure_mode} editing={edit?.rowId === r.id && edit?.col === 'failure_mode'} onStart={() => setEdit({ rowId: r.id, col: 'failure_mode' })} onCommit={(v) => void updateRow(r, { failure_mode: v })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
-                  {isColumnVisible('characteristic') ? <TdText value={r.characteristic} editing={edit?.rowId === r.id && edit?.col === 'characteristic'} onStart={() => setEdit({ rowId: r.id, col: 'characteristic' })} onCommit={(v) => void updateRow(r, { characteristic: v })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
-                  {isColumnVisible('class') ? <TdSelectPopup value={r.class} editing={edit?.rowId === r.id && edit?.col === 'class'} onStart={() => setEdit({ rowId: r.id, col: 'class' })} onCommit={(v) => void updateRow(r, { class: v || null })} onCancel={() => setEdit(null)} options={['', 'SC', 'CC']} disabled={readOnly} /> : null}
-                  {isColumnVisible('current_prevention') ? <TdText value={r.current_prevention} editing={edit?.rowId === r.id && edit?.col === 'current_prevention'} onStart={() => setEdit({ rowId: r.id, col: 'current_prevention' })} onCommit={(v) => void updateRow(r, { current_prevention: v })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
-                  {isColumnVisible('current_detection') ? <TdText value={r.current_detection} editing={edit?.rowId === r.id && edit?.col === 'current_detection'} onStart={() => setEdit({ rowId: r.id, col: 'current_detection' })} onCommit={(v) => void updateRow(r, { current_detection: v })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
+                  {isColumnVisible('station') ? <TdRead value={r.operations?.machine ?? ''} className="pfmeaTd gray singleLine" /> : null}
+                  {isColumnVisible('operation') ? <TdRead value={r.operations?.operation ?? ''} className="pfmeaTd gray singleLine" /> : null}
+                  {isColumnVisible('process_step') ? <TdRead value={r.operations?.name ?? ''} className="pfmeaTd gray singleLine" /> : null}
+                  {isColumnVisible('failure_mode') ? <TdText value={r.failure_mode} editing={edit?.rowId === r.id && edit?.col === 'failure_mode'} onStart={() => setEdit({ rowId: r.id, col: 'failure_mode' })} onCommit={(v) => void updateRow(r, { failure_mode: v })} onCancel={() => setEdit(null)} disabled={readOnly} className="gray" /> : null}
+                  {isColumnVisible('characteristic') ? <TdText value={r.characteristic} editing={edit?.rowId === r.id && edit?.col === 'characteristic'} onStart={() => setEdit({ rowId: r.id, col: 'characteristic' })} onCommit={(v) => void updateRow(r, { characteristic: v })} onCancel={() => setEdit(null)} disabled={readOnly} className="gray" /> : null}
+                  {isColumnVisible('class') ? <TdClassPopup value={r.class} editing={edit?.rowId === r.id && edit?.col === 'class'} onStart={() => setEdit({ rowId: r.id, col: 'class' })} onCommit={(v) => void updateRow(r, { class: v || null })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
+                  {isColumnVisible('severity') ? <TdRead value={r.severity == null ? '' : String(r.severity)} className="pfmeaTd center gray singleLine" style={severityHighlighted ? highlightedMetricStyle : undefined} /> : null}
+                  {isColumnVisible('rpn') ? <TdRead value={r.rpn == null ? '' : String(r.rpn)} className="pfmeaTd center gray singleLine" style={rpnHighlighted ? highlightedMetricStyle : undefined} /> : null}
+                  {isColumnVisible('current_prevention') ? <TdText value={r.current_prevention} editing={edit?.rowId === r.id && edit?.col === 'current_prevention'} onStart={() => setEdit({ rowId: r.id, col: 'current_prevention' })} onCommit={(v) => void updateRow(r, { current_prevention: v })} onCancel={() => setEdit(null)} disabled={readOnly} className="gray" /> : null}
+                  {isColumnVisible('current_detection') ? <TdText value={r.current_detection} editing={edit?.rowId === r.id && edit?.col === 'current_detection'} onStart={() => setEdit({ rowId: r.id, col: 'current_detection' })} onCommit={(v) => void updateRow(r, { current_detection: v })} onCancel={() => setEdit(null)} disabled={readOnly} className="gray" /> : null}
                   {isColumnVisible('control_method') ? <TdText value={r.control_method} editing={edit?.rowId === r.id && edit?.col === 'control_method'} onStart={() => setEdit({ rowId: r.id, col: 'control_method' })} onCommit={(v) => void updateRow(r, { control_method: v })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
+                  {isColumnVisible('sample_size') ? <TdText value={r.sample_size} editing={edit?.rowId === r.id && edit?.col === 'sample_size'} onStart={() => setEdit({ rowId: r.id, col: 'sample_size' })} onCommit={(v) => void updateRow(r, { sample_size: v })} onCancel={() => setEdit(null)} disabled={readOnly} singleLine /> : null}
                   {isColumnVisible('frequency') ? <TdText value={r.frequency} editing={edit?.rowId === r.id && edit?.col === 'frequency'} onStart={() => setEdit({ rowId: r.id, col: 'frequency' })} onCommit={(v) => void updateRow(r, { frequency: v })} onCancel={() => setEdit(null)} disabled={readOnly} singleLine /> : null}
                   {isColumnVisible('reaction_plan') ? <TdText value={r.reaction_plan} editing={edit?.rowId === r.id && edit?.col === 'reaction_plan'} onStart={() => setEdit({ rowId: r.id, col: 'reaction_plan' })} onCommit={(v) => void updateRow(r, { reaction_plan: v })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
-                  {isColumnVisible('source') ? <TdSelectPopup value={r.source} editing={edit?.rowId === r.id && edit?.col === 'source'} onStart={() => setEdit({ rowId: r.id, col: 'source' })} onCommit={(v) => void updateRow(r, { source: v })} onCancel={() => setEdit(null)} options={SOURCE_OPTIONS} disabled={readOnly} /> : null}
-                  {isColumnVisible('status') ? <TdSelectPopup value={r.status} editing={edit?.rowId === r.id && edit?.col === 'status'} onStart={() => setEdit({ rowId: r.id, col: 'status' })} onCommit={(v) => void updateRow(r, { status: v })} onCancel={() => setEdit(null)} options={STATUS_OPTIONS} disabled={readOnly} /> : null}
-                  {isColumnVisible('updated') ? <TdRead value={formatDateOnly(r.updated_at)} className="pfmeaTd center gray singleLine" /> : null}
-                  {isColumnVisible('delete') ? <td className="pfmeaTd center"><button className="trashBtn" onClick={() => deleteRow(r.id)} disabled={readOnly || isPlaceholderPcpRowId(r.id)}>x</button></td> : null}
+                      </>
+                    )
+                  })()}
                 </tr>
               ))}
             </tbody>
@@ -1320,22 +1525,114 @@ function Th(props: { w: string; children?: React.ReactNode }) {
   return <th style={{ border: '1px solid rgba(255,255,255,0.14)', background: SURFACE_PANEL_BG, color: SURFACE_TEXT, textAlign: 'center', fontSize: 12, padding: '8px 10px', fontWeight: 800, width: props.w }}>{props.children}</th>
 }
 
-function TdRead(props: { value: string; className?: string }) {
-  return <td className={props.className ?? 'pfmeaTd singleLine'}>{props.value ?? ''}</td>
+function TdRead(props: { value: string; className?: string; style?: React.CSSProperties }) {
+  return <td className={props.className ?? 'pfmeaTd singleLine'} style={props.style}>{props.value ?? ''}</td>
 }
 
-function TdText(props: { value: string | null; editing: boolean; onStart: () => void; onCommit: (v: string) => void; onCancel: () => void; disabled?: boolean; singleLine?: boolean }) {
+function TdText(props: { value: string | null; editing: boolean; onStart: () => void; onCommit: (v: string) => void; onCancel: () => void; disabled?: boolean; singleLine?: boolean; className?: string; style?: React.CSSProperties }) {
   const [val, setVal] = useState(props.value ?? '')
   useEffect(() => setVal(props.value ?? ''), [props.value])
-  if (props.disabled) return <td className={`pfmeaTd ${props.singleLine ? 'singleLine' : ''}`}>{val || ''}</td>
-  if (!props.editing) return <td className={`pfmeaTd editable ${props.singleLine ? 'singleLine' : ''}`} onClick={props.onStart}>{val || ''}</td>
-  return <td className={`pfmeaTd editable ${props.singleLine ? 'singleLine' : ''}`}>{props.singleLine ? <input className="pfmeaEditor" value={val} onChange={(e) => setVal(e.target.value)} onBlur={() => { props.onCancel(); if (val !== (props.value ?? '')) props.onCommit(val) }} /> : <textarea className="pfmeaEditor" value={val} onChange={(e) => setVal(e.target.value)} onBlur={() => { props.onCancel(); if (val !== (props.value ?? '')) props.onCommit(val) }} />}</td>
+  const cellClassName = `pfmeaTd ${props.className ?? ''} ${props.singleLine ? 'singleLine' : ''}`.trim()
+  const singleLineCellStyle: React.CSSProperties | undefined = props.singleLine ? {
+    ...props.style,
+    height: 45,
+    paddingTop: 0,
+    paddingBottom: 0,
+    verticalAlign: 'middle',
+  } : props.style
+  const singleLineEditorStyle: React.CSSProperties = {
+    display: 'block',
+    width: '100%',
+    textAlign: 'center',
+    height: 45,
+    lineHeight: '45px',
+    boxSizing: 'border-box',
+  }
+  if (props.disabled) return <td className={cellClassName} style={singleLineCellStyle}>{val || ''}</td>
+  if (!props.editing) return <td className={`${cellClassName} editable`.trim()} style={singleLineCellStyle} onClick={props.onStart}>{val || ''}</td>
+  return <td className={`${cellClassName} editable`.trim()} style={singleLineCellStyle}>{props.singleLine ? <input autoFocus className="pfmeaEditor" style={singleLineEditorStyle} value={val} onChange={(e) => setVal(e.target.value)} onBlur={() => { props.onCancel(); if (val !== (props.value ?? '')) props.onCommit(val) }} /> : <textarea autoFocus className="pfmeaEditor" rows={1} value={val} onChange={(e) => setVal(e.target.value)} onBlur={() => { props.onCancel(); if (val !== (props.value ?? '')) props.onCommit(val) }} />}</td>
 }
 
-function TdSelectPopup(props: { value: string | null; editing: boolean; onStart: () => void; onCommit: (v: string) => void; onCancel: () => void; options: string[]; disabled?: boolean }) {
-  if (props.disabled) return <td className="pfmeaTd center gray singleLine">{props.value ?? ''}</td>
-  if (!props.editing) return <td className="pfmeaTd editable center gray singleLine" onClick={props.onStart}>{props.value ?? ''}</td>
-  return <td className="pfmeaTd editable center gray singleLine" style={{ position: 'relative' }}><button type="button" style={{ width: '100%', border: 0, background: 'transparent', fontWeight: 700, color: SURFACE_TEXT }}>{props.value ?? '-'}</button><div onMouseLeave={props.onCancel} style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 120, width: 260, maxHeight: 240, overflowY: 'auto', borderRadius: SURFACE_RADIUS, border: `1px solid ${SURFACE_BORDER}`, background: 'rgb(52, 57, 69)', boxShadow: '0 14px 32px rgba(0,0,0,0.16)', padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>{props.options.map((opt) => <button key={opt} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { props.onCancel(); props.onCommit(opt) }} style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid transparent', borderRadius: 8, background: opt === props.value ? 'rgba(255,255,255,0.12)' : 'transparent', color: SURFACE_TEXT, padding: '7px 8px', cursor: 'pointer', fontSize: 12 }}>{opt}</button>)}</div></td>
+function TdClassPopup(props: { value: string | null; editing: boolean; onStart: () => void; onCommit: (v: string) => void; onCancel: () => void; disabled?: boolean }) {
+  const [anchorEl, setAnchorEl] = useState<HTMLTableCellElement | null>(null)
+  const [hoverOpen, setHoverOpen] = useState(false)
+  const normalizedValue = normalizeClassValue(props.value)
+  const details = normalizedValue ? CLASS_OPTION_DETAILS[normalizedValue] : null
+  const setAnchorRef = useCallback((node: HTMLTableCellElement | null) => {
+    setAnchorEl((current) => current === node ? current : node)
+  }, [])
+  const detailsPopup = hoverOpen && anchorEl && details && typeof document !== 'undefined'
+    ? createPortal(
+        <div
+          data-pfmea-popup="true"
+          style={{
+            ...anchoredPopupStyle(anchorEl, 360),
+            zIndex: 130,
+            overflowY: 'auto',
+            borderRadius: 10,
+            border: `1px solid ${SURFACE_BORDER}`,
+            background: 'rgb(52, 57, 69)',
+            boxShadow: '0 14px 30px rgba(0,0,0,0.18)',
+            padding: 10,
+            textAlign: 'left',
+            position: 'fixed',
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#d9a86c', marginBottom: 6 }}>
+            {details.title}
+          </div>
+          <div style={{ display: 'grid', gap: 4 }}>
+            {details.description.map((line, idx) => (
+              <div key={`${normalizedValue}-detail-${idx}`} style={{ fontSize: 12, color: '#d9a86c', lineHeight: 1.35, fontWeight: 400 }}>
+                - {line}
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )
+    : null
+
+  if (props.disabled) {
+    return (
+      <td
+        ref={setAnchorRef}
+        className="pfmeaTd center gray singleLine"
+        style={{ color: '#d9a86c' }}
+        onMouseEnter={() => details ? setHoverOpen(true) : null}
+        onMouseLeave={() => setHoverOpen(false)}
+      >
+        {props.value ?? ''}
+        {detailsPopup}
+      </td>
+    )
+  }
+
+  if (!props.editing) {
+    return (
+      <td
+        ref={setAnchorRef}
+        className="pfmeaTd editable center gray singleLine"
+        style={{ color: '#d9a86c' }}
+        onClick={props.onStart}
+        onMouseEnter={() => details ? setHoverOpen(true) : null}
+        onMouseLeave={() => setHoverOpen(false)}
+      >
+        {props.value ?? ''}
+        {detailsPopup}
+      </td>
+    )
+  }
+
+  return <TdSelectPopup value={props.value} editing={props.editing} onStart={props.onStart} onCommit={props.onCommit} onCancel={props.onCancel} options={PCP_CLASS_OPTIONS} disabled={props.disabled} className="gray" textColor="#d9a86c" />
+}
+
+function TdSelectPopup(props: { value: string | null; editing: boolean; onStart: () => void; onCommit: (v: string) => void; onCancel: () => void; options: string[]; disabled?: boolean; className?: string; textColor?: string }) {
+  const cellClassName = `pfmeaTd center singleLine ${props.className ?? ''}`.trim()
+  const textColor = props.textColor ?? SURFACE_TEXT
+  if (props.disabled) return <td className={cellClassName} style={{ color: textColor }}>{props.value ?? ''}</td>
+  if (!props.editing) return <td className={`${cellClassName} editable`.trim()} style={{ color: textColor }} onClick={props.onStart}>{props.value ?? ''}</td>
+  return <td className={`${cellClassName} editable`.trim()} style={{ position: 'relative', color: textColor }}><button type="button" style={{ width: '100%', border: 0, background: 'transparent', fontWeight: 700, color: textColor }}>{props.value ?? '-'}</button><div onMouseLeave={props.onCancel} style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 120, width: 260, maxHeight: 240, overflowY: 'auto', borderRadius: SURFACE_RADIUS, border: `1px solid ${SURFACE_BORDER}`, background: 'rgb(52, 57, 69)', boxShadow: '0 14px 32px rgba(0,0,0,0.16)', padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>{props.options.map((opt) => <button key={opt} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { props.onCancel(); props.onCommit(opt) }} style={{ display: 'block', width: '100%', textAlign: 'left', border: '1px solid transparent', borderRadius: 8, background: opt === props.value ? 'rgba(255,255,255,0.12)' : 'transparent', color: textColor, padding: '7px 8px', cursor: 'pointer', fontSize: 12 }}>{opt}</button>)}</div></td>
 }
 
 const smallBtn: React.CSSProperties = { padding: '2px 8px', borderRadius: 999, border: `1px solid ${SURFACE_BORDER}`, fontSize: 11, height: 24 }

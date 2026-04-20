@@ -23,6 +23,9 @@ alter table if exists public.control_plan_rows
 alter table if exists public.control_plan_rows
   add column if not exists current_detection text null;
 
+alter table if exists public.control_plan_rows
+  add column if not exists sample_size text null;
+
 do $$
 declare p record;
 begin

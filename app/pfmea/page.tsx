@@ -220,7 +220,6 @@ const PFMEA_COLUMNS: Array<{ id: PfmeaColumnId; label: string; width: number }> 
   { id: 'station', label: 'STATION', width: 150 },
   { id: 'operation', label: 'OPERATION', width: 150 },
   { id: 'process_step', label: 'PROCESS STEP', width: 150 },
-  { id: 'row_no', label: 'ROW#', width: 110 },
   { id: 'failure_mode', label: 'FAILURE MODE', width: 180 },
   { id: 'characteristic', label: 'CHARACTERISTIC', width: 180 },
   { id: 'class', label: 'CLASS', width: 70 },
@@ -254,7 +253,7 @@ const PFMEA_COLUMNS_BY_ID: Record<PfmeaColumnId, { id: PfmeaColumnId; label: str
 const PFMEA_COLUMN_FILTER_GROUPS: Array<{ title: string; ids: PfmeaColumnId[] }> = [
   {
     title: 'Process Context',
-    ids: ['id', 'station', 'operation', 'process_step', 'row_no'],
+    ids: ['id', 'station', 'operation', 'process_step'],
   },
   {
     title: 'Current Risk Analysis',
@@ -271,7 +270,7 @@ const DEFAULT_VISIBLE_COLUMNS: Record<PfmeaColumnId, boolean> = {
   station: true,
   operation: true,
   process_step: true,
-  row_no: true,
+  row_no: false,
   failure_mode: true,
   effect: true,
   sev: true,
@@ -404,6 +403,13 @@ function colorText(c: RiskColor) {
   return 'rgb(34,197,94)'
 }
 
+function colorBorder(c: RiskColor) {
+  if (c === 'red') return rgba(COLOR_HEX[c], 0.35)
+  if (c === 'orange') return rgba(COLOR_HEX[c], 0.45)
+  if (c === 'yellow') return rgba(COLOR_HEX[c], 0.55)
+  return rgba(COLOR_HEX[c], 0.45)
+}
+
 function colorFromRpn(sev: number, doVal: number, t: RpnThresholds): RiskColor {
   const rpn = sev * doVal
   if (rpn <= t.greenMax) return 'green'
@@ -483,8 +489,14 @@ function isPfmeaSelectedForPcp(row: Pick<PfmeaRow, 'pcp' | 'class' | 'severity'>
 function pfmeaRevisionNumberFromLabel(label: string | null | undefined) {
   const raw = (label ?? '').toString().trim()
   if (!raw) return '-'
-  const parts = raw.split('.').map((v) => v.trim())
-  return parts[1] || parts[0] || '-'
+  const parts = raw.split('.').map((v) => v.trim()).filter(Boolean)
+  if (parts.length === 0) return '-'
+  const normalized = parts.map((part) => part.match(/\d+/)?.[0] ?? part).filter(Boolean)
+  if (normalized.length === 0) return '-'
+  const direct = normalized[1]
+  if (direct && direct !== '0') return direct
+  const nonZero = normalized.find((part) => part !== '0')
+  return nonZero || direct || normalized[0] || '-'
 }
 
 function nextPfmeaRevisionLabel(label: string | null | undefined) {
@@ -1246,6 +1258,22 @@ function buildPfmeaPublishedSyncPatch(row: PfmeaRow) {
   }
 }
 
+function buildPfmeaPublishedMetadataPatch(meta: {
+  created_at: string
+  row_no: string | null
+  failure_mode_group_id: string | null
+  failure_block_group_id: string | null
+  action_plan_group_id: string | null
+}) {
+  return {
+    created_at: meta.created_at,
+    row_no: meta.row_no,
+    failure_mode_group_id: meta.failure_mode_group_id,
+    failure_block_group_id: meta.failure_block_group_id,
+    action_plan_group_id: meta.action_plan_group_id,
+  }
+}
+
 function hasFailureBlockContext(row: PfmeaRow) {
   return hasFailureModeContext(row) && !!(row.effect ?? '').trim() && asInt1to10(row.severity) != null
 }
@@ -1467,6 +1495,8 @@ function PfmeaFullPageContent() {
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null)
   const [highlightedMissingCells, setHighlightedMissingCells] = useState<string[] | null>(null)
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
+  const tableHeadRef = useRef<HTMLTableSectionElement | null>(null)
+  const [stickyMergedCellTop, setStickyMergedCellTop] = useState(52)
   const [columnFiltersOpen, setColumnFiltersOpen] = useState(false)
   const [visibleColumns, setVisibleColumns] = useState<Record<PfmeaColumnId, boolean>>(DEFAULT_VISIBLE_COLUMNS)
   const pendingCellValuesRef = useRef<Record<string, unknown>>({})
@@ -1734,6 +1764,26 @@ function PfmeaFullPageContent() {
       window.localStorage.setItem(`${PFMEA_VISIBLE_COLUMNS_KEY_PREFIX}:${userId}`, JSON.stringify(visibleColumns))
     } catch {}
   }, [userId, visibleColumns])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const updateStickyMergedCellTop = () => {
+      const headerHeight = tableHeadRef.current?.getBoundingClientRect().height ?? 0
+      const next = Math.max(44, Math.ceil(headerHeight) + MERGED_CELL_TOP_PADDING)
+      setStickyMergedCellTop((current) => (current === next ? current : next))
+    }
+
+    updateStickyMergedCellTop()
+
+    const rafId = window.requestAnimationFrame(updateStickyMergedCellTop)
+    window.addEventListener('resize', updateStickyMergedCellTop)
+
+    return () => {
+      window.cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', updateStickyMergedCellTop)
+    }
+  }, [visibleColumns])
 
   useEffect(() => {
     let alive = true
@@ -2147,6 +2197,14 @@ function PfmeaFullPageContent() {
       return colorFromRpn(s, d, rmRpn)
     }
     return colorFromRpn(s, d, rmRpn)
+  }
+
+  function getRiskColorForAverageRpn(value: number | null): RiskColor | null {
+    if (value == null || !Number.isFinite(value)) return null
+    if (value <= rmRpn.greenMax) return 'green'
+    if (value <= rmRpn.yellowMax) return 'yellow'
+    if (value <= rmRpn.orangeMax) return 'orange'
+    return 'red'
   }
 
   /* ---------- helper: reload only project view ---------- */
@@ -3451,6 +3509,11 @@ function PfmeaFullPageContent() {
         (workingRevisionId && workingRevisionId !== project?.current_open_revision_id ? workingRevisionId : null)
       if (!draftRevisionId) throw new Error('No draft revision found.')
 
+      if (editorRef.current && typeof editorRef.current.blur === 'function') {
+        editorRef.current.blur()
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      }
+
       await flushPendingCellUpdates()
       await flushPendingTransientDeletes()
       const cleanedRows = await cleanupEmptyTransientRows()
@@ -3472,11 +3535,18 @@ function PfmeaFullPageContent() {
           : data && typeof data === 'object' && 'id' in (data as Record<string, unknown>) && typeof (data as Record<string, unknown>).id === 'string'
             ? ((data as Record<string, unknown>).id as string)
             : null
+      let publishedOpenRevisionLabel: string | null = null
 
       if (!publishedRevisionId) {
         try {
           const publishedView = await loadProjectView({ syncDraftOverride: false })
           publishedRevisionId = publishedView.current_open_revision_id ?? null
+          publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
+        } catch {}
+      } else {
+        try {
+          const publishedView = await loadProjectView({ syncDraftOverride: false })
+          publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
         } catch {}
       }
 
@@ -3488,19 +3558,21 @@ function PfmeaFullPageContent() {
         }
       }
 
-      let revisionLabel = '0.0.0'
+      let revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
       try {
-        const revRes = await supabase
-          .from('process_module_revisions')
-          .select('revision_label')
-          .eq('project_id', projectId)
-          .eq('module', 'PFMEA')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (!revRes.error) {
-          const row = (revRes.data ?? null) as { revision_label?: string | null } | null
-          revisionLabel = (row?.revision_label ?? '0.0.0').toString()
+        if (!normalizeHistoryText(revisionLabel) || revisionLabel === '0.0.0') {
+          const revRes = await supabase
+            .from('process_module_revisions')
+            .select('revision_label')
+            .eq('project_id', projectId)
+            .eq('module', 'PFMEA')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (!revRes.error) {
+            const row = (revRes.data ?? null) as { revision_label?: string | null } | null
+            revisionLabel = (row?.revision_label ?? '0.0.0').toString()
+          }
         }
       } catch {}
 
@@ -3583,7 +3655,7 @@ function PfmeaFullPageContent() {
       const metadataBySourceId = new Map(sourceMeta.map((item) => [item.id, item] as const))
       const updates: Array<{
         id: string
-        patch: ReturnType<typeof buildPfmeaPublishedSyncPatch>
+        patch: ReturnType<typeof buildPfmeaPublishedMetadataPatch>
       }> = []
 
       if (
@@ -3597,14 +3669,7 @@ function PfmeaFullPageContent() {
           if (!meta) continue
           updates.push({
             id: publishedRow.id,
-            patch: {
-              ...buildPfmeaPublishedSyncPatch(sourceRow),
-              created_at: meta.created_at,
-              row_no: meta.row_no,
-              failure_mode_group_id: meta.failure_mode_group_id,
-              failure_block_group_id: meta.failure_block_group_id,
-              action_plan_group_id: meta.action_plan_group_id,
-            },
+            patch: buildPfmeaPublishedMetadataPatch(meta),
           })
         }
       } else {
@@ -3630,14 +3695,7 @@ function PfmeaFullPageContent() {
             if (!meta) continue
             updates.push({
               id: publishedRow.id,
-              patch: {
-                ...buildPfmeaPublishedSyncPatch(sourceRow),
-                created_at: meta.created_at,
-                row_no: meta.row_no,
-                failure_mode_group_id: meta.failure_mode_group_id,
-                failure_block_group_id: meta.failure_block_group_id,
-                action_plan_group_id: meta.action_plan_group_id,
-              },
+              patch: buildPfmeaPublishedMetadataPatch(meta),
             })
           }
         }
@@ -4092,10 +4150,7 @@ function PfmeaFullPageContent() {
     }
 
     const avg = values.reduce((acc, x) => acc + x, 0) / values.length
-    let color: RiskColor = 'red'
-    if (avg <= rmRpn.greenMax) color = 'green'
-    else if (avg <= rmRpn.yellowMax) color = 'yellow'
-    else if (avg <= rmRpn.orangeMax) color = 'orange'
+    const color = getRiskColorForAverageRpn(avg) ?? 'red'
 
     return { avg, color, count: values.length, buckets }
   }, [rowsSorted, tableRows, rmMode, rmCells, rmRpn])
@@ -4359,7 +4414,7 @@ function PfmeaFullPageContent() {
     )
   }
 
-  const frame: React.CSSProperties = { width: '94%', marginLeft: 'auto', marginRight: 'auto' }
+  const frame: React.CSSProperties = { width: '96%', marginLeft: 'auto', marginRight: 'auto' }
   const card: React.CSSProperties = {
     background: SURFACE_BG,
     borderStyle: 'solid',
@@ -4469,7 +4524,11 @@ function PfmeaFullPageContent() {
         }
 
         .pfmeaTd {
-          padding: 10px 10px !important;
+          padding:
+            var(--pfmea-td-pad-top, 10px)
+            10px
+            var(--pfmea-td-pad-bottom, 10px)
+            10px !important;
           vertical-align: middle;
           background: rgba(255,255,255,0.03);
           color: #e1e5ec;
@@ -4535,26 +4594,69 @@ function PfmeaFullPageContent() {
           position: relative;
           white-space: normal !important;
         }
+        .pfmeaTextCellShell {
+          position: relative;
+          width: 100%;
+        }
+        .pfmeaTextCellContent {
+          width: 100%;
+        }
+        .pfmeaTextCellShell.hasSideAction .pfmeaTextCellContent {
+          padding-left: 34px;
+          padding-right: 34px;
+        }
         .pfmeaInlineAddBtn {
-          position: static;
-          flex: 0 0 auto;
-          width: 24px;
-          height: 24px;
+          position: absolute;
+          top: 50%;
+          right: 0;
+          transform: translateY(-50%);
+          width: 20px;
+          height: 20px;
           border-radius: 999px;
           border: 1px solid rgba(96, 165, 250, 0.75);
           background: rgba(59, 130, 246, 0.3);
           color: #ffffff;
-          font-size: 16px;
+          font-size: 13px;
           font-weight: 700;
           line-height: 1;
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          opacity: 0;
+          pointer-events: none;
+          z-index: 3;
+          transition: opacity 120ms ease, background 120ms ease, border-color 120ms ease;
+          box-shadow: 0 4px 10px rgba(37, 99, 235, 0.22);
+        }
+        .pfmeaInlineAddGlyph {
+          position: relative;
+          width: 10px;
+          height: 10px;
+          display: inline-block;
+        }
+        .pfmeaInlineAddGlyph::before,
+        .pfmeaInlineAddGlyph::after {
+          content: '';
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          background: currentColor;
+          border-radius: 999px;
+          transform: translate(-50%, -50%);
+        }
+        .pfmeaInlineAddGlyph::before {
+          width: 10px;
+          height: 2px;
+        }
+        .pfmeaInlineAddGlyph::after {
+          width: 2px;
+          height: 10px;
+        }
+        .pfmeaTd.editable:hover .pfmeaTextCellShell.hasSideAction .pfmeaInlineAddBtn,
+        .pfmeaTd.editable:focus-within .pfmeaTextCellShell.hasSideAction .pfmeaInlineAddBtn,
+        .pfmeaTextCellShell.showSideAction .pfmeaInlineAddBtn {
           opacity: 1;
           pointer-events: auto;
-          z-index: 3;
-          transition: background 120ms ease, border-color 120ms ease;
-          box-shadow: 0 4px 10px rgba(37, 99, 235, 0.22);
         }
         .pfmeaInlineAddBtn:hover {
           background: rgba(59, 130, 246, 0.26);
@@ -4705,8 +4807,8 @@ function PfmeaFullPageContent() {
             <div
               style={{
                 ...summaryTile,
-                background: 'rgba(255,255,255,0.12)',
-                border: '1px solid rgba(255,255,255,0.22)',
+                background: avgRpnSummary.color ? colorFill(avgRpnSummary.color) : 'rgba(255,255,255,0.12)',
+                border: `1px solid ${avgRpnSummary.color ? colorBorder(avgRpnSummary.color) : 'rgba(255,255,255,0.22)'}`,
               }}
             >
               <div style={{ fontSize: 12, color: '#f8fafc' }}>Avarage RPN</div>
@@ -4924,8 +5026,8 @@ function PfmeaFullPageContent() {
         >
           <div
             style={{
-              width: 920,
-              maxWidth: '96vw',
+              width: 1215,
+              maxWidth: '98vw',
               maxHeight: '80vh',
               overflow: 'auto',
               background: SURFACE_PANEL_BG,
@@ -4944,61 +5046,68 @@ function PfmeaFullPageContent() {
               <div style={{ fontSize: 14, color: SURFACE_MUTED, padding: '10px 0' }}>No saved history yet.</div>
             ) : (
               <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 260 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: SURFACE_RADIUS }}>
+                <table style={{ width: '100%', minWidth: 1080, tableLayout: 'fixed', borderCollapse: 'collapse', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: SURFACE_RADIUS }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
                         Revision
                       </th>
-                      <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 120, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
                         Date
                       </th>
-                      <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 120, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
                         Author
                       </th>
-                      <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 200, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
                         Description
                       </th>
-                      <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
                         Risks
                       </th>
-                      <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>
+                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
                         Average RPN
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {historyEntries.map((h) => (
+                    {historyEntries.map((h) => {
+                      const avgRpnColor = getRiskColorForAverageRpn(h.avgRpn)
+                      return (
                       <tr key={h.id}>
-                        <td style={{ textAlign: 'center', padding: '8px 10px', fontSize: 15, color: SURFACE_TEXT, borderBottom: '1px solid rgba(255,255,255,0.06)', fontWeight: 700 }}>
+                        <td style={{ width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 15, color: SURFACE_TEXT, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)', fontWeight: 700 }}>
                           {pfmeaRevisionNumberFromLabel(h.revisionLabel)}
                         </td>
-                        <td style={{ padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        <td style={{ width: 120, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)' }}>
                           {new Date(h.at).toLocaleString()}
                         </td>
-                        <td style={{ padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        <td style={{ width: 120, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)' }}>
                           {h.author}
                         </td>
-                        <td style={{ padding: '8px 10px', fontSize: 15, color: SURFACE_TEXT, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        <td style={{ width: 200, textAlign: 'center', padding: '8px 10px', fontSize: 15, color: SURFACE_TEXT, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {h.description}
                         </td>
-                        <td style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        <td style={{ width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)' }}>
                           {h.riskCount == null ? '-' : Math.round(h.riskCount)}
                         </td>
-                        <td style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                          {h.avgRpn == null ? '-' : Number.isInteger(h.avgRpn) ? String(h.avgRpn) : h.avgRpn.toFixed(2)}
+                        <td
+                          style={{
+                            width: 70,
+                            textAlign: 'center',
+                            padding: '8px 10px',
+                            fontSize: 14,
+                            color: '#f8fafc',
+                            borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            background: avgRpnColor ? colorFill(avgRpnColor) : 'transparent',
+                          }}
+                        >
+                          {h.avgRpn == null ? '-' : Math.round(h.avgRpn)}
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-              <button onClick={() => setHistoryOpen(false)} style={{ ...pillBtn, height: 28 }}>
-                Close
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -5067,9 +5176,6 @@ function PfmeaFullPageContent() {
             ) : null}
             <button className="rf-button" onClick={openRevisionHistory} style={{ ...actionBtn, padding: '8px 12px', height: 29, cursor: 'pointer' }}>
               Revision History
-            </button>
-            <button className="rf-button" onClick={exportExcelReport} style={{ ...actionBtn, padding: '8px 12px', height: 29, cursor: 'pointer' }}>
-              Export Excel
             </button>
             <button
               onClick={() => setColumnFiltersOpen((v) => !v)}
@@ -5145,7 +5251,15 @@ function PfmeaFullPageContent() {
         )}
 
         <div ref={tableWrapRef} style={{ ...card, padding: 0, borderRadius: SURFACE_RADIUS, overflow: 'visible' }}>
-          <div className="pfmeaTable" style={{ maxHeight: 'calc(100vh - 280px)', overflowX: 'auto', overflowY: 'visible' }}>
+          <div
+            className="pfmeaTable"
+            style={{
+              maxHeight: 'calc(100vh - 280px)',
+              overflowX: 'auto',
+              overflowY: 'visible',
+              ['--pfmea-sticky-cell-top' as any]: `${stickyMergedCellTop}px`,
+            }}
+          >
             <table
               style={{
                 width: `${visibleTableWidth}px`,
@@ -5161,13 +5275,12 @@ function PfmeaFullPageContent() {
                   <col key={col.id} style={{ width: widthOf(col.id) }} />
                 ))}
               </colgroup>
-              <thead>
+              <thead ref={tableHeadRef}>
                 <tr>
                   {isColumnVisible('id') ? <Th w={widthOf('id')}>ID#</Th> : null}
                   {isColumnVisible('station') ? <Th w={widthOf('station')}>STATION</Th> : null}
                   {isColumnVisible('operation') ? <Th w={widthOf('operation')}>OPERATION</Th> : null}
                   {isColumnVisible('process_step') ? <Th w={widthOf('process_step')}>PROCESS STEP</Th> : null}
-                  {isColumnVisible('row_no') ? <Th w={widthOf('row_no')}>ROW#</Th> : null}
 
                   {isColumnVisible('failure_mode') ? <Th w={widthOf('failure_mode')}>FAILURE MODE</Th> : null}
                   {isColumnVisible('characteristic') ? <Th w={widthOf('characteristic')}>CHARACTERISTIC</Th> : null}
@@ -5182,7 +5295,7 @@ function PfmeaFullPageContent() {
                   {isColumnVisible('det') ? <Th w={widthOf('det')}>DET</Th> : null}
 
                   {isColumnVisible('rpn') ? <Th w={widthOf('rpn')}>RPN</Th> : null}
-                  {isColumnVisible('pcp') ? <Th w={widthOf('pcp')}>PCP</Th> : null}
+                  {isColumnVisible('pcp') ? <Th w={widthOf('pcp')}><PcpHeaderHelp /></Th> : null}
 
                   {isColumnVisible('recommended_action') ? <Th w={widthOf('recommended_action')}>RECOMMENDED ACTION</Th> : null}
                   {isColumnVisible('responsible') ? <Th w={widthOf('responsible')}>RESPONSIBLE</Th> : null}
@@ -5324,15 +5437,6 @@ function PfmeaFullPageContent() {
                         </>
                       ) : null}
 
-                      {isColumnVisible('row_no') ? (
-                        <TdRead
-                          value={rowNumber == null ? '' : String(rowNumber)}
-                          className="pfmeaTd gray center singleLine"
-                          style={{ fontWeight: 800, color: '#d9a86c', letterSpacing: 0.2 }}
-                          onClick={() => setExpandedOperationId(r.operation_id || r.operations?.id || null)}
-                        />
-                      ) : null}
-
                       {isColumnVisible('failure_mode') && failureModeSpan > 0 ? (
                         <TdText
                           value={r.failure_mode}
@@ -5459,12 +5563,12 @@ function PfmeaFullPageContent() {
                       {isColumnVisible('sev') && failureBlockSpan > 0 ? (
                         <TdScaleSelect
                           value={asInt1to10(effectiveFailureBlockOwnerRow.severity)}
-                          editing={edit?.rowId === r.id && edit?.col === 'severity'}
-                          onStart={() => void startEditCell(r, 'severity')}
-                          onLiveChange={(n) => setPendingCellValue(r.id, 'severity', n)}
+                          editing={edit?.rowId === failureBlockOwnerRow.id && edit?.col === 'severity'}
+                          onStart={() => void startEditCell(failureBlockOwnerRow, 'severity')}
+                          onLiveChange={(n) => setPendingCellValue(failureBlockOwnerRow.id, 'severity', n)}
                           onCommit={(n) => {
-                            setPendingCellValue(r.id, 'severity', n)
-                            updateCellWithDerived(r, { severity: n })
+                            setPendingCellValue(failureBlockOwnerRow.id, 'severity', n)
+                            updateCellWithDerived(failureBlockOwnerRow, { severity: n })
                           }}
                           onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('severity'), false)}
                           stopEdit={() => setEdit(null)}
@@ -5844,6 +5948,77 @@ function Th(props: { w?: number | string; children?: React.ReactNode }) {
   )
 }
 
+function PcpHeaderHelp() {
+  const [anchorEl, setAnchorEl] = useState<HTMLSpanElement | null>(null)
+  const [open, setOpen] = useState(false)
+
+  return (
+    <span
+      ref={setAnchorEl}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, position: 'relative' }}
+    >
+      <span>PCP</span>
+      <span
+        aria-label="PCP rules"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 15,
+          height: 15,
+          borderRadius: '50%',
+          border: '1px solid rgba(217,168,108,0.55)',
+          color: '#d9a86c',
+          fontSize: 10,
+          fontWeight: 800,
+          lineHeight: 1,
+        }}
+      >
+        ?
+      </span>
+
+      {open && anchorEl && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              data-pfmea-popup="true"
+              style={{
+                ...anchoredPopupStyle(anchorEl, 320, 0, 260),
+                zIndex: 120,
+                borderRadius: 10,
+                border: `1px solid ${SURFACE_BORDER}`,
+                background: 'rgb(52, 57, 69)',
+                boxShadow: '0 14px 30px rgba(0,0,0,0.18)',
+                padding: 10,
+                textAlign: 'left',
+                position: 'fixed',
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#d9a86c', marginBottom: 6 }}>
+                PCP selection rules
+              </div>
+              <div style={{ display: 'grid', gap: 4 }}>
+                {[
+                  'A row is included in PCP when at least one of these rules is met:',
+                  'CLASS = SC or CC',
+                  'SEV is 9 or 10',
+                  'RPN risk color is orange or red',
+                  'A manual PCP selection overrides the automatic rule',
+                ].map((line, idx) => (
+                  <div key={`pcp-help-${idx}`} style={{ fontSize: 12, color: '#d9a86c', lineHeight: 1.35, fontWeight: 400 }}>
+                    {idx === 0 ? line : `- ${line}`}
+                  </div>
+                ))}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </span>
+  )
+}
+
 function AfterHeader(props: { prefix: string }) {
   return (
     <>
@@ -5853,10 +6028,66 @@ function AfterHeader(props: { prefix: string }) {
   )
 }
 
+const MERGED_CELL_STICKY_ROWSPAN = 2
+const MERGED_CELL_TOP_PADDING = 4
+const MERGED_CELL_BOTTOM_PADDING = 6
+
+function shouldUseMergedCellSticky(rowSpan?: number) {
+  return (rowSpan ?? 0) >= MERGED_CELL_STICKY_ROWSPAN
+}
+
+function mergedCellTdStyle(rowSpan?: number, style?: React.CSSProperties): React.CSSProperties | undefined {
+  if (!shouldUseMergedCellSticky(rowSpan)) return style
+  return {
+    verticalAlign: 'top',
+    overflow: 'visible',
+    ['--pfmea-td-pad-top' as any]: `${MERGED_CELL_TOP_PADDING}px`,
+    ['--pfmea-td-pad-bottom' as any]: `${MERGED_CELL_BOTTOM_PADDING}px`,
+    ...(style ?? {}),
+  }
+}
+
+function MergedCellInner(props: {
+  rowSpan?: number
+  children: React.ReactNode
+  gap?: number
+}) {
+  const sticky = shouldUseMergedCellSticky(props.rowSpan)
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: props.gap ?? 8,
+        width: '100%',
+        ...(sticky
+          ? {
+              position: 'sticky',
+              top: 'var(--pfmea-sticky-cell-top, 52px)',
+              minHeight: 28,
+              padding: 0,
+              zIndex: 1,
+            }
+          : null),
+      }}
+    >
+      {props.children}
+    </div>
+  )
+}
+
 function TdRead(props: { value: string; className: string; style?: React.CSSProperties; rowSpan?: number; onClick?: () => void }) {
   return (
-    <td rowSpan={props.rowSpan} className={props.className} style={{ ...(props.style ?? {}), cursor: props.onClick ? 'pointer' : undefined }} onClick={props.onClick}>
-      {props.value || ''}
+    <td
+      rowSpan={props.rowSpan}
+      className={props.className}
+      style={{ ...(mergedCellTdStyle(props.rowSpan, props.style) ?? {}), cursor: props.onClick ? 'pointer' : undefined }}
+      onClick={props.onClick}
+    >
+      <MergedCellInner rowSpan={props.rowSpan} gap={0}>
+        <span>{props.value || ''}</span>
+      </MergedCellInner>
     </td>
   )
 }
@@ -5884,19 +6115,30 @@ function anchoredPopupStyle(
   const openAboveRect = (openAboveAnchorEl ?? anchorEl).getBoundingClientRect()
   const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
   const desiredHeight = Math.min(maxHeight, Math.max(160, window.innerHeight - 24))
-  const spaceBelow = window.innerHeight - rect.bottom - 12
-  const spaceAbove = openAboveRect.top - 12
+  const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - topGap - 12)
+  const spaceAbove = Math.max(0, openAboveRect.top - topGap - 12)
   const openAbove = spaceBelow < Math.min(desiredHeight, 220) && spaceAbove > spaceBelow
-  const top = openAbove
-    ? Math.max(12, openAboveRect.top - desiredHeight - topGap)
-    : rect.bottom + topGap
+  const effectiveMaxHeight = Math.min(
+    desiredHeight,
+    Math.max(120, openAbove ? spaceAbove : spaceBelow)
+  )
+
+  if (openAbove) {
+    return {
+      position: 'fixed',
+      bottom: window.innerHeight - openAboveRect.top + topGap,
+      left,
+      width,
+      maxHeight: effectiveMaxHeight,
+    }
+  }
 
   return {
     position: 'fixed',
-    top,
+    top: rect.bottom + topGap,
     left,
     width,
-    maxHeight,
+    maxHeight: effectiveMaxHeight,
   }
 }
 
@@ -6017,7 +6259,7 @@ function TdText(props: {
     t.style.height = Math.max(18, t.scrollHeight) + 'px'
   }, [props.editing, props.singleLine, val])
 
-  const sideActionButton = props.sideAction ? (
+  const sideActionButton = props.sideAction && !props.disabled ? (
     <button
       type="button"
       className="pfmeaInlineAddBtn"
@@ -6035,9 +6277,10 @@ function TdText(props: {
         props.sideAction?.onClick(e)
       }}
     >
-      {props.sideAction.label}
+      {props.sideAction.label === '+' ? <span aria-hidden="true" className="pfmeaInlineAddGlyph" /> : props.sideAction.label}
     </button>
   ) : null
+  const textCellShellClass = `pfmeaTextCellShell${props.sideAction ? ' hasSideAction' : ''}${props.editing ? ' showSideAction' : ''}`
 
   const setEditorRefs = useCallback((el: HTMLTextAreaElement | HTMLInputElement | null) => {
     localRef.current = el
@@ -6046,11 +6289,20 @@ function TdText(props: {
 
   if (props.disabled) {
     return (
-      <td data-pfmea-col={props.cellKey} rowSpan={props.rowSpan} className={`pfmeaTd ${props.singleLine ? 'singleLine' : 'multiLine'} ${props.flash ? 'flashMissing' : ''}`} style={props.style}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }}>
-          <span style={{ flex: 1 }}>{val || ''}</span>
-          {sideActionButton}
-        </div>
+      <td
+        data-pfmea-col={props.cellKey}
+        rowSpan={props.rowSpan}
+        className={`pfmeaTd ${props.singleLine ? 'singleLine' : 'multiLine'} ${props.flash ? 'flashMissing' : ''}`}
+        style={mergedCellTdStyle(props.rowSpan, props.style)}
+      >
+        <MergedCellInner rowSpan={props.rowSpan}>
+          <div className={textCellShellClass}>
+            <div className="pfmeaTextCellContent">
+              <span>{val || ''}</span>
+            </div>
+            {sideActionButton}
+          </div>
+        </MergedCellInner>
       </td>
     )
   }
@@ -6063,12 +6315,16 @@ function TdText(props: {
         className={`pfmeaTd editable ${props.singleLine ? 'singleLine' : 'multiLine'} ${props.flash ? 'flashMissing' : ''}`}
         onClick={props.onStart}
         title={props.singleLine ? val : undefined}
-        style={props.style}
+        style={mergedCellTdStyle(props.rowSpan, props.style)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }}>
-          <span style={{ flex: 1 }}>{val || ''}</span>
-          {sideActionButton}
-        </div>
+        <MergedCellInner rowSpan={props.rowSpan}>
+          <div className={textCellShellClass}>
+            <div className="pfmeaTextCellContent">
+              <span>{val || ''}</span>
+            </div>
+            {sideActionButton}
+          </div>
+        </MergedCellInner>
       </td>
     )
   }
@@ -6078,50 +6334,52 @@ function TdText(props: {
       data-pfmea-col={props.cellKey}
       rowSpan={props.rowSpan}
       className={`pfmeaTd editable ${props.singleLine ? 'singleLine' : 'multiLine'} ${props.flash ? 'flashMissing' : ''}`}
-      style={props.style}
+      style={mergedCellTdStyle(props.rowSpan, props.style)}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }}>
-        <div style={{ flex: 1 }}>
-          {props.singleLine ? (
-            <input
-              className="pfmeaEditor"
-              ref={setEditorRefs}
-              value={val}
-              onChange={(e) => {
-                setVal(e.target.value)
-                props.onLiveChange?.(e.target.value)
-              }}
-              onKeyDown={props.onKeyDown}
-              onBlur={(e) => {
-                const nextVal = e.currentTarget.value
-                props.onLiveChange?.(nextVal)
-                if (nextVal !== (props.value ?? '')) props.onCommit(nextVal)
-                props.stopEdit()
-              }}
-              style={editorBase}
-            />
-          ) : (
-            <textarea
-              className="pfmeaEditor"
-              ref={setEditorRefs}
-              value={val}
-              onChange={(e) => {
-                setVal(e.target.value)
-                props.onLiveChange?.(e.target.value)
-              }}
-              onKeyDown={props.onKeyDown}
-              onBlur={(e) => {
-                const nextVal = e.currentTarget.value
-                props.onLiveChange?.(nextVal)
-                if (nextVal !== (props.value ?? '')) props.onCommit(nextVal)
-                props.stopEdit()
-              }}
-              style={editorBase}
-            />
-          )}
+      <MergedCellInner rowSpan={props.rowSpan}>
+        <div className={textCellShellClass}>
+          <div className="pfmeaTextCellContent">
+            {props.singleLine ? (
+              <input
+                className="pfmeaEditor"
+                ref={setEditorRefs}
+                value={val}
+                onChange={(e) => {
+                  setVal(e.target.value)
+                  props.onLiveChange?.(e.target.value)
+                }}
+                onKeyDown={props.onKeyDown}
+                onBlur={(e) => {
+                  const nextVal = e.currentTarget.value
+                  props.onLiveChange?.(nextVal)
+                  if (nextVal !== (props.value ?? '')) props.onCommit(nextVal)
+                  props.stopEdit()
+                }}
+                style={editorBase}
+              />
+            ) : (
+              <textarea
+                className="pfmeaEditor"
+                ref={setEditorRefs}
+                value={val}
+                onChange={(e) => {
+                  setVal(e.target.value)
+                  props.onLiveChange?.(e.target.value)
+                }}
+                onKeyDown={props.onKeyDown}
+                onBlur={(e) => {
+                  const nextVal = e.currentTarget.value
+                  props.onLiveChange?.(nextVal)
+                  if (nextVal !== (props.value ?? '')) props.onCommit(nextVal)
+                  props.stopEdit()
+                }}
+                style={editorBase}
+              />
+            )}
+          </div>
+          {sideActionButton}
         </div>
-        {sideActionButton}
-      </div>
+      </MergedCellInner>
     </td>
   )
 }
@@ -6210,7 +6468,13 @@ function TdScaleSelect(props: {
   }, [props, stopOptionHover])
 
   if (props.disabled) {
-    return <td data-pfmea-col={props.cellKey} rowSpan={props.rowSpan} className={`pfmeaTd center gray singleLine scaleValue ${props.flash ? 'flashMissing' : ''}`}>{props.value == null ? '' : String(props.value)}</td>
+    return (
+      <td data-pfmea-col={props.cellKey} rowSpan={props.rowSpan} className={`pfmeaTd center gray singleLine scaleValue ${props.flash ? 'flashMissing' : ''}`} style={mergedCellTdStyle(props.rowSpan)}>
+        <MergedCellInner rowSpan={props.rowSpan} gap={0}>
+          <span>{props.value == null ? '' : String(props.value)}</span>
+        </MergedCellInner>
+      </td>
+    )
   }
 
   if (!props.editing) {
@@ -6220,6 +6484,7 @@ function TdScaleSelect(props: {
         rowSpan={props.rowSpan}
         ref={setCellAnchorEl}
         className={`pfmeaTd editable center gray singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
+        style={mergedCellTdStyle(props.rowSpan)}
         onClick={() => {
           stopHover()
           props.onStart()
@@ -6227,7 +6492,9 @@ function TdScaleSelect(props: {
         onMouseEnter={startHoverDelay}
         onMouseLeave={stopHover}
       >
-        {props.value == null ? '' : String(props.value)}
+        <MergedCellInner rowSpan={props.rowSpan} gap={0}>
+          <span>{props.value == null ? '' : String(props.value)}</span>
+        </MergedCellInner>
         {hoverOpen && cellAnchorEl && typeof document !== 'undefined'
           ? createPortal(
             <div
@@ -6472,7 +6739,13 @@ function TdClassSelect(props: {
   }, [])
 
   if (props.disabled) {
-    return <td data-pfmea-col={props.cellKey} rowSpan={props.rowSpan} className="pfmeaTd center singleLine scaleValue">{props.value ?? ''}</td>
+    return (
+      <td data-pfmea-col={props.cellKey} rowSpan={props.rowSpan} className="pfmeaTd center singleLine scaleValue" style={mergedCellTdStyle(props.rowSpan)}>
+        <MergedCellInner rowSpan={props.rowSpan} gap={0}>
+          <span>{props.value ?? ''}</span>
+        </MergedCellInner>
+      </td>
+    )
   }
 
   if (!props.editing) {
@@ -6481,9 +6754,12 @@ function TdClassSelect(props: {
         data-pfmea-col={props.cellKey}
         rowSpan={props.rowSpan}
         className="pfmeaTd editable center singleLine scaleValue scaleSelectCell"
+        style={mergedCellTdStyle(props.rowSpan)}
         onClick={props.onStart}
       >
-        {props.value ?? ''}
+        <MergedCellInner rowSpan={props.rowSpan} gap={0}>
+          <span>{props.value ?? ''}</span>
+        </MergedCellInner>
       </td>
     )
   }

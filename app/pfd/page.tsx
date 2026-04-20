@@ -2463,7 +2463,7 @@ function PfdPageContent() {
               PFMEA
             </Link>
             <Link
-              href="/pcp"
+              href={`/pcp?project=${projectId}`}
               className="btn btnGreen"
               style={{ ...baseBtn, width: 180 }}
             >

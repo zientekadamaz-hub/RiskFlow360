@@ -1222,7 +1222,7 @@ export default function ProjectsPage() {
   const sharedOverlayBg = 'rgb(40, 39, 47)'
 
   const frame: React.CSSProperties = {
-    width: '94%',
+    width: '96%',
     marginLeft: 'auto',
     marginRight: 'auto',
   }
