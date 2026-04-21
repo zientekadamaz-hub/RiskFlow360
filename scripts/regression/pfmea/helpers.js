@@ -1,6 +1,7 @@
 const { ensureLoggedIn } = require('../_shared/browserAuth')
 const { getBaseUrl, getRequiredEnv, loadLocalEnv } = require('../_shared/env')
 const { getPlaywright } = require('../_shared/playwright')
+const { createClient } = require('@supabase/supabase-js')
 
 function getPfmeaConfig(projectEnvName = 'PFMEA_REGRESSION_PROJECT_ID') {
   loadLocalEnv()
@@ -9,6 +10,8 @@ function getPfmeaConfig(projectEnvName = 'PFMEA_REGRESSION_PROJECT_ID') {
     email: getRequiredEnv('REGRESSION_EMAIL'),
     password: getRequiredEnv('REGRESSION_PASSWORD'),
     projectId: getRequiredEnv(projectEnvName),
+    supabaseUrl: getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    supabaseAnonKey: getRequiredEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
   }
 }
 
@@ -341,6 +344,51 @@ async function savePfmeaDraft(page, description) {
   await page.waitForTimeout(3000)
 }
 
+async function getOpenPfmeaRevisionStats(config) {
+  const supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
+
+  const signInRes = await supabase.auth.signInWithPassword({
+    email: config.email,
+    password: config.password,
+  })
+  if (signInRes.error) throw signInRes.error
+
+  const projectRes = await supabase
+    .from('projects_with_revision')
+    .select('current_open_revision_id,open_revision_label')
+    .eq('id', config.projectId)
+    .maybeSingle()
+
+  if (projectRes.error) throw projectRes.error
+
+  const currentOpenRevisionId = (projectRes.data?.current_open_revision_id ?? '').trim()
+  if (!currentOpenRevisionId) {
+    return {
+      currentOpenRevisionId: null,
+      openRevisionLabel: projectRes.data?.open_revision_label ?? null,
+      rowCount: 0,
+    }
+  }
+
+  const countRes = await supabase
+    .from('pfmea_rows')
+    .select('id', { count: 'exact', head: true })
+    .eq('revision_id', currentOpenRevisionId)
+
+  if (countRes.error) throw countRes.error
+
+  return {
+    currentOpenRevisionId,
+    openRevisionLabel: projectRes.data?.open_revision_label ?? null,
+    rowCount: countRes.count ?? 0,
+  }
+}
+
 module.exports = {
   addAction,
   addCause,
@@ -358,6 +406,7 @@ module.exports = {
   openPfmea,
   rowLocator,
   savePfmeaDraft,
+  getOpenPfmeaRevisionStats,
   selectScaleValueInRow,
   startPfmeaEdit,
 }

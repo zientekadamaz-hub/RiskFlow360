@@ -8,6 +8,7 @@ const {
   collectRunRows,
   fillTextCellInRow,
   findPfmeaTable,
+  getOpenPfmeaRevisionStats,
   getPfmeaConfig,
   launchRegressionPage,
   materializeFailureMode,
@@ -132,6 +133,8 @@ async function main() {
       beforeTexts,
       afterTexts,
     })
+    const openRevisionStats = await getOpenPfmeaRevisionStats(config)
+    ensure(openRevisionStats.rowCount > 0, 'Current OPEN PFMEA revision is empty after save', openRevisionStats)
 
     console.log(
       JSON.stringify(
@@ -141,6 +144,7 @@ async function main() {
           editState,
           beforeCount: beforeSaveRows.length,
           afterCount: afterSaveRows.length,
+          openRevisionStats,
           beforeScreenshot,
           afterScreenshot,
         },

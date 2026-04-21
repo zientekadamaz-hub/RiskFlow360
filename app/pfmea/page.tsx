@@ -1214,6 +1214,14 @@ function sortPfmeaRows(rows: PfmeaRow[]) {
   return indexed.map((item) => item.row)
 }
 
+function getPfmeaRowOperationId(row: Pick<PfmeaRow, 'operation_id' | 'operations'>) {
+  return (row.operation_id || row.operations?.id || '').trim()
+}
+
+function getPfmeaRowOperationIds(rows: PfmeaRow[]) {
+  return Array.from(new Set(rows.map((row) => getPfmeaRowOperationId(row)).filter(Boolean)))
+}
+
 function buildPfmeaCreatedAtOrder(rows: PfmeaRow[]) {
   const baseTime = Date.now() - Math.max(rows.length - 1, 0)
   const hierarchy = buildPfmeaHierarchy(rows)
@@ -1258,6 +1266,25 @@ function buildPfmeaPublishedSyncPatch(row: PfmeaRow) {
   }
 }
 
+function buildPfmeaInsertPayloadForRevision(row: PfmeaRow, revisionId: string) {
+  const operationId = getPfmeaRowOperationId(row)
+  if (!operationId) throw new Error(`PFMEA row ${row.id} is missing operation_id.`)
+
+  return {
+    revision_id: revisionId,
+    operation_id: operationId,
+    ...buildPfmeaPublishedSyncPatch(row),
+  }
+}
+
+function buildPfmeaBackupRowSnapshot(row: PfmeaRow) {
+  return {
+    source_row_id: row.id,
+    operation_id: getPfmeaRowOperationId(row),
+    ...buildPfmeaPublishedSyncPatch(row),
+  }
+}
+
 function buildPfmeaPublishedMetadataPatch(meta: {
   created_at: string
   row_no: string | null
@@ -1287,6 +1314,19 @@ function hasCurrentRiskBlockContext(row: PfmeaRow) {
     !!(row.current_detection ?? '').trim() &&
     asInt1to10(row.detection) != null
   )
+}
+
+function isMissingPfmeaBackupStorageError(error: unknown) {
+  const message = (error as { message?: string } | null)?.message ?? String(error ?? '')
+  const normalized = message.toLowerCase()
+  return normalized.includes('pfmea_row_backups') && (normalized.includes('does not exist') || normalized.includes('schema cache'))
+}
+
+function summarizePfmeaRowsForError(rows: PfmeaRow[], limit = 3) {
+  return rows
+    .slice(0, limit)
+    .map((row) => normalizePfmeaRowNo(row.row_no) ?? (row.failure_mode?.trim() || row.id))
+    .join(', ')
 }
 
 const PFMEA_CLONE_FIELDS: Array<keyof PfmeaRow> = [
@@ -3440,6 +3480,215 @@ function PfmeaFullPageContent() {
     }
   }
 
+  async function fetchPfmeaRowsForRevisionScope(revisionId: string, operationIds?: string[]) {
+    if (!revisionId) return []
+
+    const scopedOperationIds = Array.from(new Set((operationIds ?? []).map((id) => String(id || '').trim()).filter(Boolean)))
+    const selectFields = pfmeaGroupIdsSupportedRef.current === false ? PFMEA_SELECT_FIELDS_LEGACY : PFMEA_SELECT_FIELDS
+    let query = supabase.from('pfmea_rows').select(selectFields).eq('revision_id', revisionId)
+
+    if (scopedOperationIds.length > 0) {
+      query = query.in('operation_id', scopedOperationIds)
+    }
+
+    let response = await query
+      .order('operation_number', { foreignTable: 'operations', ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+
+    if (response.error && isMissingPfmeaGroupIdColumnError(response.error)) {
+      pfmeaGroupIdsSupportedRef.current = false
+      let legacyQuery = supabase.from('pfmea_rows').select(PFMEA_SELECT_FIELDS_LEGACY).eq('revision_id', revisionId)
+      if (scopedOperationIds.length > 0) {
+        legacyQuery = legacyQuery.in('operation_id', scopedOperationIds)
+      }
+      response = await legacyQuery
+        .order('operation_number', { foreignTable: 'operations', ascending: true })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+    } else if (!response.error && pfmeaGroupIdsSupportedRef.current !== false) {
+      pfmeaGroupIdsSupportedRef.current = true
+    }
+
+    if (response.error) throw response.error
+    return hydratePfmeaGroupIds((response.data ?? []) as unknown as PfmeaRow[])
+  }
+
+  async function remapPfmeaSnapshotRowsToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
+    const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
+    if (!revisionId || snapshotRows.length === 0) return snapshotRows
+
+    const operationIds = getPfmeaRowOperationIds(snapshotRows)
+    const revisionRows = await fetchPfmeaRowsForRevisionScope(revisionId, operationIds)
+    const revisionRowsById = new Map(revisionRows.map((row) => [row.id, row] as const))
+    const usedIds = new Set<string>()
+    const missingRows: PfmeaRow[] = []
+
+    const mappedRows = snapshotRows
+      .map((sourceRow) => {
+        const directTarget = revisionRowsById.get(sourceRow.id)
+        if (directTarget && !usedIds.has(directTarget.id)) {
+          usedIds.add(directTarget.id)
+          return {
+            ...sourceRow,
+            id: directTarget.id,
+            revision_id: revisionId,
+            operation_id: getPfmeaRowOperationId(directTarget) || getPfmeaRowOperationId(sourceRow),
+            operations: directTarget.operations ?? sourceRow.operations,
+          } as PfmeaRow
+        }
+
+        const inferredRowNo = normalizePfmeaRowNo(sourceRow.row_no)
+        const rowForMapping =
+          inferredRowNo && inferredRowNo !== sourceRow.row_no ? ({ ...sourceRow, row_no: inferredRowNo } as PfmeaRow) : sourceRow
+
+        const candidate = findEquivalentPfmeaRow(
+          revisionRows.filter((row) => !usedIds.has(row.id)),
+          rowForMapping
+        )
+
+        if (!candidate) {
+          missingRows.push(sourceRow)
+          return null
+        }
+
+        usedIds.add(candidate.id)
+        return {
+          ...sourceRow,
+          id: candidate.id,
+          revision_id: revisionId,
+          operation_id: getPfmeaRowOperationId(candidate) || getPfmeaRowOperationId(sourceRow),
+          operations: candidate.operations ?? sourceRow.operations,
+        } as PfmeaRow
+      })
+      .filter(Boolean) as PfmeaRow[]
+
+    if (missingRows.length > 0) {
+      throw new Error(
+        `PFMEA draft integrity check failed. ${missingRows.length} row(s) could not be mapped into draft revision ${revisionId}: ${summarizePfmeaRowsForError(missingRows)}.`
+      )
+    }
+
+    return mappedRows
+  }
+
+  async function createPfmeaSafetyBackup(sourceRevisionId: string, description: string, userId: string, sourceRows: PfmeaRow[]) {
+    const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
+    if (!projectId || snapshotRows.length === 0) return null
+
+    try {
+      const res = await supabase
+        .from('pfmea_row_backups')
+        .insert([
+          {
+            project_id: projectId,
+            source_revision_id: sourceRevisionId,
+            published_revision_id: null,
+            revision_label: project?.draft_revision_label ?? project?.open_revision_label ?? null,
+            change_description: description,
+            row_count: snapshotRows.length,
+            snapshot: snapshotRows.map((row) => buildPfmeaBackupRowSnapshot(row)),
+            created_by: userId,
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select('id')
+        .single()
+
+      if (res.error) throw res.error
+      return res.data?.id ?? null
+    } catch (backupError: any) {
+      if (!isMissingPfmeaBackupStorageError(backupError)) {
+        console.warn('PFMEA safety backup skipped:', backupError?.message ?? String(backupError))
+      }
+      return null
+    }
+  }
+
+  async function linkPfmeaSafetyBackupToPublishedRevision(backupId: string | null, publishedRevisionId: string | null, revisionLabel: string | null) {
+    if (!backupId) return
+
+    try {
+      const res = await supabase
+        .from('pfmea_row_backups')
+        .update({
+          published_revision_id: publishedRevisionId,
+          revision_label: revisionLabel ?? null,
+        })
+        .eq('id', backupId)
+      if (res.error) throw res.error
+    } catch (backupError: any) {
+      if (!isMissingPfmeaBackupStorageError(backupError)) {
+        console.warn('PFMEA safety backup link skipped:', backupError?.message ?? String(backupError))
+      }
+    }
+  }
+
+  async function restorePfmeaSnapshotToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
+    const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
+    if (!revisionId || snapshotRows.length === 0) return []
+
+    const operationIds = getPfmeaRowOperationIds(snapshotRows)
+    if (operationIds.length === 0) {
+      throw new Error(`PFMEA safety restore failed for revision ${revisionId}: no operation ids were found in the snapshot.`)
+    }
+
+    const deleteRes = await supabase.from('pfmea_rows').delete().eq('revision_id', revisionId).in('operation_id', operationIds)
+    if (deleteRes.error) throw deleteRes.error
+
+    const batchSize = 25
+    for (let index = 0; index < snapshotRows.length; index += batchSize) {
+      const batch = snapshotRows.slice(index, index + batchSize)
+      const payload = batch.map((row) => {
+        const insertPayload = buildPfmeaInsertPayloadForRevision(row, revisionId)
+        return pfmeaGroupIdsSupportedRef.current === false
+          ? stripPfmeaGroupIdsFromPayload(insertPayload as Record<string, unknown>)
+          : insertPayload
+      })
+      const insertRes = await supabase.from('pfmea_rows').insert(payload)
+      if (insertRes.error) throw insertRes.error
+    }
+
+    return fetchPfmeaRowsForRevisionScope(revisionId, operationIds)
+  }
+
+  async function ensurePublishedPfmeaIntegrity(revisionId: string, sourceRows: PfmeaRow[]) {
+    const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
+    if (!revisionId || snapshotRows.length === 0) return null
+
+    const operationIds = getPfmeaRowOperationIds(snapshotRows)
+    if (operationIds.length === 0) return null
+
+    const checkSnapshot = async () => {
+      const publishedRows = await fetchPfmeaRowsForRevisionScope(revisionId, operationIds)
+      const usedIds = new Set<string>()
+      const missingRows = snapshotRows.filter((sourceRow) => {
+        const candidate = findEquivalentPfmeaRow(
+          publishedRows.filter((row) => !usedIds.has(row.id)),
+          sourceRow
+        )
+        if (!candidate) return true
+        usedIds.add(candidate.id)
+        return false
+      })
+      return { missingRows, publishedRows }
+    }
+
+    let { missingRows } = await checkSnapshot()
+    if (missingRows.length === 0) return null
+
+    await restorePfmeaSnapshotToRevision(revisionId, snapshotRows)
+    ;({ missingRows } = await checkSnapshot())
+
+    if (missingRows.length > 0) {
+      throw new Error(
+        `PFMEA publish integrity check failed for revision ${revisionId}. ${missingRows.length} row(s) are still missing or changed after automatic restore: ${summarizePfmeaRowsForError(missingRows)}.`
+      )
+    }
+
+    return 'PFMEA publish returned incomplete or changed data. The affected rows were automatically restored from a safety snapshot.'
+  }
+
   async function persistPfmeaDraftSnapshot(revisionId: string, sourceRows: PfmeaRow[]) {
     const snapshotRows = sortPfmeaRows(sourceRows)
       .filter((row) => !isPlaceholderRowId(row.id))
@@ -3454,9 +3703,11 @@ function PfmeaFullPageContent() {
 
     if (snapshotRows.length === 0) return snapshotRows
 
+    const mappedSnapshotRows = await remapPfmeaSnapshotRowsToRevision(revisionId, snapshotRows)
+
     const batchSize = 25
-    for (let index = 0; index < snapshotRows.length; index += batchSize) {
-      const batch = snapshotRows.slice(index, index + batchSize)
+    for (let index = 0; index < mappedSnapshotRows.length; index += batchSize) {
+      const batch = mappedSnapshotRows.slice(index, index + batchSize)
       const results = await Promise.all(
         batch.map((row) => {
           const patch = buildPfmeaPublishedSyncPatch(row)
@@ -3469,17 +3720,23 @@ function PfmeaFullPageContent() {
             )
             .eq('id', row.id)
             .eq('revision_id', revisionId)
+            .select('id')
+            .maybeSingle()
+            .then((result) => ({ rowId: row.id, result }))
         })
       )
 
-      for (const result of results) {
+      for (const { rowId, result } of results) {
         if (result.error) throw result.error
+        if (!result.data?.id) {
+          throw new Error(`PFMEA draft integrity check failed. Row ${rowId} was not updated in revision ${revisionId}.`)
+        }
       }
     }
 
-    rowsRef.current = snapshotRows
-    setRows(snapshotRows)
-    return snapshotRows
+    rowsRef.current = mappedSnapshotRows
+    setRows(mappedSnapshotRows)
+    return mappedSnapshotRows
   }
 
   async function handleSaveRevision() {
@@ -3519,6 +3776,7 @@ function PfmeaFullPageContent() {
       const cleanedRows = await cleanupEmptyTransientRows()
       const persistedRows = await persistPfmeaDraftSnapshot(draftRevisionId, cleanedRows)
       await persistPfmeaRowOrder(draftRevisionId, persistedRows)
+      const backupId = await createPfmeaSafetyBackup(draftRevisionId, desc, uid, persistedRows)
 
       const { data, error } = await supabase.rpc('publish_process_module_revision', {
         p_project_id: projectId,
@@ -3558,6 +3816,13 @@ function PfmeaFullPageContent() {
         }
       }
 
+      await linkPfmeaSafetyBackupToPublishedRevision(backupId, publishedRevisionId, publishedOpenRevisionLabel)
+
+      let integrityWarning: string | null = null
+      if (publishedRevisionId && persistedRows.length > 0) {
+        integrityWarning = await ensurePublishedPfmeaIntegrity(publishedRevisionId, persistedRows)
+      }
+
       let revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
       try {
         if (!normalizeHistoryText(revisionLabel) || revisionLabel === '0.0.0') {
@@ -3575,6 +3840,8 @@ function PfmeaFullPageContent() {
           }
         }
       } catch {}
+
+      await linkPfmeaSafetyBackupToPublishedRevision(backupId, publishedRevisionId, revisionLabel)
 
       let historyAuthor = 'Unknown user'
       try {
@@ -3625,6 +3892,9 @@ function PfmeaFullPageContent() {
       await loadEditSession()
       await loadAll(publishedRevisionId ?? project?.current_open_revision_id ?? null)
       await loadRevisionHistory()
+      if (integrityWarning) {
+        setErr(integrityWarning)
+      }
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     } finally {
