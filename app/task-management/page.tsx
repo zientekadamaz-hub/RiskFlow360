@@ -36,6 +36,7 @@ import {
   projectsTableViewportScrollerStyle,
 } from '@/features/projects/view-styles'
 import { getSessionUserWithRetries } from '@/lib/auth/client-session'
+import { errorText } from '@/lib/error-utils'
 import {
   fetchTaskActions,
   updateTaskActionDetails,
@@ -310,18 +311,7 @@ function taskRpnValueStyle(color: RiskColor | null, value: number | null): CSSPr
 }
 
 function getTaskErrorMessage(error: unknown, fallback: string) {
-  if (!error) return fallback
-  if (error instanceof Error && error.message) return error.message
-  if (typeof error === 'object') {
-    const details = error as {
-      details?: string
-      error_description?: string
-      hint?: string
-      message?: string
-    }
-    return details.message || details.error_description || details.details || details.hint || fallback
-  }
-  return String(error) || fallback
+  return errorText(error, fallback)
 }
 
 function normalizeStatus(value: string) {

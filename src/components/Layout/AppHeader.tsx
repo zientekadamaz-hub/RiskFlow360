@@ -1,16 +1,28 @@
 'use client'
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import Image from 'next/image'
-import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@app/lib/supabaseBrowser'
 import { IDLE_MS, LAST_ACTIVITY_KEY, readIdleTimestamp } from '@/lib/auth/idle-session'
+import { HeaderLogo } from './HeaderLogo'
+import { HeaderPublicActions } from './HeaderPublicActions'
+import { HeaderDropdownMenu } from './HeaderDropdownMenu'
+import { HeaderNavigation, HeaderNavSkeleton, type HoverKey, type MenuKey } from './HeaderNavigation'
+import { HeaderUserControls, HeaderUserSkeleton } from './HeaderUserControls'
+import {
+  type HeaderAppRole,
+  type HeaderAuthState,
+  canSeeAdminFor,
+  canSeeSettingsFor,
+  displayFullNameFor,
+  displayOrgNameFor,
+  displayRoleFor,
+  isNoOrgAllowedPath,
+  shouldShowAuthedHeader,
+} from './app-header-model'
 
-type MenuKey = null | 'reports' | 'settings' | 'admin'
-type HoverKey = null | 'projects' | 'reports' | 'tasks' | 'settings' | 'admin'
-type AppRole = 'admin' | 'champion' | 'engineer' | 'viewer' | 'customer' | string
+type AppRole = HeaderAppRole
 
 const AUTH_UNKNOWN_TIMEOUT_MS = 4000
 const AUTH_UNKNOWN_RETRY_MS = 1000
@@ -41,12 +53,6 @@ export default function AppHeader() {
   const router = useRouter()
 
   const BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH ?? '').trim()
-  const asset = (p: string) => {
-    if (!p.startsWith('/')) p = `/${p}`
-    if (!BASE_PATH) return p
-    const bp = BASE_PATH.startsWith('/') ? BASE_PATH : `/${BASE_PATH}`
-    return `${bp.replace(/\/+$/, '')}${p}`
-  }
 
   const [hoverNav, setHoverNav] = useState<HoverKey>(null)
   const [openMenu, setOpenMenu] = useState<MenuKey>(null)
@@ -58,7 +64,7 @@ export default function AppHeader() {
   const adminRef = useRef<HTMLSpanElement | null>(null)
   const [submenuPosition, setSubmenuPosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 })
 
-  const [authState, setAuthState] = useState<'unknown' | 'authed' | 'unauthed'>('unknown')
+  const [authState, setAuthState] = useState<HeaderAuthState>('unknown')
   const [mounted, setMounted] = useState(false)
   const [idleLeftSec, setIdleLeftSec] = useState<number | null>(null)
 
@@ -69,11 +75,10 @@ export default function AppHeader() {
   const [orgRole, setOrgRole] = useState<string | null>(null)
 
   const isAuthed = authState === 'authed'
-  const showAuthed = mounted && isAuthed
+  const showAuthed = shouldShowAuthedHeader(mounted, authState)
 
-  const canSeeSettings =
-    isAuthed && (userRole === 'admin' || orgRole === 'champion')
-  const canSeeAdmin = isAuthed && userRole === 'admin'
+  const canSeeSettings = canSeeSettingsFor(isAuthed, userRole, orgRole)
+  const canSeeAdmin = canSeeAdminFor(isAuthed, userRole)
 
   const navHeight = 56
   const frameStyle: React.CSSProperties = { width: '80%', marginLeft: 'auto', marginRight: 'auto' }
@@ -163,24 +168,15 @@ export default function AppHeader() {
   }, [clearCloseTimer])
 
   const displayRole = useMemo(() => {
-    const normalizedUserRole = (userRole ?? '').trim().toLowerCase()
-    const normalizedOrgRole = (orgRole ?? '').trim().toLowerCase()
-    const preferredRole = normalizedUserRole === 'admin' ? normalizedUserRole : normalizedOrgRole || normalizedUserRole
-    if (!preferredRole) return ''
-    return preferredRole.charAt(0).toUpperCase() + preferredRole.slice(1)
+    return displayRoleFor(userRole, orgRole)
   }, [orgRole, userRole])
 
   const displayFullName = useMemo(() => {
-    const fn = (firstName ?? '').trim()
-    const ln = (lastName ?? '').trim()
-    const full = `${fn} ${ln}`.trim()
-    return full || null
+    return displayFullNameFor(firstName, lastName)
   }, [firstName, lastName])
 
   const displayOrgName = useMemo(() => {
-    if ((userRole ?? '').toString().trim().toLowerCase() === 'admin') return null
-    const value = (orgName ?? '').trim()
-    return value || null
+    return displayOrgNameFor(orgName, userRole)
   }, [orgName, userRole])
 
   const withTimeout = async <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> => {
@@ -257,15 +253,7 @@ export default function AppHeader() {
 
     const currentPath =
       typeof window !== 'undefined' ? window.location.pathname : pathname
-    const allowNoOrg =
-      currentPath === '/waiting-for-invite' ||
-      currentPath.startsWith('/waiting-for-invite/') ||
-      currentPath === '/request-access' ||
-      currentPath.startsWith('/request-access/') ||
-      currentPath === '/login' ||
-      currentPath.startsWith('/login/') ||
-      currentPath === '/signup' ||
-      currentPath.startsWith('/signup/')
+    const allowNoOrg = isNoOrgAllowedPath(currentPath)
 
     if (headerStatus === 'no-org' && !allowNoOrg) {
       router.replace('/waiting-for-invite')
@@ -473,13 +461,6 @@ export default function AppHeader() {
     }
   }, [isAuthed])
 
-  const formatMmSs = (sec: number | null) => {
-    if (sec === null) return ''
-    const m = Math.floor(sec / 60)
-    const s = sec % 60
-    return `${m}:${String(s).padStart(2, '0')}`
-  }
-
   const recomputeSubmenuPosition = useCallback(() => {
     if (!openMenu) return
     const targetEl =
@@ -532,19 +513,6 @@ export default function AppHeader() {
     cursor: 'pointer',
   })
 
-  const dropLinkStyle = (key: string): React.CSSProperties => ({
-    display: 'block',
-    fontSize: 14,
-    fontWeight: 650,
-    color: '#fff',
-    textDecoration: hoverDrop === key ? 'underline' : 'none',
-    textUnderlineOffset: 6,
-    textDecorationThickness: 2,
-    padding: '8px 10px',
-    whiteSpace: 'nowrap',
-    background: 'transparent',
-  })
-
   async function handleLogout() {
     closeAll()
     await supabase.auth.signOut()
@@ -577,426 +545,58 @@ export default function AppHeader() {
             gap: 12,
           }}
         >
-          <Link
-            href="/"
-            onClick={closeAll}
-            style={{ display: 'inline-flex', alignItems: 'center', height: navHeight, textDecoration: 'none' }}
-            aria-label="RiskFlow 360"
-            title="RiskFlow 360"
-          >
-            <Image
-              src={asset('/logo-riskflow-360.png')}
-              alt="RiskFlow 360"
-              width={250}
-              height={56}
-              style={{
-                height: 56,
-                width: 'auto',
-                maxWidth: 250,
-                display: 'block',
-                objectFit: 'contain',
-              }}
-            />
-          </Link>
+          <HeaderLogo basePath={BASE_PATH} navHeight={navHeight} onClick={closeAll} />
 
           {showAuthed ? (
-            <nav
-              aria-label="Primary"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 18,
-                fontSize: 14,
-                fontWeight: 550,
-                minHeight: 32,
-              }}
-            >
-              <Link
-                href="/projects"
-                style={navLinkStyle('projects')}
-                onMouseEnter={() => {
-                  setHoverNav('projects')
-                  scheduleCloseMenu()
-                }}
-                onMouseLeave={() => setHoverNav(null)}
-                onClick={closeAll}
-              >
-                Projects
-              </Link>
-
-              <span
-                ref={reportsRef}
-                role="button"
-                tabIndex={0}
-                aria-haspopup="menu"
-                aria-expanded={openMenu === 'reports'}
-                style={navLinkStyle('reports')}
-                onMouseEnter={() => {
-                  setHoverNav('reports')
-                  openMenuNow('reports')
-                }}
-                onMouseLeave={() => setHoverNav(null)}
-                onClick={() => (openMenu === 'reports' ? closeAll() : openMenuNow('reports'))}
-              >
-                Reports
-              </span>
-
-              <Link
-                href="/task-management"
-                style={navLinkStyle('tasks')}
-                onMouseEnter={() => {
-                  setHoverNav('tasks')
-                  scheduleCloseMenu()
-                }}
-                onMouseLeave={() => setHoverNav(null)}
-                onClick={closeAll}
-              >
-                Tasks
-              </Link>
-
-              {canSeeSettings ? (
-                <span
-                  ref={settingsRef}
-                  role="button"
-                  tabIndex={0}
-                  aria-haspopup="menu"
-                  aria-expanded={openMenu === 'settings'}
-                  style={navLinkStyle('settings')}
-                  onMouseEnter={() => {
-                    setHoverNav('settings')
-                    openMenuNow('settings')
-                  }}
-                  onMouseLeave={() => setHoverNav(null)}
-                  onClick={() => (openMenu === 'settings' ? closeAll() : openMenuNow('settings'))}
-                >
-                  Settings
-                </span>
-              ) : null}
-
-              {canSeeAdmin ? (
-                <span
-                  ref={adminRef}
-                  role="button"
-                  tabIndex={0}
-                  aria-haspopup="menu"
-                  aria-expanded={openMenu === 'admin'}
-                  style={navLinkStyle('admin')}
-                  onMouseEnter={() => {
-                    setHoverNav('admin')
-                    openMenuNow('admin')
-                  }}
-                  onMouseLeave={() => setHoverNav(null)}
-                  onClick={() => (openMenu === 'admin' ? closeAll() : openMenuNow('admin'))}
-                >
-                  Admin
-                </span>
-              ) : null}
-            </nav>
+            <HeaderNavigation
+              adminRef={adminRef}
+              canSeeAdmin={canSeeAdmin}
+              canSeeSettings={canSeeSettings}
+              closeAll={closeAll}
+              openMenu={openMenu}
+              openMenuNow={openMenuNow}
+              reportsRef={reportsRef}
+              scheduleCloseMenu={scheduleCloseMenu}
+              setHoverNav={setHoverNav}
+              settingsRef={settingsRef}
+              styleFor={navLinkStyle}
+            />
           ) : (
-            <div
-              aria-hidden
-              style={{
-                minHeight: 32,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 18,
-                visibility: !mounted || authState === 'unknown' ? 'visible' : 'hidden',
-              }}
-            >
-              <div style={{ width: 72, height: 14 }} />
-              <div style={{ width: 70, height: 14 }} />
-              <div style={{ width: 52, height: 14 }} />
-              <div style={{ width: 68, height: 14 }} />
-            </div>
+            <HeaderNavSkeleton visible={!mounted || authState === 'unknown'} />
           )}
 
           {showAuthed ? (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.05 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                  {displayOrgName ? (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 400,
-                        color: 'rgba(0,0,0,0.55)',
-                        letterSpacing: 0.6,
-                        textTransform: 'uppercase',
-                        maxWidth: 240,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={displayOrgName}
-                    >
-                      {displayOrgName}
-                    </span>
-                  ) : null}
-
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#111' }}>{displayFullName ?? '—'}</span>
-
-                  {displayRole ? (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: 'rgba(0,0,0,0.45)',
-                        padding: '4px 8px',
-                        borderRadius: 999,
-                        border: '1px solid rgba(0,0,0,0.10)',
-                        background: 'rgba(0,0,0,0.02)',
-                        lineHeight: 1,
-                      }}
-                      title="Your role"
-                    >
-                      {displayRole}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-
-              {idleLeftSec !== null ? (
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: '#111',
-                    padding: '7px 10px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(0,0,0,0.10)',
-                    background: '#fff',
-                    minWidth: 72,
-                    textAlign: 'center',
-                  }}
-                  title="Auto-logout timer"
-                >
-                  {formatMmSs(idleLeftSec)}
-                </span>
-              ) : null}
-
-              <button
-                onClick={() => void handleLogout()}
-                className="rf-button"
-                style={{
-                  fontSize: 13,
-                  fontWeight: 650,
-                  padding: '6px 10px',
-                  borderRadius: 10,
-                  border: '1px solid #ddd',
-                  background: '#fff',
-                  color: '#111',
-                  cursor: 'pointer',
-                }}
-              >
-                Log out
-              </button>
-            </div>
+            <HeaderUserControls
+              displayFullName={displayFullName}
+              displayOrgName={displayOrgName}
+              displayRole={displayRole}
+              idleLeftSec={idleLeftSec}
+              onLogout={() => void handleLogout()}
+            />
           ) : (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
-              <div
-                aria-hidden
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  visibility: !mounted || authState === 'unknown' ? 'visible' : 'hidden',
-                }}
-              >
-                <div style={{ width: 120, height: 10 }} />
-                <div style={{ width: 90, height: 12 }} />
-                <div style={{ width: 54, height: 20, borderRadius: 999 }} />
-              </div>
-              {authState === 'unauthed' ? (
-                <>
-                  <Link
-                    href="/signup"
-                    className="rf-button"
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 650,
-                      padding: '6px 10px',
-                      borderRadius: 10,
-                      border: '1px solid #ddd',
-                      background: '#fff',
-                      color: '#111',
-                      textDecoration: 'none',
-                      textAlign: 'center',
-                    }}
-                    onClick={closeAll}
-                  >
-                    Create account
-                  </Link>
-                  <Link
-                    href="/login"
-                    className="rf-button"
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 650,
-                      padding: '6px 10px',
-                      borderRadius: 10,
-                      border: '1px solid #ddd',
-                      background: '#fff',
-                      color: '#111',
-                      textDecoration: 'none',
-                      textAlign: 'center',
-                    }}
-                    onClick={closeAll}
-                  >
-                    Log in
-                  </Link>
-                </>
-              ) : (
-                <div style={{ width: 86, height: 34 }} />
-              )}
-            </div>
+            <HeaderUserSkeleton
+              authState={authState}
+              mounted={mounted}
+              publicActions={<HeaderPublicActions onNavigate={closeAll} />}
+            />
           )}
         </div>
       </header>
 
       {showAuthed && openMenu && (
-        <div
-          role="menu"
-          aria-label={openMenu === 'reports' ? 'Reports menu' : openMenu === 'admin' ? 'Admin menu' : 'Settings menu'}
-          style={{
-            position: 'fixed',
-            left: submenuPosition.left,
-            top: submenuPosition.top,
-            zIndex: 55,
-            background: sharedOverlayBg,
-            border: `1px solid ${sharedOverlayBorder}`,
-            boxShadow: '0 14px 28px rgba(0,0,0,0.10)',
-            padding: '8px',
-            width: 'max-content',
-            minWidth: 220,
-            maxWidth: 'min(320px, calc(100vw - 24px))',
-          }}
-          onMouseEnter={clearCloseTimer}
-          onMouseLeave={scheduleCloseMenu}
-        >
-          <div style={{ display: 'grid', gap: 2, width: 'max-content' }}>
-            {openMenu === 'reports' && (
-              <>
-                <Link
-                  href="/reports/rpn-matrix"
-                  style={dropLinkStyle('rpn')}
-                  onMouseEnter={() => setHoverDrop('rpn')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  RPN Matrix
-                </Link>
-
-                <Link
-                  href="/reports/progress-chart"
-                  style={dropLinkStyle('progress')}
-                  onMouseEnter={() => setHoverDrop('progress')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Progress Chart
-                </Link>
-              </>
-            )}
-
-            {openMenu === 'settings' && canSeeSettings && (
-              <>
-                <Link
-                  href="/settings/risk-matrix"
-                  style={dropLinkStyle('risk')}
-                  onMouseEnter={() => setHoverDrop('risk')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Risk Matrix
-                </Link>
-
-                <Link
-                  href="/settings/severity"
-                  style={dropLinkStyle('severity')}
-                  onMouseEnter={() => setHoverDrop('severity')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Severity
-                </Link>
-                <Link
-                  href="/settings/occurrence"
-                  style={dropLinkStyle('occurrence')}
-                  onMouseEnter={() => setHoverDrop('occurrence')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Occurrence
-                </Link>
-                <Link
-                  href="/settings/detection"
-                  style={dropLinkStyle('detection')}
-                  onMouseEnter={() => setHoverDrop('detection')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Detection
-                </Link>
-
-                <Link
-                  href="/settings/sites-departments"
-                  style={dropLinkStyle('sites-departments')}
-                  onMouseEnter={() => setHoverDrop('sites-departments')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Sites & Departments
-                </Link>
-
-                <Link
-                  href="/settings/invitations"
-                  style={dropLinkStyle('invitations')}
-                  onMouseEnter={() => setHoverDrop('invitations')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Invitations
-                </Link>
-
-                <Link
-                  href="/settings/customer-access"
-                  style={dropLinkStyle('customer-access')}
-                  onMouseEnter={() => setHoverDrop('customer-access')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Customer Access
-                </Link>
-              </>
-            )}
-
-            {openMenu === 'admin' && canSeeAdmin && (
-              <>
-                <Link
-                  href="/settings/organizations"
-                  style={dropLinkStyle('organizations')}
-                  onMouseEnter={() => setHoverDrop('organizations')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Organizations
-                </Link>
-
-                <Link
-                  href="/settings/ui-preview"
-                  style={dropLinkStyle('ui-preview')}
-                  onMouseEnter={() => setHoverDrop('ui-preview')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  UI Preview
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
+        <HeaderDropdownMenu
+          canSeeAdmin={canSeeAdmin}
+          canSeeSettings={canSeeSettings}
+          clearCloseTimer={clearCloseTimer}
+          closeAll={closeAll}
+          hoverDrop={hoverDrop}
+          openMenu={openMenu}
+          scheduleCloseMenu={scheduleCloseMenu}
+          setHoverDrop={setHoverDrop}
+          sharedOverlayBg={sharedOverlayBg}
+          sharedOverlayBorder={sharedOverlayBorder}
+          submenuPosition={submenuPosition}
+        />
       )}
 
       <style jsx global>{`

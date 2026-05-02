@@ -14,7 +14,7 @@ import type {
   UserCtx,
 } from './types'
 import {
-  colorFromRpn,
+  getRiskColorFor,
   normalizeProjectText,
   cleanProductList,
   clampInt,
@@ -614,11 +614,7 @@ export async function fetchOpenRiskSummary(
 
     let color: RiskColor | null = null
     if (severity != null && doValue != null) {
-      if (params.mode === 'manual') {
-        color = params.cells[cellKey(clampInt(severity, 1, 10), clampInt(doValue, 1, 100))] ?? colorFromRpn(severity, doValue, params.thresholds)
-      } else {
-        color = colorFromRpn(severity, doValue, params.thresholds)
-      }
+      color = getRiskColorFor(severity, doValue, params.mode, params.thresholds, params.cells)
     }
 
     if (color) counts[color] += 1

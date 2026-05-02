@@ -1,8 +1,15 @@
 import { DO_VALUES, SEVERITIES, cellKey, defaultColor } from './matrix-config'
 import type { RiskColor } from './matrix-colors'
 import type { RiskMatrixLegendRow, RpnThresholds } from './types'
+import {
+  DEFAULT_RPN_THRESHOLDS,
+  clampRiskInt,
+  normalizeRpnThresholds as normalizeSharedRpnThresholds,
+  riskColorFromRpn,
+} from '@/lib/risk-engine'
+import { errorText as sharedErrorText, isTimeoutError as sharedIsTimeoutError } from '@/lib/error-utils'
 
-export const DEFAULT_RPN: RpnThresholds = { greenMax: 100, yellowMax: 200, orangeMax: 360 }
+export const DEFAULT_RPN: RpnThresholds = DEFAULT_RPN_THRESHOLDS
 export const QUERY_TIMEOUT_MS = 1800
 export const RISK_MATRIX_CACHE_KEY = '__SETTINGS_RISK_MATRIX_CACHE__'
 export const RISK_MATRIX_CACHE_TTL_MS = 5 * 60 * 1000
@@ -15,27 +22,15 @@ export const legendRows: RiskMatrixLegendRow[] = [
 ]
 
 export function clampInt(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) return min
-  return Math.max(min, Math.min(max, Math.trunc(value)))
+  return clampRiskInt(value, min, max)
 }
 
 export function errorText(error: unknown) {
-  if (!error) return 'unknown'
-  if (error instanceof Error) return error.message
-  if (typeof error === 'object') {
-    const candidate = error as {
-      details?: unknown
-      error_description?: unknown
-      hint?: unknown
-      message?: unknown
-    }
-    return String(candidate.message ?? candidate.error_description ?? candidate.details ?? candidate.hint ?? error)
-  }
-  return String(error)
+  return sharedErrorText(error)
 }
 
 export function isTimeoutError(error: unknown) {
-  return errorText(error).toLowerCase().includes('timeout')
+  return sharedIsTimeoutError(error)
 }
 
 export function delay(ms: number) {
@@ -67,22 +62,9 @@ export function buildDefaultCells() {
 }
 
 export function colorFromRpn(severity: number, doValue: number, thresholds: RpnThresholds): RiskColor {
-  const rpn = severity * doValue
-  if (rpn <= thresholds.greenMax) return 'green'
-  if (rpn <= thresholds.yellowMax) return 'yellow'
-  if (rpn <= thresholds.orangeMax) return 'orange'
-  return 'red'
+  return riskColorFromRpn(severity, doValue, thresholds)
 }
 
 export function normalizeRpnThresholds(next: RpnThresholds): RpnThresholds {
-  const normalized: RpnThresholds = {
-    greenMax: clampInt(next.greenMax, 1, 1000),
-    yellowMax: clampInt(next.yellowMax, 1, 1000),
-    orangeMax: clampInt(next.orangeMax, 1, 1000),
-  }
-
-  if (normalized.yellowMax < normalized.greenMax) normalized.yellowMax = normalized.greenMax
-  if (normalized.orangeMax < normalized.yellowMax) normalized.orangeMax = normalized.yellowMax
-
-  return normalized
+  return normalizeSharedRpnThresholds(next)
 }

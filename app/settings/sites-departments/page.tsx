@@ -45,6 +45,7 @@ import {
   type SiteDeptRow,
   updateSiteDepartmentsActiveState,
 } from '@/features/settings/site-departments-service'
+import { toUserErrorMessage } from '@/lib/error-utils'
 
 type UiSiteRow = {
   key: string
@@ -305,7 +306,7 @@ export default function SettingsSitesDepartmentsPage() {
       setRows(context.rows)
       setUiRows(toUiRows(context.rows))
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not load sites and departments.')
+      setErr(toUserErrorMessage(error, 'Could not load sites and departments.'))
     } finally {
       setLoading(false)
     }
@@ -347,7 +348,7 @@ export default function SettingsSitesDepartmentsPage() {
       await replaceSiteDepartmentsForSite(supabase, orgId, originalSite, siteName, departmentList)
       await load(false)
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not save sites and departments.')
+      setErr(toUserErrorMessage(error, 'Could not save sites and departments.'))
     } finally {
       setSaving(false)
     }
@@ -365,7 +366,7 @@ export default function SettingsSitesDepartmentsPage() {
       setConfirmDelete(null)
       await load(false)
     } catch (error) {
-      setConfirmDeleteError(error instanceof Error ? error.message : 'Could not delete site.')
+      setConfirmDeleteError(toUserErrorMessage(error, 'Could not delete site.'))
     } finally {
       setSaving(false)
     }
@@ -382,7 +383,7 @@ export default function SettingsSitesDepartmentsPage() {
       setRows((prev) => prev.map((row) => (row.site === site ? { ...row, active } : row)))
       setUiRows((prev) => prev.map((row) => (row.site === site ? { ...row, active } : row)))
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not update site status.')
+      setErr(toUserErrorMessage(error, 'Could not update site status.'))
     } finally {
       setSaving(false)
     }

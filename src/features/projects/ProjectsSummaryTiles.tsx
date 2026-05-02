@@ -9,13 +9,11 @@ import {
 } from '@/components/rf-ui'
 import type { RpnThresholds } from './types'
 import { projectsSummaryValueStyle } from './view-styles'
+import { riskColorFromRpnValue } from '@/lib/risk-engine'
 
 function avgRpnTileStyle(value: number | null, thresholds: RpnThresholds) {
   if (value == null || !Number.isFinite(value)) return settingsSummaryTileStyle
-  if (value <= thresholds.greenMax) return settingsRiskSummaryTileStyle('green')
-  if (value <= thresholds.yellowMax) return settingsRiskSummaryTileStyle('yellow')
-  if (value <= thresholds.orangeMax) return settingsRiskSummaryTileStyle('orange')
-  return settingsRiskSummaryTileStyle('red')
+  return settingsRiskSummaryTileStyle(riskColorFromRpnValue(value, thresholds))
 }
 
 export function ProjectsSummaryTiles({

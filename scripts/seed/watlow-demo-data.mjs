@@ -3,6 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL
 const serviceRoleKey = process.env.SERVICE_ROLE_KEY
+const allowDemoSeed = process.env.ALLOW_DEMO_SEED
+const orgName = process.env.DEMO_SEED_ORG_NAME?.trim() || 'WATLOW'
+
+if (allowDemoSeed !== 'YES') {
+  console.error('Refusing to seed demo data. Set ALLOW_DEMO_SEED=YES and verify DEMO_SEED_ORG_NAME before running.')
+  process.exit(1)
+}
 
 if (!supabaseUrl || !serviceRoleKey) {
   console.error('Missing SUPABASE_URL or SERVICE_ROLE_KEY')
@@ -12,8 +19,6 @@ if (!supabaseUrl || !serviceRoleKey) {
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 })
-
-const orgName = 'WATLOW'
 
 const demoProjects = [
   {

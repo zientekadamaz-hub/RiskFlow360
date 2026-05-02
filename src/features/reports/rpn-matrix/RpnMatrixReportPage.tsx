@@ -4,8 +4,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@app/lib/supabaseBrowser'
 import { getSessionUserWithRetries } from '@/lib/auth/client-session'
 import { DO_VALUES, SEVERITIES, cellKey, defaultColor } from '@/features/settings/risk-matrix/matrix-config'
-import { colorFromRpn } from '@/features/settings/risk-matrix/risk-matrix-utils'
 import type { RiskColor } from '@/features/settings/risk-matrix/matrix-colors'
+import { riskColorForMatrixCell, riskColorFromRpnValue } from '@/lib/risk-engine'
 import {
   SettingsBanner,
   SettingsPageShell,
@@ -27,6 +27,7 @@ import { StandardSelect } from '@/features/settings/StandardSelect'
 import { projectsProcessCellStyle, projectsSummaryValueStyle } from '@/features/projects/view-styles'
 import { fetchRpnMatrixReportData } from './rpn-matrix-service'
 import type { RpnMatrixFilters, RpnMatrixReportData } from './types'
+import { toUserErrorMessage } from '@/lib/error-utils'
 
 const EMPTY_FILTERS: RpnMatrixFilters = { departments: [], projectIds: [], sites: [] }
 const RISK_COLOR_CHART_ORDER: RiskColor[] = ['red', 'orange', 'yellow', 'green']
@@ -48,16 +49,19 @@ function avgRpnTileStyle(value: number | null, data: RpnMatrixReportData | null)
     return settingsSummaryTileStyle
   }
 
-  const color = colorFromRpn(1, value, data.thresholds)
+  const color = riskColorFromRpnValue(value, data.thresholds)
   return settingsRiskSummaryTileStyle(color)
 }
 
 function cellColor(severity: number, doValue: number, data: RpnMatrixReportData): RiskColor {
-  if (data.matrixMode === 'manual') {
-    return data.riskMatrixCells[cellKey(severity, doValue)] ?? defaultColor(severity, doValue)
-  }
-
-  return colorFromRpn(severity, doValue, data.thresholds)
+  return riskColorForMatrixCell(
+    severity,
+    doValue,
+    data.matrixMode,
+    data.thresholds,
+    data.riskMatrixCells,
+    defaultColor
+  ) as RiskColor
 }
 
 function RpnMatrixSummary({ data }: { data: RpnMatrixReportData | null }) {
@@ -303,7 +307,7 @@ export function RpnMatrixReportPage() {
         const next = await fetchRpnMatrixReportData(supabase, user.id, filters)
         if (active) setData(next)
       } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load RPN Matrix report.')
+        if (active) setError(toUserErrorMessage(loadError, 'Could not load RPN Matrix report.'))
       } finally {
         if (active) setLoading(false)
       }

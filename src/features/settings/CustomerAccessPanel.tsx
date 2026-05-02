@@ -43,6 +43,7 @@ import {
   type CustomerCandidateRow,
   type CustomerAccessProjectRow,
 } from '@/features/settings/customer-access-service'
+import { toUserErrorMessage } from '@/lib/error-utils'
 
 type CustomerModule = 'PFD' | 'PFMEA' | 'PCP'
 type SortDirection = 'asc' | 'desc'
@@ -336,7 +337,7 @@ export function CustomerAccessPanel({
       setProjects(projectRows)
       setGrants(grantRows)
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not load customer access data.')
+      setErr(toUserErrorMessage(error, 'Could not load customer access data.'))
     } finally {
       setLoading(false)
     }
@@ -391,7 +392,7 @@ export function CustomerAccessPanel({
       cancelCreateRow()
       await load()
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not update customer access.')
+      setErr(toUserErrorMessage(error, 'Could not update customer access.'))
     } finally {
       setSaving(false)
     }
@@ -415,7 +416,7 @@ export function CustomerAccessPanel({
       })
       await load()
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not update customer access.')
+      setErr(toUserErrorMessage(error, 'Could not update customer access.'))
     } finally {
       setSaving(false)
       setRowBusyKey(null)
@@ -445,7 +446,7 @@ export function CustomerAccessPanel({
       setRowToDelete(null)
       await load()
     } catch (error) {
-      setErr(error instanceof Error ? error.message : 'Could not delete customer access.')
+      setErr(toUserErrorMessage(error, 'Could not delete customer access.'))
     } finally {
       setSaving(false)
       setRowBusyKey(null)

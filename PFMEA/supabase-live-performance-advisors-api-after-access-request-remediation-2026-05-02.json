@@ -1,0 +1,472 @@
+﻿{
+    "lints":  [
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_control_plan_rows_pfmea_row_id\\` on table \\`public.control_plan_rows\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "control_plan_rows",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_control_plan_rows_idx_control_plan_rows_pfmea_row_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_control_plan_rows_revision_id\\` on table \\`public.control_plan_rows\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "control_plan_rows",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_control_plan_rows_idx_control_plan_rows_revision_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`organizations_active_idx\\` on table \\`public.organizations\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "organizations",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_organizations_organizations_active_idx"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_customer_access_grants_created_by\\` on table \\`public.customer_access_grants\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "customer_access_grants",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_customer_access_grants_idx_customer_access_grants_created_by"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_customer_access_grants_project_id\\` on table \\`public.customer_access_grants\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "customer_access_grants",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_customer_access_grants_idx_customer_access_grants_project_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_organization_invitations_invited_by\\` on table \\`public.organization_invitations\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "organization_invitations",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_organization_invitations_idx_organization_invitations_invited_by"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pcp_change_history_author_id\\` on table \\`public.pcp_change_history\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pcp_change_history",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pcp_change_history_idx_pcp_change_history_author_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`severity_overrides_org_idx\\` on table \\`public.severity_overrides\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "severity_overrides",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_severity_overrides_severity_overrides_org_idx"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pcp_edit_sessions_locked_by\\` on table \\`public.pcp_edit_sessions\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pcp_edit_sessions",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pcp_edit_sessions_idx_pcp_edit_sessions_locked_by"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfd_change_history_author_id\\` on table \\`public.pfd_change_history\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfd_change_history",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfd_change_history_idx_pfd_change_history_author_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfd_drafts_user_id\\` on table \\`public.pfd_drafts\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfd_drafts",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfd_drafts_idx_pfd_drafts_user_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfd_edges_revision_id\\` on table \\`public.pfd_edges\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfd_edges",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfd_edges_idx_pfd_edges_revision_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfd_edit_sessions_locked_by\\` on table \\`public.pfd_edit_sessions\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfd_edit_sessions",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfd_edit_sessions_idx_pfd_edit_sessions_locked_by"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfd_nodes_revision_id\\` on table \\`public.pfd_nodes\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfd_nodes",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfd_nodes_idx_pfd_nodes_revision_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfd_session_events_user_id\\` on table \\`public.pfd_session_events\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfd_session_events",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfd_session_events_idx_pfd_session_events_user_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfmea_change_history_author_id\\` on table \\`public.pfmea_change_history\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfmea_change_history",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfmea_change_history_idx_pfmea_change_history_author_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfmea_edit_sessions_locked_by\\` on table \\`public.pfmea_edit_sessions\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfmea_edit_sessions",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfmea_edit_sessions_idx_pfmea_edit_sessions_locked_by"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_process_revisions_based_on_revision_id\\` on table \\`public.process_revisions\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "process_revisions",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_process_revisions_idx_process_revisions_based_on_revision_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_process_revisions_project_id\\` on table \\`public.process_revisions\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "process_revisions",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_process_revisions_idx_process_revisions_project_id"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`access_requests_requester_email_created_at_idx\\` on table \\`public.access_requests\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "access_requests",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_access_requests_access_requests_requester_email_created_at_idx"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfd_edges_source\\` on table \\`public.pfd_edges\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfd_edges",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfd_edges_idx_pfd_edges_source"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_pfd_edges_target\\` on table \\`public.pfd_edges\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "pfd_edges",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_pfd_edges_idx_pfd_edges_target"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`idx_risk_matrix_cells_updated\\` on table \\`public.risk_matrix_cells\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "risk_matrix_cells",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_risk_matrix_cells_idx_risk_matrix_cells_updated"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`occurrence_overrides_org_idx\\` on table \\`public.occurrence_overrides\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "occurrence_overrides",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_occurrence_overrides_occurrence_overrides_org_idx"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`detection_overrides_org_idx\\` on table \\`public.detection_overrides\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "detection_overrides",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_detection_overrides_detection_overrides_org_idx"
+                  },
+                  {
+                      "name":  "unused_index",
+                      "title":  "Unused Index",
+                      "level":  "INFO",
+                      "facing":  "EXTERNAL",
+                      "categories":  [
+                                         "PERFORMANCE"
+                                     ],
+                      "description":  "Detects if an index has never been used and may be a candidate for removal.",
+                      "detail":  "Index \\`organization_members_user_idx\\` on table \\`public.organization_members\\` has not been used",
+                      "remediation":  "https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index",
+                      "metadata":  {
+                                       "name":  "organization_members",
+                                       "type":  "table",
+                                       "schema":  "public"
+                                   },
+                      "cache_key":  "unused_index_public_organization_members_organization_members_user_idx"
+                  }
+              ]
+}

@@ -30,10 +30,7 @@ const eslintConfig = defineConfig([
       'app/pfd/page.tsx',
       'app/pfd/_lib/**/*.tsx',
       'app/pfmea/page.tsx',
-      'app/projects/page.tsx',
       'app/settings/invitations/page.tsx',
-      'app/settings/risk-matrix/page.tsx',
-      'app/settings/sites-departments/page.tsx',
     ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
@@ -74,12 +71,6 @@ const eslintConfig = defineConfig([
     },
   },
 
-  {
-    files: ['app/settings/risk-matrix/page.tsx'],
-    rules: {
-      '@typescript-eslint/ban-ts-comment': 'off',
-    },
-  },
 ])
 
 export default eslintConfig

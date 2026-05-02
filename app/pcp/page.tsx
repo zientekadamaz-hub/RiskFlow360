@@ -7,6 +7,15 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@app/lib/supabaseBrowser'
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
+import {
+  PCP_PLACEHOLDER_PREFIX,
+  asInt1to10,
+  isPfmeaSeedSelectedForPcp,
+  isPlaceholderPcpRowId,
+  nextPcpRevisionLabel,
+  normalizeClassValue,
+  normalizeText,
+} from '@/features/pcp/pcp-utils'
 
 type ProjectView = {
   id: string
@@ -112,7 +121,6 @@ const SURFACE_PANEL_BG = 'rgb(40, 39, 47)'
 const SURFACE_TEXT = '#f8fafc'
 const SURFACE_MUTED = 'rgba(255,255,255,0.72)'
 
-const PCP_PLACEHOLDER_PREFIX = '__pcp_placeholder__:'
 const PCP_CLASS_OPTIONS = ['', 'SC', 'CC']
 const CLASS_OPTION_DETAILS: Record<string, { title: string; description: string[] }> = {
   SC: {
@@ -181,51 +189,6 @@ const DEFAULT_VISIBLE_COLUMNS: Record<PcpColumnId, boolean> = {
   reaction_plan: true,
 }
 
-function normalizeText(v: unknown) {
-  return String(v ?? '').trim()
-}
-
-function normalizePcpFlag(v: unknown): boolean | null {
-  if (v == null) return null
-  if (typeof v === 'boolean') return v
-  if (typeof v === 'number') return v === 1 ? true : v === 0 ? false : null
-  const source = String(v).trim().toLowerCase()
-  if (!source) return null
-  if (source === 'true' || source === 't' || source === '1' || source === 'yes') return true
-  if (source === 'false' || source === 'f' || source === '0' || source === 'no') return false
-  return null
-}
-
-function normalizeClassValue(raw: string | null | undefined): string | null {
-  if (raw == null) return null
-  const source = String(raw).trim()
-  if (!source) return null
-  const upper = source.toUpperCase()
-  const token = upper.split(/[\s-]/)[0] ?? ''
-  if (token === 'SC' || upper.includes('SPECIAL CHARACTERISTIC')) return 'SC'
-  if (token === 'CC' || upper.includes('CRITICAL CHARACTERISTIC')) return 'CC'
-  return null
-}
-
-function asInt1to10(v: unknown): number | null {
-  if (v == null) return null
-  const n = typeof v === 'number' ? v : Number(String(v).trim())
-  if (!Number.isFinite(n)) return null
-  const i = Math.trunc(n)
-  if (i < 1 || i > 10) return null
-  return i
-}
-
-function isPfmeaSeedSelectedForPcp(row: Pick<PfmeaPcpSeedRow, 'pcp' | 'class' | 'severity' | 'rpn'>, yellowMax: number) {
-  const override = normalizePcpFlag(row.pcp)
-  if (override != null) return override
-  if (normalizeClassValue(row.class)) return true
-  const severity = asInt1to10(row.severity)
-  if (severity != null && severity >= 9) return true
-  const rpn = typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : null
-  return rpn != null && rpn > yellowMax
-}
-
 function formatDateTimePL(iso: string | null | undefined) {
   if (!iso) return '-'
   const d = new Date(iso)
@@ -233,18 +196,6 @@ function formatDateTimePL(iso: string | null | undefined) {
   const date = d.toLocaleDateString('pl-PL', { year: 'numeric', month: '2-digit', day: '2-digit' })
   const time = d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   return `${date} ${time}`
-}
-
-function nextPcpRevisionLabel(labelRaw: string | null | undefined) {
-  const raw = (labelRaw ?? '0.0.0').toString().trim() || '0.0.0'
-  const parts = raw.split('.')
-  const pfd = Number.parseInt((parts[0] ?? '0').trim(), 10)
-  const pfmea = Number.parseInt((parts[1] ?? '0').trim(), 10)
-  const pcp = Number.parseInt((parts[2] ?? '0').trim(), 10)
-  const a = Number.isFinite(pfd) ? pfd : 0
-  const b = Number.isFinite(pfmea) ? pfmea : 0
-  const c = Number.isFinite(pcp) ? pcp : 0
-  return `${a}.${b}.${c + 1}`
 }
 
 function anchoredPopupStyle(anchorEl: HTMLElement, width: number, gap = 8, minViewportPadding = 24): React.CSSProperties {
@@ -265,10 +216,6 @@ function anchoredPopupStyle(anchorEl: HTMLElement, width: number, gap = 8, minVi
     maxWidth: `calc(100vw - ${minViewportPadding * 2}px)`,
     maxHeight: `calc(100vh - ${minViewportPadding * 2}px)`,
   }
-}
-
-function isPlaceholderPcpRowId(id: string | null | undefined) {
-  return String(id ?? '').startsWith(PCP_PLACEHOLDER_PREFIX)
 }
 
 function makePcpPlaceholderRow(op: Operation, revisionId: string | null, seedKey: string, seed?: Partial<PfmeaPcpSeedRow> | null, sortIndex = 0): PcpRow {

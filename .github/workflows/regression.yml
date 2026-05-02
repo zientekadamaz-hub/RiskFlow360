@@ -76,6 +76,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Shared regression
+        run: npm run regression:shared
+
       - name: Build app
         run: npm run build
 

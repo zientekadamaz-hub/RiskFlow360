@@ -12,6 +12,7 @@ import {
   settingsTableStyle,
 } from '@/components/rf-ui'
 import type { RpnThresholds } from './types'
+import { riskColorFromRpnValue } from '@/lib/risk-engine'
 
 export const PROJECTS_PROCESS_ACCENT = settingsProcessAccent
 export const PROJECTS_FILTER_ACTIVE_BG = 'rgba(156,163,175,0.18)'
@@ -133,14 +134,9 @@ export function projectsAvgRpnStyle(value: number | null, thresholds: RpnThresho
   if (value == null || !Number.isFinite(value)) {
     return { ...base, color: '#f8fafc', background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.16)' }
   }
-  if (value <= thresholds.greenMax) {
-    return { ...base, color: '#f8fafc', background: 'rgba(34,197,94,0.18)', borderColor: 'rgba(34,197,94,0.45)' }
-  }
-  if (value <= thresholds.yellowMax) {
-    return { ...base, color: '#f8fafc', background: 'rgba(250,204,21,0.22)', borderColor: 'rgba(250,204,21,0.55)' }
-  }
-  if (value <= thresholds.orangeMax) {
-    return { ...base, color: '#f8fafc', background: 'rgba(251,146,60,0.18)', borderColor: 'rgba(251,146,60,0.45)' }
-  }
+  const color = riskColorFromRpnValue(value, thresholds)
+  if (color === 'green') return { ...base, color: '#f8fafc', background: 'rgba(34,197,94,0.18)', borderColor: 'rgba(34,197,94,0.45)' }
+  if (color === 'yellow') return { ...base, color: '#f8fafc', background: 'rgba(250,204,21,0.22)', borderColor: 'rgba(250,204,21,0.55)' }
+  if (color === 'orange') return { ...base, color: '#f8fafc', background: 'rgba(251,146,60,0.18)', borderColor: 'rgba(251,146,60,0.45)' }
   return { ...base, color: '#f8fafc', background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.35)' }
 }

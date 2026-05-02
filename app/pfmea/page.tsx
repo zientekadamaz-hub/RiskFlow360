@@ -7,6 +7,85 @@ import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
 import { colorToBg as RISK_MATRIX_COLOR_HEX, type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/matrixColors'
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
+import { isTimeoutError } from '@/lib/error-utils'
+import {
+  clampRiskInt,
+  riskCellKey,
+  riskColorForMatrixCell,
+  riskColorFromRpnValue,
+} from '@/lib/risk-engine'
+import { asInt1to10, calcRpn, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
+import {
+  hasFailureModeContext,
+  hasPfmeaTextValue,
+  isCauseContinuationEmpty,
+  isEffectContinuationEmpty,
+  isFailureModeContinuationEmpty,
+  isRecommendedActionContinuationEmpty,
+  patchHasAnyValue,
+} from '@/features/pfmea/pfmea-continuation-utils'
+import {
+  CALENDAR_MONTHS,
+  CALENDAR_WEEKDAYS,
+  formatIsoDate,
+  getCalendarCells,
+  parseIsoDateParts,
+  todayIsoDate,
+} from '@/features/pfmea/pfmea-date-utils'
+import { normalizeHistoryText, parseExamples, shortSeverityLabel, toFiniteNumber } from '@/features/pfmea/pfmea-display-utils'
+import { getPreviousRequiredFieldForActionPlan } from '@/features/pfmea/pfmea-action-validation-utils'
+import {
+  buildPfmeaBlockMergeInfoByHierarchy,
+  buildPfmeaHierarchy,
+  createPfmeaGroupIds,
+  isPlaceholderRowId,
+  normalizePfmeaGroupId,
+  normalizePfmeaRowNo,
+  parsePfmeaRowNo,
+  pickPfmeaGroupIds,
+  samePfmeaGroupValue,
+  type PfmeaRowHierarchy,
+} from '@/features/pfmea/pfmea-hierarchy-utils'
+import {
+  buildPfmeaCreatedAtOrder,
+  buildPfmeaStableOrderMetadata,
+  buildPfmeaRowsWithStableOrderMetadata,
+  getPfmeaRowOperationId,
+  getPfmeaRowOperationIds,
+  insertPfmeaRowAfterAnchor,
+  insertPfmeaRowAtSortIndex,
+  reindexPfmeaRows,
+  sortPfmeaRows,
+} from '@/features/pfmea/pfmea-row-order-utils'
+import { getPfmeaPcpAutoReasons, isPfmeaSelectedForPcp } from '@/features/pfmea/pfmea-pcp-utils'
+import {
+  getOperationNodeIdsFromDiagram,
+  opGroupKeyFromOperation,
+  opGroupKeyFromRow,
+  opQualityScore,
+} from '@/features/pfmea/pfmea-operation-utils'
+import {
+  findEquivalentPfmeaRow,
+  findEquivalentPublishedPfmeaRow,
+} from '@/features/pfmea/pfmea-row-match-utils'
+import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
+import { hydratePfmeaGroupIds } from '@/features/pfmea/pfmea-row-normalization-utils'
+import { nextPfmeaRevisionLabel, pfmeaRevisionNumberFromLabel } from '@/features/pfmea/pfmea-revision-utils'
+import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
+import { createPfmeaSaveTimer, formatPfmeaSaveTimings } from '@/features/pfmea/pfmea-save-timing-utils'
+import { isMissingRpcFunctionError, parsePfmeaPublishResult } from '@/features/pfmea/pfmea-publish-utils'
+import {
+  PFMEA_CLONE_FIELDS,
+  PFMEA_CLONE_FIELDS_LEGACY,
+  PFMEA_SELECT_FIELDS,
+  PFMEA_SELECT_FIELDS_LEGACY,
+  buildPfmeaInsertPayloadForRevision,
+  buildPfmeaPublishedMetadataPatch,
+  buildPfmeaPublishedSyncPatch,
+  isMissingPfmeaGroupIdColumnError,
+  stripPfmeaGroupIdsFromPayload,
+  summarizePfmeaRowsForError,
+} from '@/features/pfmea/pfmea-payload-utils'
 
 /* ===================== TYPES ===================== */
 
@@ -86,19 +165,6 @@ type PfmeaRow = {
 type NewRowDraft = { operation_id: string }
 type PfmeaEditorElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement
 type PfmeaEditorRef = React.MutableRefObject<PfmeaEditorElement | null>
-type PfmeaGroupIds = {
-  failure_mode_group_id: string
-  failure_block_group_id: string
-  action_plan_group_id: string
-}
-type PfmeaRowHierarchy = {
-  rowLabel: string
-  failureModeKey: string
-  failureBlockKey: string
-  causeBlockKey: string
-  actionKey: string
-}
-
 type Mode = 'manual' | 'rpn'
 type RiskColor = RiskMatrixColor
 
@@ -180,7 +246,6 @@ type PfmeaColumnId =
   | 'rpn2'
   | 'delete'
 
-const PLACEHOLDER_ROW_PREFIX = '__pfmea_placeholder__:'
 const PFMEA_VISIBLE_COLUMNS_KEY_PREFIX = '__PFMEA_VISIBLE_COLUMNS__'
 const PFMEA_DIRTY_DRAFT_KEY_PREFIX = '__PFMEA_DIRTY_DRAFT__'
 const EDIT_LOCK_HOURS = 48
@@ -381,12 +446,11 @@ function rgba(hex: string, alpha: number) {
 }
 
 function cellKey(sev: number, doVal: number) {
-  return `${sev}|${doVal}`
+  return riskCellKey(sev, doVal)
 }
 
 function clampInt(v: number, min: number, max: number) {
-  if (!Number.isFinite(v)) return min
-  return Math.max(min, Math.min(max, Math.trunc(v)))
+  return clampRiskInt(v, min, max)
 }
 
 function colorFill(c: RiskColor) {
@@ -401,1002 +465,6 @@ function colorBorder(c: RiskColor) {
   if (c === 'orange') return rgba(COLOR_HEX[c], 0.45)
   if (c === 'yellow') return rgba(COLOR_HEX[c], 0.55)
   return rgba(COLOR_HEX[c], 0.45)
-}
-
-function colorFromRpn(sev: number, doVal: number, t: RpnThresholds): RiskColor {
-  const rpn = sev * doVal
-  if (rpn <= t.greenMax) return 'green'
-  if (rpn <= t.yellowMax) return 'yellow'
-  if (rpn <= t.orangeMax) return 'orange'
-  return 'red'
-}
-
-function asInt1to10(v: any): number | null {
-  if (v === null || v === undefined) return null
-  const n = typeof v === 'number' ? v : Number(String(v).trim())
-  if (!Number.isFinite(n)) return null
-  const i = Math.trunc(n)
-  if (i < 1 || i > 10) return null
-  return i
-}
-
-function calcRpn(sevRaw: any, occRaw: any, detRaw: any) {
-  const sev = asInt1to10(sevRaw)
-  const occ = asInt1to10(occRaw)
-  const det = asInt1to10(detRaw)
-  const doVal = occ != null && det != null ? occ * det : null // 1..100
-  const rpn = sev != null && doVal != null ? sev * doVal : null // 1..1000
-  return { sev, occ, det, doVal, rpn }
-}
-
-function computeDerived(
-  row: PfmeaRow
-): Pick<PfmeaRow, 'rpn' | 'oxd' | 'rpn2' | 'oxd2' | 'rpn_current' | 'oxd_current'> {
-  const a1 = calcRpn(row.severity, row.occurrence, row.detection)
-  const a2 = calcRpn(row.severity, row.occurrence2, row.detection2)
-
-  const oxd = a1.doVal
-  const rpn = a1.rpn
-
-  const oxd2 = a2.doVal
-  const rpn2 = a2.rpn
-
-  const isClosed = (row.action_status ?? '').toUpperCase() === 'CLOSED'
-  const rpn_current = isClosed ? rpn2 : rpn
-  const oxd_current = isClosed ? oxd2 : oxd
-
-  return {
-    rpn: rpn ?? null,
-    oxd: oxd ?? null,
-    rpn2: rpn2 ?? null,
-    oxd2: oxd2 ?? null,
-    rpn_current: rpn_current ?? null,
-    oxd_current: oxd_current ?? null,
-  }
-}
-
-function getPfmeaPcpAutoReasons(row: Pick<PfmeaRow, 'pcp' | 'class' | 'severity'>, riskColor: RiskColor | null): string[] {
-  const reasons: string[] = []
-  const normalizedClass = normalizeClassValue(row.class)
-  const severity = asInt1to10(row.severity)
-
-  if (normalizedClass === 'SC' || normalizedClass === 'CC') {
-    reasons.push(`CLASS = ${normalizedClass}`)
-  }
-  if (severity != null && severity >= 9) {
-    reasons.push(`SEV = ${severity}`)
-  }
-  if (riskColor === 'orange' || riskColor === 'red') {
-    reasons.push(`RPN = ${riskColor.toUpperCase()}`)
-  }
-
-  return reasons
-}
-
-function isPfmeaSelectedForPcp(row: Pick<PfmeaRow, 'pcp' | 'class' | 'severity'>, riskColor: RiskColor | null) {
-  const override = normalizePfmeaPcpValue(row.pcp)
-  if (override != null) return override
-  return getPfmeaPcpAutoReasons(row, riskColor).length > 0
-}
-
-function pfmeaRevisionNumberFromLabel(label: string | null | undefined) {
-  const raw = (label ?? '').toString().trim()
-  if (!raw) return '-'
-  const parts = raw.split('.').map((v) => v.trim()).filter(Boolean)
-  if (parts.length === 0) return '-'
-  const normalized = parts.map((part) => part.match(/\d+/)?.[0] ?? part).filter(Boolean)
-  if (normalized.length === 0) return '-'
-  const direct = normalized[1]
-  if (direct && direct !== '0') return direct
-  const nonZero = normalized.find((part) => part !== '0')
-  return nonZero || direct || normalized[0] || '-'
-}
-
-function nextPfmeaRevisionLabel(label: string | null | undefined) {
-  const raw = (label ?? '').toString().trim()
-  const parts = raw ? raw.split('.') : ['0', '0', '0']
-  const pfd = Number.parseInt((parts[0] ?? '0').trim(), 10)
-  const pfmea = Number.parseInt((parts[1] ?? '0').trim(), 10)
-  const pcp = Number.parseInt((parts[2] ?? '0').trim(), 10)
-  const a = Number.isFinite(pfd) ? pfd : 0
-  const b = Number.isFinite(pfmea) ? pfmea : 0
-  const c = Number.isFinite(pcp) ? pcp : 0
-  return `${a}.${b + 1}.${c}`
-}
-
-function isPlaceholderRowId(id: string) {
-  return typeof id === 'string' && id.startsWith(PLACEHOLDER_ROW_PREFIX)
-}
-
-function patchHasAnyValue(patch: Partial<PfmeaRow>) {
-  for (const value of Object.values(patch)) {
-    if (value == null) continue
-    if (typeof value === 'string') {
-      if (value.trim() !== '') return true
-      continue
-    }
-    return true
-  }
-  return false
-}
-
-function isCauseContinuationEmpty(row: PfmeaRow) {
-  return !patchHasAnyValue({
-    cause: row.cause,
-    occurrence: row.occurrence,
-    current_prevention: row.current_prevention,
-    current_detection: row.current_detection,
-    detection: row.detection,
-    recommended_action: row.recommended_action,
-    responsible: row.responsible,
-    target_date: row.target_date,
-    action_status: row.action_status,
-    occurrence2: row.occurrence2,
-    detection2: row.detection2,
-  })
-}
-
-function isRecommendedActionContinuationEmpty(row: PfmeaRow) {
-  return !patchHasAnyValue({
-    recommended_action: row.recommended_action,
-    responsible: row.responsible,
-    target_date: row.target_date,
-    action_status: row.action_status,
-    occurrence2: row.occurrence2,
-    detection2: row.detection2,
-  })
-}
-
-function isFailureModeContinuationEmpty(row: PfmeaRow) {
-  return !patchHasAnyValue({
-    failure_mode: row.failure_mode,
-    effect: row.effect,
-    severity: row.severity,
-    characteristic: row.characteristic,
-    class: row.class,
-    cause: row.cause,
-    occurrence: row.occurrence,
-    current_prevention: row.current_prevention,
-    current_detection: row.current_detection,
-    detection: row.detection,
-    recommended_action: row.recommended_action,
-    responsible: row.responsible,
-    target_date: row.target_date,
-    action_status: row.action_status,
-    occurrence2: row.occurrence2,
-    detection2: row.detection2,
-  })
-}
-
-function isEffectContinuationEmpty(row: PfmeaRow) {
-  return !patchHasAnyValue({
-    effect: row.effect,
-    severity: row.severity,
-    cause: row.cause,
-    occurrence: row.occurrence,
-    current_prevention: row.current_prevention,
-    current_detection: row.current_detection,
-    detection: row.detection,
-    recommended_action: row.recommended_action,
-    responsible: row.responsible,
-    target_date: row.target_date,
-    action_status: row.action_status,
-    occurrence2: row.occurrence2,
-    detection2: row.detection2,
-  })
-}
-
-function normalizePfmeaGroupId(value: string | null | undefined) {
-  const normalized = (value ?? '').trim()
-  return normalized || null
-}
-
-function normalizePfmeaRowNo(value: string | null | undefined) {
-  const normalized = (value ?? '').trim()
-  return normalized || null
-}
-
-function parsePfmeaRowNo(value: string | null | undefined): PfmeaRowHierarchy | null {
-  const rowLabel = normalizePfmeaRowNo(value)
-  if (!rowLabel) return null
-
-  const parts = rowLabel.split('.').map((part) => part.trim())
-  if (parts.length !== 5 || parts.some((part) => part.length === 0)) return null
-
-  return {
-    rowLabel,
-    failureModeKey: parts.slice(0, 2).join('.'),
-    failureBlockKey: parts.slice(0, 3).join('.'),
-    causeBlockKey: parts.slice(0, 4).join('.'),
-    actionKey: parts.slice(0, 5).join('.'),
-  }
-}
-
-function parsePfmeaRowNoParts(value: string | null | undefined) {
-  const rowLabel = normalizePfmeaRowNo(value)
-  if (!rowLabel) return null
-
-  const parts = rowLabel.split('.').map((part) => Number.parseInt(part.trim(), 10))
-  if (parts.length !== 5 || parts.some((part) => !Number.isFinite(part))) return null
-  return parts
-}
-
-function samePfmeaGroupValue(a: string | null | undefined, b: string | null | undefined) {
-  const left = normalizePfmeaGroupId(a)
-  const right = normalizePfmeaGroupId(b)
-  return !!left && !!right && left === right
-}
-
-function createPfmeaGroupId() {
-  if (typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
-    return globalThis.crypto.randomUUID()
-  }
-
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
-    const rand = Math.floor(Math.random() * 16)
-    const value = ch === 'x' ? rand : (rand & 0x3) | 0x8
-    return value.toString(16)
-  })
-}
-
-function createDeterministicPfmeaGroupId(seed: string) {
-  let h1 = 0x811c9dc5
-  let h2 = 0x9e3779b9
-  let h3 = 0x85ebca6b
-  let h4 = 0xc2b2ae35
-
-  for (let index = 0; index < seed.length; index += 1) {
-    const code = seed.charCodeAt(index)
-    h1 = Math.imul(h1 ^ code, 16777619)
-    h2 = Math.imul((h2 + code) ^ (h2 >>> 13), 2246822519)
-    h3 = Math.imul((h3 ^ code) + 0x27d4eb2d, 3266489917)
-    h4 = Math.imul((h4 + (code << (index % 5))) ^ (h4 >>> 15), 668265263)
-  }
-
-  const chars = [h1, h2, h3, h4]
-    .map((value) => (value >>> 0).toString(16).padStart(8, '0'))
-    .join('')
-    .slice(0, 32)
-    .split('')
-
-  chars[12] = '5'
-  chars[16] = (((Number.parseInt(chars[16] ?? '0', 16) & 0x3) | 0x8) >>> 0).toString(16)
-
-  const hex = chars.join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
-}
-
-function createPfmeaGroupIds(overrides: Partial<PfmeaGroupIds> = {}): PfmeaGroupIds {
-  return {
-    failure_mode_group_id: normalizePfmeaGroupId(overrides.failure_mode_group_id) ?? createPfmeaGroupId(),
-    failure_block_group_id: normalizePfmeaGroupId(overrides.failure_block_group_id) ?? createPfmeaGroupId(),
-    action_plan_group_id: normalizePfmeaGroupId(overrides.action_plan_group_id) ?? createPfmeaGroupId(),
-  }
-}
-
-function derivePfmeaGroupIds(row: Partial<PfmeaRow>, hierarchy?: PfmeaRowHierarchy | null): PfmeaGroupIds {
-  const rowHierarchy = hierarchy ?? parsePfmeaRowNo(row.row_no)
-  const rowSeed = row.id || `${row.operation_id || row.operations?.id || 'op'}:${normalizePfmeaRowNo(row.row_no) || 'row'}`
-
-  return {
-    failure_mode_group_id:
-      normalizePfmeaGroupId(row.failure_mode_group_id) ??
-      createDeterministicPfmeaGroupId(`pfmea:fm:${rowHierarchy?.failureModeKey || rowSeed}`),
-    failure_block_group_id:
-      normalizePfmeaGroupId(row.failure_block_group_id) ??
-      createDeterministicPfmeaGroupId(`pfmea:fb:${rowHierarchy?.failureBlockKey || rowSeed}`),
-    action_plan_group_id:
-      normalizePfmeaGroupId(row.action_plan_group_id) ??
-      createDeterministicPfmeaGroupId(`pfmea:cb:${rowHierarchy?.causeBlockKey || rowSeed}`),
-  }
-}
-
-function pickPfmeaGroupIds(row: Partial<PfmeaRow> | null | undefined): Partial<PfmeaGroupIds> {
-  return {
-    failure_mode_group_id: normalizePfmeaGroupId(row?.failure_mode_group_id) ?? undefined,
-    failure_block_group_id: normalizePfmeaGroupId(row?.failure_block_group_id) ?? undefined,
-    action_plan_group_id: normalizePfmeaGroupId(row?.action_plan_group_id) ?? undefined,
-  }
-}
-
-function hydratePfmeaGroupIds(rows: PfmeaRow[]) {
-  const hydrated: PfmeaRow[] = []
-
-  for (const row of rows) {
-    hydrated.push({
-      ...row,
-      pcp: normalizePfmeaPcpValue(row.pcp),
-      ...derivePfmeaGroupIds(row),
-    })
-  }
-
-  return hydrated
-}
-
-function buildPfmeaHierarchy(rows: PfmeaRow[]): PfmeaRowHierarchy[] {
-  const persistedHierarchy = rows.map((row) => parsePfmeaRowNo(row.row_no))
-  const canUsePersistedHierarchy =
-    rows.length > 0 &&
-    rows.every((row, index) => isPlaceholderRowId(row.id) || !!persistedHierarchy[index])
-
-  if (canUsePersistedHierarchy) {
-    return rows.map((row, index) => {
-      const item = persistedHierarchy[index]
-      if (item) return item
-
-      const opNumberLabel =
-        row.operations?.operation_number != null && Number.isFinite(row.operations.operation_number)
-          ? String(row.operations.operation_number)
-          : '-'
-
-      return {
-        rowLabel: `${opNumberLabel}.1.1.1.1`,
-        failureModeKey: `${opNumberLabel}.1`,
-        failureBlockKey: `${opNumberLabel}.1.1`,
-        causeBlockKey: `${opNumberLabel}.1.1.1`,
-        actionKey: `${opNumberLabel}.1.1.1.1`,
-      }
-    })
-  }
-
-  const failureModeIndexByKey = new Map<string, number>()
-  const failureModeCountByOperation = new Map<string, number>()
-  const failureBlockIndexByKey = new Map<string, number>()
-  const failureBlockCountByFailureMode = new Map<string, number>()
-  const causeBlockIndexByKey = new Map<string, number>()
-  const causeBlockCountByFailureBlock = new Map<string, number>()
-  const actionCountByCauseBlock = new Map<string, number>()
-
-  return rows.map((row) => {
-    const opId = row.operation_id || row.operations?.id || `op:${row.id}`
-    const opNumberLabel =
-      row.operations?.operation_number != null && Number.isFinite(row.operations.operation_number)
-        ? String(row.operations.operation_number)
-        : '-'
-
-    const failureModeGroupId = normalizePfmeaGroupId(row.failure_mode_group_id) ?? `fm:${row.id}`
-    const failureModeScopeKey = `${opId}`
-    const failureModeKey = `${failureModeScopeKey}::${failureModeGroupId}`
-    let failureModeIndex = failureModeIndexByKey.get(failureModeKey)
-    if (!failureModeIndex) {
-      failureModeIndex = (failureModeCountByOperation.get(failureModeScopeKey) ?? 0) + 1
-      failureModeCountByOperation.set(failureModeScopeKey, failureModeIndex)
-      failureModeIndexByKey.set(failureModeKey, failureModeIndex)
-    }
-
-    const failureBlockGroupId = normalizePfmeaGroupId(row.failure_block_group_id) ?? `fb:${row.id}`
-    const failureBlockScopeKey = `${failureModeKey}`
-    const failureBlockKey = `${failureBlockScopeKey}::${failureBlockGroupId}`
-    let failureBlockIndex = failureBlockIndexByKey.get(failureBlockKey)
-    if (!failureBlockIndex) {
-      failureBlockIndex = (failureBlockCountByFailureMode.get(failureBlockScopeKey) ?? 0) + 1
-      failureBlockCountByFailureMode.set(failureBlockScopeKey, failureBlockIndex)
-      failureBlockIndexByKey.set(failureBlockKey, failureBlockIndex)
-    }
-
-    const causeBlockGroupId = normalizePfmeaGroupId(row.action_plan_group_id) ?? `cause:${row.id}`
-    const causeBlockScopeKey = `${failureBlockKey}`
-    const causeBlockKey = `${causeBlockScopeKey}::${causeBlockGroupId}`
-    let causeBlockIndex = causeBlockIndexByKey.get(causeBlockKey)
-    if (!causeBlockIndex) {
-      causeBlockIndex = (causeBlockCountByFailureBlock.get(causeBlockScopeKey) ?? 0) + 1
-      causeBlockCountByFailureBlock.set(causeBlockScopeKey, causeBlockIndex)
-      causeBlockIndexByKey.set(causeBlockKey, causeBlockIndex)
-    }
-
-    const actionIndex = (actionCountByCauseBlock.get(causeBlockKey) ?? 0) + 1
-    actionCountByCauseBlock.set(causeBlockKey, actionIndex)
-
-    return {
-      rowLabel: `${opNumberLabel}.${failureModeIndex}.${failureBlockIndex}.${causeBlockIndex}.${actionIndex}`,
-      failureModeKey: `${opId}.${failureModeIndex}`,
-      failureBlockKey: `${opId}.${failureModeIndex}.${failureBlockIndex}`,
-      causeBlockKey: `${opId}.${failureModeIndex}.${failureBlockIndex}.${causeBlockIndex}`,
-      actionKey: `${opId}.${failureModeIndex}.${failureBlockIndex}.${causeBlockIndex}.${actionIndex}`,
-    }
-  })
-}
-
-function buildPfmeaBlockMergeInfoByHierarchy(
-  rows: PfmeaRow[],
-  hierarchy: PfmeaRowHierarchy[],
-  keySelector: (item: PfmeaRowHierarchy) => string
-) {
-  const spans = rows.map((_, index) => ({ span: 1, end: index }))
-  let i = 0
-
-  while (i < rows.length) {
-    const currentItem = hierarchy[i]
-    const currentKey = currentItem ? keySelector(currentItem) : ''
-    let j = i + 1
-
-    while (j < rows.length) {
-      const nextItem = hierarchy[j]
-      const nextKey = nextItem ? keySelector(nextItem) : ''
-      if (!currentKey || !nextKey || currentKey !== nextKey) break
-      j += 1
-    }
-
-    if (j - i > 1) {
-      for (let k = i; k < j; k += 1) {
-        spans[k] = { span: k === i ? j - i : 0, end: j - 1 }
-      }
-    }
-
-    i = j
-  }
-
-  return spans
-}
-
-function shortSeverityLabel(nameRaw: string | null | undefined, descriptionRaw: string | null | undefined) {
-  const source = (nameRaw ?? descriptionRaw ?? '').toString().replace(/\r/g, '')
-  const firstLine = source
-    .split('\n')
-    .map((x) => x.trim())
-    .find(Boolean) ?? ''
-  const cut = firstLine.split(/[-\u2013\u2014]/)[0]?.trim() ?? ''
-  return cut || firstLine || 'No description'
-}
-
-function parseExamples(descriptionRaw: string | null | undefined) {
-  return (descriptionRaw ?? '')
-    .toString()
-    .replace(/\r/g, '')
-    .split('\n')
-    .map((x) => x.trim())
-    .filter(Boolean)
-}
-
-function normalizeHistoryText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function toFiniteNumber(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null
-  if (typeof value === 'string') {
-    const n = Number(value)
-    return Number.isFinite(n) ? n : null
-  }
-  return null
-}
-
-function normalizeClassValue(raw: string | null | undefined): string | null {
-  if (raw == null) return null
-  const source = String(raw).trim()
-  if (!source) return null
-  const upper = source.toUpperCase()
-  const token = upper.split(/[\s-]/)[0] ?? ''
-
-  if (token === 'SC' || upper.includes('SPECIAL CHARACTERISTIC')) return 'SC'
-  if (token === 'CC' || upper.includes('CRITICAL CHARACTERISTIC')) return 'CC'
-
-  return null
-}
-
-function normalizePfmeaPcpValue(raw: unknown): boolean | null {
-  if (raw == null) return null
-  if (typeof raw === 'boolean') return raw
-  if (typeof raw === 'number') return raw === 1 ? true : raw === 0 ? false : null
-  const source = String(raw).trim().toLowerCase()
-  if (!source) return null
-  if (source === 'true' || source === 't' || source === '1' || source === 'yes') return true
-  if (source === 'false' || source === 'f' || source === '0' || source === 'no') return false
-  return null
-}
-
-function opGroupKeyFromOperation(op: Pick<Operation, 'id' | 'operation_number'>): string {
-  if (typeof op.operation_number === 'number' && Number.isFinite(op.operation_number)) {
-    return `no:${op.operation_number}`
-  }
-  return `id:${op.id}`
-}
-
-function opGroupKeyFromRow(r: PfmeaRow): string {
-  const opNo = r.operations?.operation_number
-  if (typeof opNo === 'number' && Number.isFinite(opNo)) {
-    return `no:${opNo}`
-  }
-  return `id:${r.operation_id || r.operations?.id || ''}`
-}
-
-function opQualityScore(op: Operation, rowHits: number): number {
-  const hasName = (op.name ?? '').trim() !== '' ? 1 : 0
-  const hasStation = (op.machine ?? '').trim() !== '' ? 1 : 0
-  const hasOperation = (op.operation ?? '').trim() !== '' ? 1 : 0
-  const hasRows = rowHits > 0 ? 1 : 0
-  return hasRows * 1000 + hasName * 100 + hasStation * 10 + hasOperation * 5 + Math.min(rowHits, 99)
-}
-
-function makeEmptyPfmeaPayload(
-  operationId: string,
-  revisionId: string,
-  groups?: Partial<PfmeaGroupIds>
-): Partial<PfmeaRow> & { operation_id: string; revision_id: string } {
-  const groupIds = createPfmeaGroupIds(groups)
-  return {
-    revision_id: revisionId,
-    operation_id: operationId,
-    row_no: null,
-    ...groupIds,
-    failure_mode: '',
-    effect: '',
-    severity: null,
-    characteristic: '',
-    pcp: null,
-    class: null,
-    cause: '',
-    occurrence: null,
-    current_prevention: '',
-    current_detection: '',
-    detection: null,
-    rpn: null,
-    oxd: null,
-    recommended_action: '',
-    responsible: '',
-    target_date: null,
-    action_status: null,
-    occurrence2: null,
-    detection2: null,
-    rpn2: null,
-    oxd2: null,
-    rpn_current: null,
-    oxd_current: null,
-  }
-}
-
-function makePlaceholderRow(op: Operation, workingRevisionId: string | null, token: string, sortIndex: number): PfmeaRow {
-  const base = makeEmptyPfmeaPayload(op.id, workingRevisionId ?? '')
-  return {
-    id: `${PLACEHOLDER_ROW_PREFIX}${op.id}:${token}`,
-    ...base,
-    created_at: '',
-    __sortIndex: sortIndex,
-    operations: {
-      id: op.id,
-      operation_number: op.operation_number,
-      name: op.name,
-      machine: op.machine ?? null,
-      operation: op.operation ?? null,
-      project_id: op.project_id,
-      active: op.active,
-    },
-  } as PfmeaRow
-}
-
-function getOperationNodeIdsFromDiagram(diagram: PfdDiagramRow | null): Set<string> {
-  const ids = new Set<string>()
-  const nodes = Array.isArray(diagram?.nodes) ? diagram.nodes : []
-  for (const node of nodes) {
-    const id = (node?.id ?? '').toString().trim()
-    const kind = (node?.data?.kind ?? '').toString().trim()
-    if (!id || kind !== 'operation') continue
-    ids.add(id)
-  }
-  return ids
-}
-
-function hasFailureModeContext(row: PfmeaRow) {
-  return !!(row.failure_mode ?? '').trim()
-}
-
-function hasPfmeaTextValue(value: string | null | undefined) {
-  return !!(value ?? '').trim()
-}
-
-function reindexPfmeaRows(rows: PfmeaRow[]) {
-  let changed = false
-  const next = rows.map((row, index) => {
-    if (row.__sortIndex === index) return row
-    changed = true
-    return { ...row, __sortIndex: index }
-  })
-  return changed ? next : rows
-}
-
-function insertPfmeaRowAfterAnchor(prev: PfmeaRow[], anchorRowId: string, nextRow: PfmeaRow) {
-  const normalized = reindexPfmeaRows(prev)
-  const insertIndex = normalized.findIndex((item) => item.id === anchorRowId)
-  const next =
-    insertIndex < 0
-      ? [...normalized, nextRow]
-      : [...normalized.slice(0, insertIndex + 1), nextRow, ...normalized.slice(insertIndex + 1)]
-  return reindexPfmeaRows(next)
-}
-
-function insertPfmeaRowAtSortIndex(prev: PfmeaRow[], nextRow: PfmeaRow, sortIndex: number | undefined) {
-  const normalized = reindexPfmeaRows(prev)
-  const safeIndex = Number.isFinite(sortIndex) ? Math.max(0, Math.min(Math.trunc(sortIndex as number), normalized.length)) : normalized.length
-  const next = [...normalized.slice(0, safeIndex), nextRow, ...normalized.slice(safeIndex)]
-  return reindexPfmeaRows(next)
-}
-
-function buildPfmeaRowMatchKey(row: PfmeaRow) {
-  return JSON.stringify([
-    row.operation_id || row.operations?.id || '',
-    normalizePfmeaRowNo(row.row_no) ?? '',
-    row.created_at ?? '',
-    normalizePfmeaGroupId(row.failure_mode_group_id) ?? '',
-    normalizePfmeaGroupId(row.failure_block_group_id) ?? '',
-    normalizePfmeaGroupId(row.action_plan_group_id) ?? '',
-    row.failure_mode ?? '',
-    row.effect ?? '',
-    asInt1to10(row.severity) ?? '',
-    row.characteristic ?? '',
-    normalizeClassValue(row.class) ?? '',
-    row.cause ?? '',
-    asInt1to10(row.occurrence) ?? '',
-    row.current_prevention ?? '',
-    row.current_detection ?? '',
-    asInt1to10(row.detection) ?? '',
-    row.recommended_action ?? '',
-    row.responsible ?? '',
-    row.target_date ?? '',
-    row.action_status ?? '',
-    asInt1to10(row.occurrence2) ?? '',
-    asInt1to10(row.detection2) ?? '',
-  ])
-}
-
-function buildPfmeaRowContentKey(row: PfmeaRow) {
-  return JSON.stringify([
-    row.operation_id || row.operations?.id || '',
-    row.failure_mode ?? '',
-    row.effect ?? '',
-    asInt1to10(row.severity) ?? '',
-    row.characteristic ?? '',
-    normalizeClassValue(row.class) ?? '',
-    row.cause ?? '',
-    asInt1to10(row.occurrence) ?? '',
-    row.current_prevention ?? '',
-    row.current_detection ?? '',
-    asInt1to10(row.detection) ?? '',
-    row.recommended_action ?? '',
-    row.responsible ?? '',
-    row.target_date ?? '',
-    row.action_status ?? '',
-    asInt1to10(row.occurrence2) ?? '',
-    asInt1to10(row.detection2) ?? '',
-  ])
-}
-
-function findEquivalentPublishedPfmeaRow(rows: PfmeaRow[], sourceRow: PfmeaRow) {
-  const operationId = sourceRow.operation_id || sourceRow.operations?.id || null
-  const sameOperationRows = rows.filter((row) => (row.operation_id || row.operations?.id || null) === operationId)
-  if (sameOperationRows.length === 0) return null
-
-  const sourceRowNo = normalizePfmeaRowNo(sourceRow.row_no)
-  if (sourceRowNo) {
-    const byRowNo = sameOperationRows.filter((row) => normalizePfmeaRowNo(row.row_no) === sourceRowNo)
-    if (byRowNo.length === 1) return byRowNo[0]
-  }
-
-  const sourceGroupKey = JSON.stringify([
-    normalizePfmeaGroupId(sourceRow.failure_mode_group_id) ?? '',
-    normalizePfmeaGroupId(sourceRow.failure_block_group_id) ?? '',
-    normalizePfmeaGroupId(sourceRow.action_plan_group_id) ?? '',
-  ])
-  if (sourceGroupKey !== JSON.stringify(['', '', ''])) {
-    const byGroupIds = sameOperationRows.filter(
-      (row) =>
-        JSON.stringify([
-          normalizePfmeaGroupId(row.failure_mode_group_id) ?? '',
-          normalizePfmeaGroupId(row.failure_block_group_id) ?? '',
-          normalizePfmeaGroupId(row.action_plan_group_id) ?? '',
-        ]) === sourceGroupKey
-    )
-    if (byGroupIds.length === 1) return byGroupIds[0]
-  }
-
-  const sourceContentKey = buildPfmeaRowContentKey(sourceRow)
-  const byContent = sameOperationRows.filter((row) => buildPfmeaRowContentKey(row) === sourceContentKey)
-  if (byContent.length === 1) return byContent[0]
-
-  const sourceCreatedAt = (sourceRow.created_at ?? '').trim()
-  if (sourceCreatedAt) {
-    const byCreatedAt = sameOperationRows.filter((row) => (row.created_at ?? '').trim() === sourceCreatedAt)
-    if (byCreatedAt.length === 1) return byCreatedAt[0]
-  }
-
-  const sourceKey = buildPfmeaRowMatchKey(sourceRow)
-  const byFullSignature = sameOperationRows.filter((row) => buildPfmeaRowMatchKey(row) === sourceKey)
-  if (byFullSignature.length === 1) return byFullSignature[0]
-
-  return null
-}
-
-function findEquivalentPfmeaRow(rows: PfmeaRow[], sourceRow: PfmeaRow) {
-  const operationId = sourceRow.operation_id || sourceRow.operations?.id || null
-  const sameOperationRows = rows.filter((row) => (row.operation_id || row.operations?.id || null) === operationId)
-  if (sameOperationRows.length === 0) return null
-
-  const sourceRowNo = normalizePfmeaRowNo(sourceRow.row_no)
-  if (sourceRowNo) {
-    const byRowNo = sameOperationRows.filter((row) => normalizePfmeaRowNo(row.row_no) === sourceRowNo)
-    if (byRowNo.length === 1) return byRowNo[0]
-  }
-
-  const sourceCreatedAt = (sourceRow.created_at ?? '').trim()
-  if (sourceCreatedAt) {
-    const byCreatedAt = sameOperationRows.filter((row) => (row.created_at ?? '').trim() === sourceCreatedAt)
-    if (byCreatedAt.length === 1) return byCreatedAt[0]
-  }
-
-  const sourceKey = buildPfmeaRowMatchKey(sourceRow)
-  const bySignature = sameOperationRows.filter((row) => buildPfmeaRowMatchKey(row) === sourceKey)
-  if (bySignature.length === 1) return bySignature[0]
-
-  return null
-}
-
-function sortPfmeaRows(rows: PfmeaRow[]) {
-  const indexed = rows.map((row, index) => ({ row, index }))
-  indexed.sort((a, b) => {
-    const aRowNoParts = parsePfmeaRowNoParts(a.row.row_no)
-    const bRowNoParts = parsePfmeaRowNoParts(b.row.row_no)
-    if (aRowNoParts && bRowNoParts) {
-      for (let i = 0; i < aRowNoParts.length; i += 1) {
-        if (aRowNoParts[i] !== bRowNoParts[i]) return aRowNoParts[i] - bRowNoParts[i]
-      }
-    }
-
-    const ao = a.row.operations?.operation_number ?? 0
-    const bo = b.row.operations?.operation_number ?? 0
-    if (ao !== bo) return ao - bo
-
-    const as = a.row.__sortIndex ?? a.index
-    const bs = b.row.__sortIndex ?? b.index
-    if (as !== bs) return as - bs
-
-    return a.index - b.index
-  })
-  return indexed.map((item) => item.row)
-}
-
-function getPfmeaRowOperationId(row: Pick<PfmeaRow, 'operation_id' | 'operations'>) {
-  return (row.operation_id || row.operations?.id || '').trim()
-}
-
-function getPfmeaRowOperationIds(rows: PfmeaRow[]) {
-  return Array.from(new Set(rows.map((row) => getPfmeaRowOperationId(row)).filter(Boolean)))
-}
-
-function buildPfmeaCreatedAtOrder(rows: PfmeaRow[]) {
-  const baseTime = Date.now() - Math.max(rows.length - 1, 0)
-  const hierarchy = buildPfmeaHierarchy(rows)
-  return rows.map((row, index) => ({
-    id: row.id,
-    created_at: new Date(baseTime + index).toISOString(),
-    row_no: hierarchy[index]?.rowLabel ?? null,
-    ...createPfmeaGroupIds(pickPfmeaGroupIds(row)),
-  }))
-}
-
-function buildPfmeaRowsWithOrderMetadata(rows: PfmeaRow[]) {
-  const orderedRows = sortPfmeaRows(rows).filter((row) => !isPlaceholderRowId(row.id))
-  const updates = buildPfmeaCreatedAtOrder(orderedRows)
-  const updateById = new Map(updates.map((item) => [item.id, item] as const))
-
-  return {
-    orderedRows: orderedRows.map((row, index) => {
-      const meta = updateById.get(row.id)
-      if (!meta) return { ...row, __sortIndex: index }
-      return {
-        ...row,
-        created_at: meta.created_at,
-        row_no: meta.row_no,
-        failure_mode_group_id: meta.failure_mode_group_id,
-        failure_block_group_id: meta.failure_block_group_id,
-        action_plan_group_id: meta.action_plan_group_id,
-        __sortIndex: index,
-      } as PfmeaRow
-    }),
-    updates,
-  }
-}
-
-function buildPfmeaPublishedSyncPatch(row: PfmeaRow) {
-  return {
-    row_no: normalizePfmeaRowNo(row.row_no),
-    failure_mode_group_id: normalizePfmeaGroupId(row.failure_mode_group_id),
-    failure_block_group_id: normalizePfmeaGroupId(row.failure_block_group_id),
-    action_plan_group_id: normalizePfmeaGroupId(row.action_plan_group_id),
-    failure_mode: row.failure_mode ?? '',
-    effect: row.effect ?? '',
-    severity: asInt1to10(row.severity),
-    characteristic: row.characteristic ?? '',
-    pcp: normalizePfmeaPcpValue(row.pcp),
-    class: normalizeClassValue(row.class),
-    cause: row.cause ?? '',
-    occurrence: asInt1to10(row.occurrence),
-    current_prevention: row.current_prevention ?? '',
-    current_detection: row.current_detection ?? '',
-    detection: asInt1to10(row.detection),
-    rpn: row.rpn ?? null,
-    oxd: row.oxd ?? null,
-    recommended_action: row.recommended_action ?? '',
-    responsible: row.responsible ?? '',
-    target_date: row.target_date ?? null,
-    action_status: row.action_status ?? null,
-    occurrence2: asInt1to10(row.occurrence2),
-    detection2: asInt1to10(row.detection2),
-    rpn2: row.rpn2 ?? null,
-    oxd2: row.oxd2 ?? null,
-    rpn_current: row.rpn_current ?? null,
-    oxd_current: row.oxd_current ?? null,
-    created_at: row.created_at,
-  }
-}
-
-function buildPfmeaInsertPayloadForRevision(row: PfmeaRow, revisionId: string) {
-  const operationId = getPfmeaRowOperationId(row)
-  if (!operationId) throw new Error(`PFMEA row ${row.id} is missing operation_id.`)
-
-  return {
-    revision_id: revisionId,
-    operation_id: operationId,
-    ...buildPfmeaPublishedSyncPatch(row),
-  }
-}
-
-function buildPfmeaPublishedMetadataPatch(meta: {
-  created_at: string
-  row_no: string | null
-  failure_mode_group_id: string | null
-  failure_block_group_id: string | null
-  action_plan_group_id: string | null
-}) {
-  return {
-    created_at: meta.created_at,
-    row_no: meta.row_no,
-    failure_mode_group_id: meta.failure_mode_group_id,
-    failure_block_group_id: meta.failure_block_group_id,
-    action_plan_group_id: meta.action_plan_group_id,
-  }
-}
-
-function summarizePfmeaRowsForError(rows: PfmeaRow[], limit = 3) {
-  return rows
-    .slice(0, limit)
-    .map((row) => normalizePfmeaRowNo(row.row_no) ?? (row.failure_mode?.trim() || row.id))
-    .join(', ')
-}
-
-const PFMEA_CLONE_FIELDS: Array<keyof PfmeaRow> = [
-  'operation_id',
-  'row_no',
-  'failure_mode_group_id',
-  'failure_block_group_id',
-  'action_plan_group_id',
-  'failure_mode',
-  'effect',
-  'severity',
-  'characteristic',
-  'pcp',
-  'class',
-  'cause',
-  'occurrence',
-  'current_prevention',
-  'current_detection',
-  'detection',
-  'rpn',
-  'oxd',
-  'recommended_action',
-  'responsible',
-  'target_date',
-  'action_status',
-  'occurrence2',
-  'detection2',
-  'rpn2',
-  'oxd2',
-  'rpn_current',
-  'oxd_current',
-  'created_at',
-]
-
-const PFMEA_CLONE_FIELDS_LEGACY: Array<keyof PfmeaRow> = PFMEA_CLONE_FIELDS.filter(
-  (field) =>
-    field !== 'row_no' &&
-    field !== 'failure_mode_group_id' &&
-    field !== 'failure_block_group_id' &&
-    field !== 'action_plan_group_id'
-)
-
-const PFMEA_SELECT_FIELDS = [
-  'id',
-  'revision_id',
-  'operation_id',
-  'row_no',
-  'failure_mode_group_id',
-  'failure_block_group_id',
-  'action_plan_group_id',
-  'failure_mode',
-  'effect',
-  'severity',
-  'characteristic',
-  'pcp',
-  'class',
-  'cause',
-  'occurrence',
-  'current_prevention',
-  'current_detection',
-  'detection',
-  'rpn',
-  'oxd',
-  'recommended_action',
-  'responsible',
-  'target_date',
-  'action_status',
-  'occurrence2',
-  'detection2',
-  'rpn2',
-  'oxd2',
-  'rpn_current',
-  'oxd_current',
-  'created_at',
-  'operations!inner(id,operation_number,name,machine,operation,project_id,active)',
-].join(',')
-
-const PFMEA_SELECT_FIELDS_LEGACY = [
-  'id',
-  'revision_id',
-  'operation_id',
-  'failure_mode',
-  'effect',
-  'severity',
-  'characteristic',
-  'class',
-  'cause',
-  'occurrence',
-  'current_prevention',
-  'current_detection',
-  'detection',
-  'rpn',
-  'oxd',
-  'recommended_action',
-  'responsible',
-  'target_date',
-  'action_status',
-  'occurrence2',
-  'detection2',
-  'rpn2',
-  'oxd2',
-  'rpn_current',
-  'oxd_current',
-  'created_at',
-  'operations!inner(id,operation_number,name,machine,operation,project_id,active)',
-].join(',')
-
-function getMissingRequiredForRecommendedAction(row: PfmeaRow): Array<keyof PfmeaRow> {
-  const missing: Array<keyof PfmeaRow> = []
-  if (!row.failure_mode.trim()) missing.push('failure_mode')
-  if (!row.effect.trim()) missing.push('effect')
-  if (asInt1to10(row.severity) == null) missing.push('severity')
-  if (!row.cause.trim()) missing.push('cause')
-  if (asInt1to10(row.occurrence) == null) missing.push('occurrence')
-  if (!row.current_prevention.trim()) missing.push('current_prevention')
-  if (!row.current_detection.trim()) missing.push('current_detection')
-  if (asInt1to10(row.detection) == null) missing.push('detection')
-  return missing
-}
-
-function getPreviousRequiredFieldForActionPlan(target: keyof PfmeaRow, row: PfmeaRow): Array<keyof PfmeaRow> {
-  switch (target) {
-    case 'recommended_action':
-      return getMissingRequiredForRecommendedAction(row)
-    case 'responsible':
-      return row.recommended_action.trim() ? [] : ['recommended_action']
-    case 'target_date':
-      return row.responsible.trim() ? [] : ['responsible', 'recommended_action']
-    case 'action_status':
-      return row.target_date ? [] : ['target_date', 'responsible', 'recommended_action']
-    case 'occurrence2':
-      return row.action_status ? [] : ['action_status', 'target_date', 'responsible', 'recommended_action']
-    case 'detection2':
-      return asInt1to10(row.occurrence2) != null ? [] : ['occurrence2', 'action_status', 'target_date', 'responsible', 'recommended_action']
-    default:
-      return []
-  }
 }
 
 /* ===================== PFMEA PAGE ===================== */
@@ -1513,26 +581,6 @@ function PfmeaFullPageContent() {
     if (!transientRecommendedActionContinuationIdsRef.current.has(rowId)) return
     if (!(value ?? '').toString().trim()) return
     transientRecommendedActionContinuationIdsRef.current.delete(rowId)
-  }, [])
-
-  const isMissingPfmeaGroupIdColumnError = useCallback((error: unknown) => {
-    const message = (error as { message?: string } | null)?.message ?? String(error ?? '')
-    const normalized = message.toLowerCase()
-    return (
-      normalized.includes('row_no') ||
-      normalized.includes('failure_mode_group_id') ||
-      normalized.includes('failure_block_group_id') ||
-      normalized.includes('action_plan_group_id')
-    )
-  }, [])
-
-  const stripPfmeaGroupIdsFromPayload = useCallback((payload: Record<string, unknown>) => {
-    const next = { ...payload }
-    delete next.row_no
-    delete next.failure_mode_group_id
-    delete next.failure_block_group_id
-    delete next.action_plan_group_id
-    return next
   }, [])
 
   const scheduleTransientRowDeletion = useCallback((rowId: string) => {
@@ -2210,25 +1258,12 @@ useEffect(() => {
   }, [projectId])
 
   function getRiskColorFor(sev: number | null, doVal: number | null): RiskColor | null {
-    if (sev == null || doVal == null) return null
-
-    const s = clampInt(sev, 1, 10)
-    const d = clampInt(doVal, 1, 100)
-
-    if (rmMode === 'manual') {
-      const hit = rmCells[cellKey(s, d)]
-      if (hit) return hit
-      return colorFromRpn(s, d, rmRpn)
-    }
-    return colorFromRpn(s, d, rmRpn)
+    return riskColorForMatrixCell(sev, doVal, rmMode, rmRpn, rmCells) as RiskColor | null
   }
 
   const getRiskColorForAverageRpn = useCallback((value: number | null): RiskColor | null => {
     if (value == null || !Number.isFinite(value)) return null
-    if (value <= rmRpn.greenMax) return 'green'
-    if (value <= rmRpn.yellowMax) return 'yellow'
-    if (value <= rmRpn.orangeMax) return 'orange'
-    return 'red'
+    return riskColorFromRpnValue(value, rmRpn)
   }, [rmRpn])
 
   /* ---------- helper: reload only project view ---------- */
@@ -2374,7 +1409,7 @@ useEffect(() => {
     forceRefreshExistingDraftFromOpenRef.current = false
     if (ensured) setDraftRevisionIdOverride(ensured)
     return ensured
-  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, project?.current_draft_revision_id, project?.status, loadProjectView, workingRevisionId, project?.current_open_revision_id, persistedDirtyDraft, isMissingPfmeaGroupIdColumnError, stripPfmeaGroupIdsFromPayload])
+  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, project?.current_draft_revision_id, project?.status, loadProjectView, workingRevisionId, project?.current_open_revision_id, persistedDirtyDraft])
 
   /* ---------- load project / operations / rows ---------- */
   const loadAll = useCallback(async (forceRevisionId?: string | null) => {
@@ -2525,7 +1560,7 @@ useEffect(() => {
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     }
-  }, [projectId, isEditOwner, draftRevisionIdOverride, loadProjectView, loadRiskMatrix, loadScaleOptions, clearPfmeaTransientTracking, isMissingPfmeaGroupIdColumnError, opFromUrl, draft.operation_id])
+  }, [projectId, isEditOwner, draftRevisionIdOverride, loadProjectView, loadRiskMatrix, loadScaleOptions, clearPfmeaTransientTracking, opFromUrl, draft.operation_id])
 
   useEffect(() => {
     if (moduleAccessState !== 'allowed') return
@@ -3423,7 +2458,7 @@ useEffect(() => {
 
     if (response.error) throw response.error
     return hydratePfmeaGroupIds((response.data ?? []) as unknown as PfmeaRow[])
-  }, [isMissingPfmeaGroupIdColumnError])
+  }, [])
 
   async function remapPfmeaSnapshotRowsToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
     const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
@@ -3549,6 +2584,7 @@ useEffect(() => {
   }
 
   async function persistPfmeaDraftSnapshot(revisionId: string, sourceRows: PfmeaRow[]) {
+    const dirtyIdsBeforeRemap = new Set(dirtyPfmeaIds)
     const snapshotRows = sortPfmeaRows(sourceRows)
       .filter((row) => !isPlaceholderRowId(row.id))
       .map((row) => {
@@ -3563,10 +2599,14 @@ useEffect(() => {
     if (snapshotRows.length === 0) return snapshotRows
 
     const mappedSnapshotRows = await remapPfmeaSnapshotRowsToRevision(revisionId, snapshotRows)
+    const rowsToPersist = mappedSnapshotRows.filter((row, index) => {
+      const sourceRow = snapshotRows[index]
+      return dirtyIdsBeforeRemap.has(row.id) || (sourceRow ? dirtyIdsBeforeRemap.has(sourceRow.id) : false)
+    })
 
     const batchSize = 25
-    for (let index = 0; index < mappedSnapshotRows.length; index += batchSize) {
-      const batch = mappedSnapshotRows.slice(index, index + batchSize)
+    for (let index = 0; index < rowsToPersist.length; index += batchSize) {
+      const batch = rowsToPersist.slice(index, index + batchSize)
       const results = await Promise.all(
         batch.map((row) => {
           const patch = buildPfmeaPublishedSyncPatch(row)
@@ -3613,9 +2653,22 @@ useEffect(() => {
       return
     }
 
+    const saveTimer = createPfmeaSaveTimer()
+    let saveTimingsLogged = false
+    const logSaveTimings = (status: string) => {
+      if (saveTimingsLogged) return
+      saveTimingsLogged = true
+      const timings = saveTimer.summary()
+      if (typeof window !== 'undefined') {
+        ;(window as Window & { __RF360_LAST_PFMEA_SAVE_TIMINGS?: typeof timings }).__RF360_LAST_PFMEA_SAVE_TIMINGS = timings
+      }
+      console.info(`PFMEA save timings (${status}): ${formatPfmeaSaveTimings(timings)}`, timings)
+    }
+
     try {
       setSaveBusy(true)
       const { data: sess } = await supabase.auth.getSession()
+      saveTimer.mark('auth session')
       const uid = sess?.session?.user?.id
       if (!uid) throw new Error('Not authenticated.')
 
@@ -3629,32 +2682,59 @@ useEffect(() => {
         editorRef.current.blur()
         await new Promise<void>((resolve) => setTimeout(resolve, 0))
       }
+      saveTimer.mark('editor commit')
 
       await flushPendingCellUpdates()
+      saveTimer.mark('flush cell updates')
       await flushPendingTransientDeletes()
+      saveTimer.mark('flush transient deletes')
       const cleanedRows = await cleanupEmptyTransientRows()
+      saveTimer.mark('cleanup empty transient rows')
       const persistedRows = await persistPfmeaDraftSnapshot(draftRevisionId, cleanedRows)
-      const { orderedRows: orderedPersistedRows, updates: orderedPersistedUpdates } = buildPfmeaRowsWithOrderMetadata(
-        persistedRows.filter((row) => !row.revision_id || row.revision_id === draftRevisionId)
-      )
-      await persistPfmeaRowOrder(draftRevisionId, orderedPersistedRows, orderedPersistedUpdates)
+      saveTimer.mark('persist dirty draft rows')
+      const persistedRowsForOrder = persistedRows.filter((row) => !row.revision_id || row.revision_id === draftRevisionId)
+      const { orderedRows: orderedPersistedRows, updates: orderedPersistedUpdates } =
+        buildPfmeaRowsWithStableOrderMetadata(persistedRowsForOrder)
+      await persistPfmeaRowOrder(draftRevisionId, persistedRowsForOrder, orderedPersistedUpdates)
+      saveTimer.mark('persist row order metadata')
+      rowsRef.current = orderedPersistedRows
+      setRows(orderedPersistedRows)
 
-      const { data, error } = await supabase.rpc('publish_process_module_revision', {
+      const avgRpnValue = avgRpnSummary.avg == null ? null : Math.round(avgRpnSummary.avg * 100) / 100
+      const historyAuthor = currentAuthorName || 'Unknown user'
+      let historyAlreadyInserted = false
+      let data: unknown = null
+
+      const publishWithHistoryRes = await supabase.rpc('publish_pfmea_revision_with_history', {
         p_project_id: projectId,
-        p_module: 'PFMEA',
         p_change_description: desc,
         p_user_id: uid,
+        p_author_name: historyAuthor,
+        p_risk_count: rowsSorted.length,
+        p_avg_rpn: avgRpnValue,
       })
 
-      if (error) throw error
+      if (!publishWithHistoryRes.error) {
+        data = publishWithHistoryRes.data
+        historyAlreadyInserted = true
+        saveTimer.mark('publish revision and history rpc')
+      } else if (isMissingRpcFunctionError(publishWithHistoryRes.error, 'publish_pfmea_revision_with_history')) {
+        const publishRes = await supabase.rpc('publish_process_module_revision', {
+          p_project_id: projectId,
+          p_module: 'PFMEA',
+          p_change_description: desc,
+          p_user_id: uid,
+        })
+        if (publishRes.error) throw publishRes.error
+        data = publishRes.data
+        saveTimer.mark('publish revision rpc fallback')
+      } else {
+        throw publishWithHistoryRes.error
+      }
 
-      let publishedRevisionId =
-        typeof data === 'string'
-          ? data
-          : data && typeof data === 'object' && 'id' in (data as Record<string, unknown>) && typeof (data as Record<string, unknown>).id === 'string'
-            ? ((data as Record<string, unknown>).id as string)
-            : null
-      let publishedOpenRevisionLabel: string | null = null
+      const publishResult = parsePfmeaPublishResult(data)
+      let publishedRevisionId = publishResult.revisionId
+      let publishedOpenRevisionLabel = publishResult.revisionLabel
       let integrityWarning: string | null = null
       let revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
       let postPublishWarning: string | null = null
@@ -3665,48 +2745,55 @@ useEffect(() => {
             publishedRevisionId = publishedView.current_open_revision_id ?? null
             publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
           } catch {}
+          saveTimer.mark('resolve published project view')
         } else {
           try {
             const publishedView = await loadProjectView({ syncDraftOverride: false })
             publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
           } catch {}
+          saveTimer.mark('load published project view')
         }
 
-        if (publishedRevisionId) {
+        if (publishedRevisionId && publishedRevisionId !== draftRevisionId) {
           try {
             await syncPublishedPfmeaRowMetadata(publishedRevisionId, orderedPersistedRows)
           } catch (syncError: any) {
             console.warn('PFMEA published row metadata sync skipped:', syncError?.message ?? String(syncError))
           }
+          saveTimer.mark('sync published row metadata')
+        } else {
+          saveTimer.mark('skip published row metadata sync')
         }
 
-        if (publishedRevisionId && orderedPersistedRows.length > 0) {
+        if (publishedRevisionId && publishedRevisionId !== draftRevisionId && orderedPersistedRows.length > 0) {
           integrityWarning = await ensurePublishedPfmeaIntegrity(publishedRevisionId, orderedPersistedRows)
+          saveTimer.mark('published integrity check')
+        } else {
+          saveTimer.mark('skip published integrity check')
         }
 
         revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
 
-        let historyAuthor = 'Unknown user'
-        try {
-          historyAuthor = currentAuthorName || 'Unknown user'
-        } catch {}
-
-        const avgRpnValue = avgRpnSummary.avg == null ? null : Math.round(avgRpnSummary.avg * 100) / 100
-        const historyInsert = await supabase.from('pfmea_change_history').insert([
-          {
-            project_id: projectId,
-            revision_label: revisionLabel || '0.0.0',
-            change_description: desc,
-            author_id: uid,
-            author_name: historyAuthor,
-            risk_count: rowsSorted.length,
-            avg_rpn: avgRpnValue,
-            created_at: new Date().toISOString(),
-          },
-        ])
-        if (historyInsert.error) {
-          // Optional table; keep publish successful even if custom history insert is unavailable.
-          console.warn('PFMEA history insert skipped:', historyInsert.error.message)
+        if (!historyAlreadyInserted) {
+          const historyInsert = await supabase.from('pfmea_change_history').insert([
+            {
+              project_id: projectId,
+              revision_label: revisionLabel || '0.0.0',
+              change_description: desc,
+              author_id: uid,
+              author_name: historyAuthor,
+              risk_count: rowsSorted.length,
+              avg_rpn: avgRpnValue,
+              created_at: new Date().toISOString(),
+            },
+          ])
+          saveTimer.mark('insert pfmea history fallback')
+          if (historyInsert.error) {
+            // Optional table; keep publish successful even if custom history insert is unavailable.
+            console.warn('PFMEA history insert skipped:', historyInsert.error.message)
+          }
+        } else {
+          saveTimer.mark('skip client history insert')
         }
       } catch (postPublishError: any) {
         postPublishWarning = `PFMEA was published, but post-save verification did not finish cleanly. ${postPublishError?.message ?? String(postPublishError)}`
@@ -3727,25 +2814,39 @@ useEffect(() => {
         } catch (cleanupDraftError: any) {
           console.warn('PFMEA draft cleanup skipped:', cleanupDraftError?.message ?? String(cleanupDraftError))
         }
+        saveTimer.mark('cleanup old draft rows')
       }
       if (projectId && userId) {
         await supabase.from('pfmea_edit_sessions').delete().eq('project_id', projectId).eq('locked_by', userId)
+        saveTimer.mark('cleanup edit session')
       }
       setEditSession(null)
       forceRefreshExistingDraftFromOpenRef.current = false
 
       if (data) console.log('Published PFMEA revision id:', data)
 
-      await loadEditSession()
-      await loadAll(publishedRevisionId ?? project?.current_open_revision_id ?? null)
+      try {
+        await loadProjectView({ syncDraftOverride: false })
+      } catch (projectReloadError: any) {
+        console.warn('PFMEA project view refresh skipped:', projectReloadError?.message ?? String(projectReloadError))
+      }
+      saveTimer.mark('reload project view')
       await loadRevisionHistory()
+      saveTimer.mark('reload revision history')
       if (integrityWarning) {
         setErr(integrityWarning)
       } else if (postPublishWarning) {
         setErr(postPublishWarning)
       }
+      logSaveTimings('success')
     } catch (e: any) {
-      setErr(e?.message ?? String(e))
+      console.error('PFMEA save failed:', e)
+      logSaveTimings('failed')
+      setErr(
+        isTimeoutError(e)
+          ? 'PFMEA save timed out while the database was processing the revision. The save path has been optimized; please try again. If it repeats, contact an administrator.'
+          : e?.message ?? String(e)
+      )
     } finally {
       setSaveBusy(false)
     }
@@ -3761,7 +2862,7 @@ useEffect(() => {
       const publishedRows = await fetchPfmeaRowsForRevisionScope(revisionId, getPfmeaRowOperationIds(orderedSourceRows))
       if (publishedRows.length === 0) return
 
-      const sourceMeta = buildPfmeaCreatedAtOrder(orderedSourceRows)
+      const sourceMeta = buildPfmeaStableOrderMetadata(orderedSourceRows)
       const metadataBySourceId = new Map(sourceMeta.map((item) => [item.id, item] as const))
       const updates: Array<{
         id: string
@@ -3844,7 +2945,7 @@ useEffect(() => {
         }
       }
     },
-    [draftRevisionIdOverride, workingRevisionId, fetchPfmeaRowsForRevisionScope, stripPfmeaGroupIdsFromPayload]
+    [draftRevisionIdOverride, workingRevisionId, fetchPfmeaRowsForRevisionScope]
   )
 
   const ensureRowForEditing = useCallback(
@@ -3922,7 +3023,7 @@ useEffect(() => {
         delete placeholderMaterializeRef.current[row.id]
       }
     },
-    [applyPendingCellValues, ensureDraftIfNeeded, refreshPendingCellRender, workingRevisionId, markPfmeaDirty, stripPfmeaGroupIdsFromPayload]
+    [applyPendingCellValues, ensureDraftIfNeeded, refreshPendingCellRender, workingRevisionId, markPfmeaDirty]
   )
 
   const startEditCell = useCallback(
@@ -4050,7 +3151,19 @@ useEffect(() => {
       )
       if (baseRows.length === 0) return
 
-      const updates = preparedUpdates ?? buildPfmeaCreatedAtOrder(baseRows)
+      const rowById = new Map(baseRows.map((row) => [row.id, row] as const))
+      const updates = (preparedUpdates ?? buildPfmeaCreatedAtOrder(baseRows)).filter((item) => {
+        const row = rowById.get(item.id)
+        if (!row) return false
+        return (
+          (row.created_at ?? '') !== item.created_at ||
+          (row.row_no ?? null) !== item.row_no ||
+          (row.failure_mode_group_id ?? null) !== item.failure_mode_group_id ||
+          (row.failure_block_group_id ?? null) !== item.failure_block_group_id ||
+          (row.action_plan_group_id ?? null) !== item.action_plan_group_id
+        )
+      })
+      if (updates.length === 0) return
       const batchSize = 25
 
       for (let index = 0; index < updates.length; index += batchSize) {
@@ -4232,14 +3345,7 @@ useEffect(() => {
   const avgRpnSummary = useMemo(() => {
     const buckets: Record<RiskColor, number> = { green: 0, yellow: 0, orange: 0, red: 0 }
     const resolveColor = (sev: number | null, doVal: number | null): RiskColor | null => {
-      if (sev == null || doVal == null) return null
-      const s = clampInt(sev, 1, 10)
-      const d = clampInt(doVal, 1, 100)
-      if (rmMode === 'manual') {
-        const hit = rmCells[cellKey(s, d)]
-        if (hit) return hit
-      }
-      return colorFromRpn(s, d, rmRpn)
+      return riskColorForMatrixCell(sev, doVal, rmMode, rmRpn, rmCells) as RiskColor | null
     }
 
     const values = rowsSorted
@@ -6229,51 +5335,6 @@ function adjacentPopupStyle(
     width,
     maxHeight,
   }
-}
-
-const CALENDAR_WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
-const CALENDAR_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-
-function parseIsoDateParts(value: string | null | undefined) {
-  const raw = (value ?? '').trim()
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null
-  const [year, month, day] = raw.split('-').map((part) => Number.parseInt(part, 10))
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null
-  return { year, month: month - 1, day }
-}
-
-function formatIsoDate(year: number, month: number, day: number) {
-  const yyyy = String(year).padStart(4, '0')
-  const mm = String(month + 1).padStart(2, '0')
-  const dd = String(day).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
-}
-
-function getDaysInMonth(year: number, month: number) {
-  return new Date(year, month + 1, 0).getDate()
-}
-
-function getCalendarCells(year: number, month: number) {
-  const firstWeekday = new Date(year, month, 1).getDay()
-  const leading = (firstWeekday + 6) % 7
-  const totalDays = getDaysInMonth(year, month)
-  const cells: Array<{ key: string; day: number | null }> = []
-
-  for (let i = 0; i < leading; i += 1) {
-    cells.push({ key: `empty-start-${i}`, day: null })
-  }
-  for (let day = 1; day <= totalDays; day += 1) {
-    cells.push({ key: `day-${year}-${month}-${day}`, day })
-  }
-  while (cells.length % 7 !== 0) {
-    cells.push({ key: `empty-end-${cells.length}`, day: null })
-  }
-  return cells
-}
-
-function todayIsoDate() {
-  const now = new Date()
-  return formatIsoDate(now.getFullYear(), now.getMonth(), now.getDate())
 }
 
 function TdText(props: {

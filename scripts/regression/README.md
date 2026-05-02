@@ -35,6 +35,25 @@ Recommended usage:
 Available scripts:
 
 - `npm run regression:all`
+- `npm run regression:shared`
+- `npm run regression:app-header`
+- `npm run regression:error-utils`
+- `npm run regression:pfmea-action-validation`
+- `npm run regression:pfmea-continuation`
+- `npm run regression:pfmea-date`
+- `npm run regression:pfmea-display`
+- `npm run regression:pfmea-hierarchy`
+- `npm run regression:pfmea-operation`
+- `npm run regression:pfmea-payload`
+- `npm run regression:pfmea-pcp`
+- `npm run regression:pfmea-revision`
+- `npm run regression:pfmea-row-factory`
+- `npm run regression:pfmea-row-normalization`
+- `npm run regression:pfmea-row-match`
+- `npm run regression:pfmea-row-order`
+- `npm run regression:pfmea-risk`
+- `npm run regression:pfmea-value`
+- `npm run regression:risk-engine`
 - `npm run regression:org:invite-flow`
 - `npm run regression:org:viewer-flow`
 - `npm run regression:pfmea:merge`
@@ -60,6 +79,20 @@ Important:
 - invitation links are copied from the UI, so we validate the product workflow without depending on email delivery
 
 If you later want to validate real email delivery too, add a separate mailbox-backed pass. Keep that separate from core application regression.
+
+## Demo seed guard
+
+`scripts/seed/watlow-demo-data.mjs` uses a service role key and rewrites demo project data. It refuses to run unless:
+
+- `ALLOW_DEMO_SEED=YES`
+- `SUPABASE_URL`
+- `SERVICE_ROLE_KEY`
+
+Optional:
+
+- `DEMO_SEED_ORG_NAME`, default: `WATLOW`
+
+Run it only against a known demo/staging organization.
 
 `npm run regression:org:viewer-flow` covers:
 

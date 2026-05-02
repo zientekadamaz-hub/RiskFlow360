@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cellKey, defaultColor } from '@/features/settings/risk-matrix/matrix-config'
 import type { RiskColor } from '@/features/settings/risk-matrix/matrix-colors'
-import { colorFromRpn } from '@/features/settings/risk-matrix/risk-matrix-utils'
+import { riskColorForMatrixCell } from '@/lib/risk-engine'
 import {
   fetchProjectSiteDepartments,
   fetchProjectsUserContext,
@@ -39,11 +39,14 @@ function colorForCell(
   doValue: number,
   params: Pick<RpnMatrixReportData, 'matrixMode' | 'riskMatrixCells' | 'thresholds'>
 ): RiskColor {
-  if (params.matrixMode === 'manual') {
-    return params.riskMatrixCells[cellKey(severity, doValue)] ?? defaultColor(severity, doValue)
-  }
-
-  return colorFromRpn(severity, doValue, params.thresholds)
+  return riskColorForMatrixCell(
+    severity,
+    doValue,
+    params.matrixMode,
+    params.thresholds,
+    params.riskMatrixCells,
+    defaultColor
+  ) as RiskColor
 }
 
 function buildProjectRows(

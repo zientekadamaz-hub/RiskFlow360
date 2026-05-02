@@ -21,6 +21,8 @@ import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
 import { fetchProgressChartData } from './progress-chart-service'
 import type { ProgressChartData, ProgressChartFilters, ProgressChartPoint, ProgressGranularity } from './types'
 import type { RpnThresholds } from '@/features/projects/types'
+import { DEFAULT_RPN_THRESHOLDS, riskColorFromRpnValue } from '@/lib/risk-engine'
+import { toUserErrorMessage } from '@/lib/error-utils'
 
 const DEFAULT_FILTERS: ProgressChartFilters = {
   departments: [],
@@ -46,10 +48,7 @@ function formatIntegerValue(value: number | null) {
 
 function avgRpnTileStyle(value: number | null, thresholds: RpnThresholds) {
   if (value == null || !Number.isFinite(value)) return settingsSummaryTileStyle
-  if (value <= thresholds.greenMax) return settingsRiskSummaryTileStyle('green')
-  if (value <= thresholds.yellowMax) return settingsRiskSummaryTileStyle('yellow')
-  if (value <= thresholds.orangeMax) return settingsRiskSummaryTileStyle('orange')
-  return settingsRiskSummaryTileStyle('red')
+  return settingsRiskSummaryTileStyle(riskColorFromRpnValue(value, thresholds))
 }
 
 function FilterSelect({
@@ -99,8 +98,6 @@ function ProgressSummary({ data }: { data: ProgressChartData | null }) {
     </div>
   )
 }
-
-const DEFAULT_RPN_THRESHOLDS: RpnThresholds = { greenMax: 100, yellowMax: 200, orangeMax: 360 }
 
 function chartYMax(points: ProgressChartPoint[], thresholds: RpnThresholds) {
   const values = points.map((point) => point.averageRpn)
@@ -401,7 +398,7 @@ export function ProgressChartReportPage() {
         const next = await fetchProgressChartData(supabase, user.id, filters)
         if (active) setData(next)
       } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Could not load Progress Chart report.')
+        if (active) setError(toUserErrorMessage(loadError, 'Could not load Progress Chart report.'))
       } finally {
         if (active) setLoading(false)
       }

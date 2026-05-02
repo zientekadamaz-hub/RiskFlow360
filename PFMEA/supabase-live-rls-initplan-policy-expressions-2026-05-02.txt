@@ -1,0 +1,650 @@
+--- access_requests.access_requests_select_admin SELECT
+qual=(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))
+check=
+--- access_requests.access_requests_update_admin UPDATE
+qual=(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))
+check=(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))
+--- control_plan_rows.control_plan_rows_delete_editor DELETE
+qual=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = control_plan_rows.operation_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- control_plan_rows.control_plan_rows_insert_editor INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = control_plan_rows.operation_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- control_plan_rows.control_plan_rows_select_member SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = control_plan_rows.operation_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM (operations op
+     JOIN customer_access_grants cag ON ((cag.project_id = op.project_id)))
+  WHERE ((op.id = control_plan_rows.operation_id) AND (cag.customer_user_id = auth.uid()) AND cag.active AND (cag.module = 'PCP'::text)))))
+check=
+--- control_plan_rows.control_plan_rows_update_editor UPDATE
+qual=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = control_plan_rows.operation_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = control_plan_rows.operation_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- customer_access_grants.customer_access_grants_select SELECT
+qual=((customer_user_id = auth.uid()) OR is_org_admin_or_champion_v2(organization_id))
+check=
+--- detection_overrides.detection_overrides_read SELECT
+qual=(is_org_admin_or_champion_v2(organization_id) OR (EXISTS ( SELECT 1
+   FROM organization_members m
+  WHERE ((m.organization_id = detection_overrides.organization_id) AND (m.user_id = auth.uid())))))
+check=
+--- occurrence_overrides.occurrence_overrides_read SELECT
+qual=(is_org_admin_or_champion_v2(organization_id) OR (EXISTS ( SELECT 1
+   FROM organization_members m
+  WHERE ((m.organization_id = occurrence_overrides.organization_id) AND (m.user_id = auth.uid())))))
+check=
+--- operations.operations_delete DELETE
+qual=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = operations.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- operations.operations_insert INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = operations.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- operations.operations_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = operations.project_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM customer_access_grants cag
+  WHERE ((cag.project_id = operations.project_id) AND (cag.customer_user_id = auth.uid()) AND cag.active))))
+check=
+--- operations.operations_update UPDATE
+qual=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = operations.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = operations.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- organization_invitations.org_invites_select_org SELECT
+qual=(is_org_admin_or_champion_v2(organization_id) OR (email = ( SELECT p.email
+   FROM profiles p
+  WHERE (p.id = auth.uid()))))
+check=
+--- organization_members.organization_members_select SELECT
+qual=((user_id = auth.uid()) OR is_org_admin_or_champion_v2(organization_id))
+check=
+--- organizations.organizations_delete DELETE
+qual=(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))
+check=
+--- organizations.organizations_insert INSERT
+qual=
+check=(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))
+--- organizations.organizations_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM organization_members om
+  WHERE ((om.organization_id = organizations.id) AND (om.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- organizations.organizations_update UPDATE
+qual=(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))
+check=(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))
+--- pcp_change_history.pcp_change_history_insert_editor INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_change_history.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pcp_change_history.pcp_change_history_select_member SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_change_history.project_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM customer_access_grants cag
+  WHERE ((cag.project_id = pcp_change_history.project_id) AND (cag.customer_user_id = auth.uid()) AND cag.active AND (cag.module = 'PCP'::text)))))
+check=
+--- pcp_edit_sessions.pcp_edit_sessions_delete_editor DELETE
+qual=(((locked_by = auth.uid()) OR (last_activity_at < (now() - '48:00:00'::interval)) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+check=
+--- pcp_edit_sessions.pcp_edit_sessions_insert_editor INSERT
+qual=
+check=((locked_by = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+--- pcp_edit_sessions.pcp_edit_sessions_select_member SELECT
+qual=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_edit_sessions.project_id) AND (om.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pcp_edit_sessions.pcp_edit_sessions_update_editor UPDATE
+qual=(((locked_by = auth.uid()) OR (last_activity_at < (now() - '48:00:00'::interval)) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+check=((locked_by = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pcp_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+--- pfd_change_history.pfd_change_history_insert_editor INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_change_history.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfd_change_history.pfd_change_history_select_member SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_change_history.project_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM customer_access_grants cag
+  WHERE ((cag.project_id = pfd_change_history.project_id) AND (cag.customer_user_id = auth.uid()) AND cag.active AND (cag.module = 'PFD'::text)))))
+check=
+--- pfd_diagrams.pfd_diagrams_delete DELETE
+qual=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_diagrams.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfd_diagrams.pfd_diagrams_insert INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_diagrams.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfd_diagrams.pfd_diagrams_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_diagrams.project_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM customer_access_grants cag
+  WHERE ((cag.project_id = pfd_diagrams.project_id) AND (cag.customer_user_id = auth.uid()) AND cag.active AND (cag.module = 'PFD'::text)))))
+check=
+--- pfd_diagrams.pfd_diagrams_update UPDATE
+qual=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_diagrams.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_diagrams.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfd_drafts.pfd_drafts_delete_allowed DELETE
+qual=(((user_id = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_drafts.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_drafts.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_drafts.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) AND (EXISTS ( SELECT 1
+   FROM pfd_edit_sessions s
+  WHERE ((s.project_id = pfd_drafts.project_id) AND (s.locked_by = pfd_drafts.user_id) AND (s.last_activity_at < (now() - '48:00:00'::interval)))))))
+check=
+--- pfd_drafts.pfd_drafts_insert_own_editor INSERT
+qual=
+check=((user_id = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_drafts.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+--- pfd_drafts.pfd_drafts_select_allowed SELECT
+qual=((user_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_drafts.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfd_drafts.pfd_drafts_update_own_editor UPDATE
+qual=((user_id = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_drafts.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+check=((user_id = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_drafts.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+--- pfd_edges.pfd_edges_delete2 DELETE
+qual=((EXISTS ( SELECT 1
+   FROM (((pfd_nodes n
+     JOIN operations op ON ((op.id = n.operation_id)))
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((n.id = pfd_edges.source_node_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfd_edges.pfd_edges_insert2 INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM (((pfd_nodes n
+     JOIN operations op ON ((op.id = n.operation_id)))
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((n.id = pfd_edges.source_node_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfd_edges.pfd_edges_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM (((pfd_nodes n
+     JOIN operations op ON ((op.id = n.operation_id)))
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((n.id = pfd_edges.source_node_id) AND (om.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfd_edges.pfd_edges_update2 UPDATE
+qual=((EXISTS ( SELECT 1
+   FROM (((pfd_nodes n
+     JOIN operations op ON ((op.id = n.operation_id)))
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((n.id = pfd_edges.source_node_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=((EXISTS ( SELECT 1
+   FROM (((pfd_nodes n
+     JOIN operations op ON ((op.id = n.operation_id)))
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((n.id = pfd_edges.source_node_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfd_edit_sessions.pfd_edit_sessions_delete_editor DELETE
+qual=(((locked_by = auth.uid()) OR (last_activity_at < (now() - '48:00:00'::interval)) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+check=
+--- pfd_edit_sessions.pfd_edit_sessions_insert_editor INSERT
+qual=
+check=((locked_by = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+--- pfd_edit_sessions.pfd_edit_sessions_select_member SELECT
+qual=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_edit_sessions.project_id) AND (om.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfd_edit_sessions.pfd_edit_sessions_update_editor UPDATE
+qual=(((locked_by = auth.uid()) OR (last_activity_at < (now() - '48:00:00'::interval)) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+check=((locked_by = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+--- pfd_nodes.pfd_nodes_delete DELETE
+qual=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfd_nodes.operation_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfd_nodes.pfd_nodes_insert INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfd_nodes.operation_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfd_nodes.pfd_nodes_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfd_nodes.operation_id) AND (om.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfd_nodes.pfd_nodes_update UPDATE
+qual=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfd_nodes.operation_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfd_nodes.operation_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfd_session_events.pfd_session_events_insert_editor INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM ((projects pr
+     JOIN organization_members actor ON ((actor.organization_id = pr.organization_id)))
+     JOIN organization_members recipient ON ((recipient.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfd_session_events.project_id) AND (actor.user_id = auth.uid()) AND (actor.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role])) AND (recipient.user_id = pfd_session_events.user_id)))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfd_session_events.pfd_session_events_select_recipient SELECT
+qual=((user_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfd_session_events.pfd_session_events_update_recipient UPDATE
+qual=((user_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=((user_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfmea_change_history.pfmea_change_history_insert_editor INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_change_history.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfmea_change_history.pfmea_change_history_select_member SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_change_history.project_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM customer_access_grants cag
+  WHERE ((cag.project_id = pfmea_change_history.project_id) AND (cag.customer_user_id = auth.uid()) AND cag.active AND (cag.module = 'PFMEA'::text)))))
+check=
+--- pfmea_edit_sessions.pfmea_edit_sessions_delete_editor DELETE
+qual=(((locked_by = auth.uid()) OR (last_activity_at < (now() - '48:00:00'::interval)) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+check=
+--- pfmea_edit_sessions.pfmea_edit_sessions_insert_editor INSERT
+qual=
+check=((locked_by = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+--- pfmea_edit_sessions.pfmea_edit_sessions_select_member SELECT
+qual=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_edit_sessions.project_id) AND (om.user_id = auth.uid())))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfmea_edit_sessions.pfmea_edit_sessions_update_editor UPDATE
+qual=(((locked_by = auth.uid()) OR (last_activity_at < (now() - '48:00:00'::interval)) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+check=((locked_by = auth.uid()) AND ((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = pfmea_edit_sessions.project_id) AND (om.user_id = auth.uid()) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text))))))
+--- pfmea_rows.pfmea_rows_delete DELETE
+qual=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfmea_rows.operation_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- pfmea_rows.pfmea_rows_insert INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfmea_rows.operation_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- pfmea_rows.pfmea_rows_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfmea_rows.operation_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM (operations op
+     JOIN customer_access_grants cag ON ((cag.project_id = op.project_id)))
+  WHERE ((op.id = pfmea_rows.operation_id) AND (cag.customer_user_id = auth.uid()) AND cag.active AND (cag.module = 'PFMEA'::text)))))
+check=
+--- pfmea_rows.pfmea_rows_update UPDATE
+qual=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfmea_rows.operation_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=((EXISTS ( SELECT 1
+   FROM ((operations op
+     JOIN projects pr ON ((pr.id = op.project_id)))
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((op.id = pfmea_rows.operation_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- process_revisions.process_revisions_insert INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = process_revisions.project_id) AND (om.user_id = auth.uid()) AND ((om.role)::text = ANY (ARRAY['champion'::text, 'engineer'::text]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- process_revisions.process_revisions_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM (projects pr
+     JOIN organization_members om ON ((om.organization_id = pr.organization_id)))
+  WHERE ((pr.id = process_revisions.project_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM customer_access_grants cag
+  WHERE ((cag.project_id = process_revisions.project_id) AND (cag.customer_user_id = auth.uid()) AND cag.active))))
+check=
+--- profiles.profiles_select_own SELECT
+qual=(id = auth.uid())
+check=
+--- profiles.profiles_update_own UPDATE
+qual=(id = auth.uid())
+check=(id = auth.uid())
+--- projects.projects_delete DELETE
+qual=((EXISTS ( SELECT 1
+   FROM organization_members om
+  WHERE ((om.user_id = auth.uid()) AND (om.organization_id = projects.organization_id) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=
+--- projects.projects_insert INSERT
+qual=
+check=((EXISTS ( SELECT 1
+   FROM organization_members om
+  WHERE ((om.user_id = auth.uid()) AND (om.organization_id = projects.organization_id) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- projects.projects_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM organization_members om
+  WHERE ((om.user_id = auth.uid()) AND (om.organization_id = projects.organization_id) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM customer_access_grants cag
+  WHERE ((cag.project_id = projects.id) AND (cag.customer_user_id = auth.uid()) AND cag.active))))
+check=
+--- projects.projects_update UPDATE
+qual=((EXISTS ( SELECT 1
+   FROM organization_members om
+  WHERE ((om.user_id = auth.uid()) AND (om.organization_id = projects.organization_id) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+check=((EXISTS ( SELECT 1
+   FROM organization_members om
+  WHERE ((om.user_id = auth.uid()) AND (om.organization_id = projects.organization_id) AND (om.role = ANY (ARRAY['admin'::app_role, 'champion'::app_role, 'engineer'::app_role]))))) OR (EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))))
+--- severity_overrides.severity_overrides_read SELECT
+qual=(is_org_admin_or_champion_v2(organization_id) OR (EXISTS ( SELECT 1
+   FROM organization_members m
+  WHERE ((m.organization_id = severity_overrides.organization_id) AND (m.user_id = auth.uid())))))
+check=
+--- site_departments.site_departments_select SELECT
+qual=((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.global_role = 'admin'::text)))) OR (EXISTS ( SELECT 1
+   FROM organization_members om
+  WHERE ((om.organization_id = site_departments.organization_id) AND (om.user_id = auth.uid()) AND (om.role <> 'customer'::app_role)))) OR (EXISTS ( SELECT 1
+   FROM (customer_access_grants cag
+     JOIN projects pr ON ((pr.id = cag.project_id)))
+  WHERE ((cag.customer_user_id = auth.uid()) AND cag.active AND (pr.site_department_id = site_departments.id)))))
+check=

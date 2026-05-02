@@ -1,17 +1,14 @@
 import type { ProjectPfmeaStat, RevisionPopupRow, RiskColor, RpnThresholds, UiProjectRow, ProjectRowDb } from './types'
+import {
+  clampRiskInt,
+  riskCellKey,
+  riskColorForMatrixCell,
+  riskColorFromRpn,
+} from '@/lib/risk-engine'
+import { errorText } from '@/lib/error-utils'
 
 export function errText(error: unknown) {
-  if (!error) return 'unknown'
-  if (typeof error === 'object') {
-    const maybe = error as {
-      message?: string
-      error_description?: string
-      details?: string
-      hint?: string
-    }
-    return maybe.message || maybe.error_description || maybe.details || maybe.hint || String(error)
-  }
-  return String(error)
+  return errorText(error)
 }
 
 export function normalizeProjectText(value: unknown) {
@@ -77,20 +74,15 @@ export function emptyRevisionRows(): RevisionPopupRow[] {
 }
 
 export function clampInt(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) return min
-  return Math.max(min, Math.min(max, Math.trunc(value)))
+  return clampRiskInt(value, min, max)
 }
 
 export function cellKey(severity: number, doValue: number) {
-  return `${severity}|${doValue}`
+  return riskCellKey(severity, doValue)
 }
 
 export function colorFromRpn(severity: number, doValue: number, thresholds: RpnThresholds): RiskColor {
-  const rpn = severity * doValue
-  if (rpn <= thresholds.greenMax) return 'green'
-  if (rpn <= thresholds.yellowMax) return 'yellow'
-  if (rpn <= thresholds.orangeMax) return 'orange'
-  return 'red'
+  return riskColorFromRpn(severity, doValue, thresholds)
 }
 
 export function getRiskColorFor(
@@ -100,18 +92,7 @@ export function getRiskColorFor(
   thresholds: RpnThresholds,
   cells: Record<string, RiskColor>
 ): RiskColor | null {
-  if (severityRaw == null || doValueRaw == null) return null
-
-  const severity = clampInt(severityRaw, 1, 10)
-  const doValue = clampInt(doValueRaw, 1, 100)
-
-  if (mode === 'manual') {
-    const hit = cells[cellKey(severity, doValue)]
-    if (hit) return hit
-    return colorFromRpn(severity, doValue, thresholds)
-  }
-
-  return colorFromRpn(severity, doValue, thresholds)
+  return riskColorForMatrixCell(severityRaw, doValueRaw, mode, thresholds, cells) as RiskColor | null
 }
 
 export function normalizeProductInputs(list: string[]) {
