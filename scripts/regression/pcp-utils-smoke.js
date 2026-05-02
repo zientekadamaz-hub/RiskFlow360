@@ -27,6 +27,9 @@ function loadModule(relativePath) {
 const {
   PCP_PLACEHOLDER_PREFIX,
   asInt1to10,
+  buildPcpRowPayload,
+  getComparableTime,
+  isEquivalentPcpRow,
   isPfmeaSeedSelectedForPcp,
   isPlaceholderPcpRowId,
   nextPcpRevisionLabel,
@@ -51,5 +54,42 @@ assert.equal(nextPcpRevisionLabel('1.2.3'), '1.2.4')
 assert.equal(nextPcpRevisionLabel('bad'), '0.0.1')
 assert.equal(isPlaceholderPcpRowId(`${PCP_PLACEHOLDER_PREFIX}abc`), true)
 assert.equal(isPlaceholderPcpRowId('abc'), false)
+assert.equal(
+  JSON.stringify(buildPcpRowPayload({
+    operation_id: 'op-1',
+    revision_id: 'rev-1',
+    failure_mode: null,
+    characteristic: 'Width',
+    class: 'special characteristic',
+    source: 'manual',
+    status: '',
+  })),
+  JSON.stringify({
+    operation_id: 'op-1',
+    revision_id: 'rev-1',
+    pfmea_row_id: null,
+    failure_mode: '',
+    characteristic: 'Width',
+    class: 'SC',
+    current_prevention: '',
+    current_detection: '',
+    control_method: '',
+    sample_size: '',
+    frequency: '',
+    reaction_plan: '',
+    source: 'MANUAL',
+    status: 'OPEN',
+  })
+)
+assert.equal(isEquivalentPcpRow({ pfmea_row_id: 'pfmea-1' }, { pfmea_row_id: 'pfmea-1' }), true)
+assert.equal(
+  isEquivalentPcpRow(
+    { operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'P', current_detection: 'D' },
+    { operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'Special Characteristic', current_prevention: 'P', current_detection: 'D' }
+  ),
+  true
+)
+assert.equal(getComparableTime('2026-05-02T10:00:00.000Z') > 0, true)
+assert.equal(getComparableTime('not-a-date'), 0)
 
 console.log('pcp utils smoke passed')

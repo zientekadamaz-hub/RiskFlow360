@@ -16,6 +16,13 @@ Katalog `db/` traktuj jako archiwum/manual SQL, dopoki starsze pliki nie zostana
    - Sprawdz project ref.
    - Sprawdz, czy pracujesz na staging, a nie przypadkowo na produkcji.
 2. Zrob backup lub snapshot bazy.
+   - Preferowane: Supabase Dashboard backup/snapshot.
+   - Alternatywa CLI, gdy Docker Desktop dziala:
+     ```powershell
+     npx supabase db dump --linked --schema public --file PFMEA/supabase-live-public-schema-dump-YYYY-MM-DD.sql
+     ```
+   - Alternatywa bez Dockera: lokalny `pg_dump` z PostgreSQL client tools.
+   - Jezeli CLI zwroci blad Docker daemon / missing `pg_dump`, nie traktuj pustego pliku dump jako backupu.
 3. Sprawdz lokalny stan repo:
    - `git status --short`
 4. Uruchom lokalne walidacje:
@@ -97,4 +104,3 @@ Zatrzymaj wdrozenie, jezeli migracja:
 - wymaga nieprzetestowanego service role flow,
 - zmienia kontrakt API/RPC uzywany przez frontend,
 - nie ma jasnej sciezki rollbacku.
-

@@ -63,3 +63,58 @@ export function nextPcpRevisionLabel(labelRaw: string | null | undefined) {
 export function isPlaceholderPcpRowId(id: string | null | undefined) {
   return String(id ?? '').startsWith(PCP_PLACEHOLDER_PREFIX)
 }
+
+export type PcpPayloadSource = {
+  characteristic?: string | null
+  class?: string | null
+  control_method?: string | null
+  current_detection?: string | null
+  current_prevention?: string | null
+  failure_mode?: string | null
+  frequency?: string | null
+  operation_id: string
+  pfmea_row_id?: string | null
+  reaction_plan?: string | null
+  revision_id: string | null
+  sample_size?: string | null
+  source?: string | null
+  status?: string | null
+}
+
+export function buildPcpRowPayload(row: PcpPayloadSource) {
+  return {
+    operation_id: row.operation_id,
+    revision_id: row.revision_id,
+    pfmea_row_id: row.pfmea_row_id ?? null,
+    failure_mode: row.failure_mode ?? '',
+    characteristic: row.characteristic ?? '',
+    class: normalizeClassValue(row.class ?? null),
+    current_prevention: row.current_prevention ?? '',
+    current_detection: row.current_detection ?? '',
+    control_method: row.control_method ?? '',
+    sample_size: row.sample_size ?? '',
+    frequency: row.frequency ?? '',
+    reaction_plan: row.reaction_plan ?? '',
+    source: normalizeText(row.source || 'MANUAL').toUpperCase(),
+    status: normalizeText(row.status || 'OPEN').toUpperCase(),
+  }
+}
+
+export function isEquivalentPcpRow(a: Partial<PcpPayloadSource>, b: Partial<PcpPayloadSource>) {
+  const pfmeaA = normalizeText(a.pfmea_row_id)
+  const pfmeaB = normalizeText(b.pfmea_row_id)
+  if (pfmeaA && pfmeaB) return pfmeaA === pfmeaB
+  return (
+    normalizeText(a.operation_id) === normalizeText(b.operation_id) &&
+    normalizeText(a.failure_mode) === normalizeText(b.failure_mode) &&
+    normalizeText(a.characteristic) === normalizeText(b.characteristic) &&
+    normalizeClassValue(a.class ?? null) === normalizeClassValue(b.class ?? null) &&
+    normalizeText(a.current_prevention) === normalizeText(b.current_prevention) &&
+    normalizeText(a.current_detection) === normalizeText(b.current_detection)
+  )
+}
+
+export function getComparableTime(value: string | null | undefined) {
+  const time = value ? new Date(value).getTime() : Number.NaN
+  return Number.isFinite(time) ? time : 0
+}

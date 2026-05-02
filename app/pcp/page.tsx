@@ -10,6 +10,9 @@ import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/custome
 import {
   PCP_PLACEHOLDER_PREFIX,
   asInt1to10,
+  buildPcpRowPayload,
+  getComparableTime,
+  isEquivalentPcpRow,
   isPfmeaSeedSelectedForPcp,
   isPlaceholderPcpRowId,
   nextPcpRevisionLabel,
@@ -243,44 +246,6 @@ function makePcpPlaceholderRow(op: Operation, revisionId: string | null, seedKey
     __placeholder: true,
     __sortIndex: sortIndex,
   }
-}
-
-function buildPcpRowPayload(row: Partial<PcpRow> & { operation_id: string; revision_id: string }) {
-  return {
-    operation_id: row.operation_id,
-    revision_id: row.revision_id,
-    pfmea_row_id: row.pfmea_row_id ?? null,
-    failure_mode: row.failure_mode ?? '',
-    characteristic: row.characteristic ?? '',
-    class: normalizeClassValue((row.class as string | null | undefined) ?? null),
-    current_prevention: row.current_prevention ?? '',
-    current_detection: row.current_detection ?? '',
-    control_method: row.control_method ?? '',
-    sample_size: row.sample_size ?? '',
-    frequency: row.frequency ?? '',
-    reaction_plan: row.reaction_plan ?? '',
-    source: normalizeText(row.source || 'MANUAL').toUpperCase(),
-    status: normalizeText(row.status || 'OPEN').toUpperCase(),
-  }
-}
-
-function isEquivalentPcpRow(a: Partial<PcpRow>, b: Partial<PcpRow>) {
-  const pfmeaA = normalizeText(a.pfmea_row_id)
-  const pfmeaB = normalizeText(b.pfmea_row_id)
-  if (pfmeaA && pfmeaB) return pfmeaA === pfmeaB
-  return (
-    normalizeText(a.operation_id) === normalizeText(b.operation_id) &&
-    normalizeText(a.failure_mode) === normalizeText(b.failure_mode) &&
-    normalizeText(a.characteristic) === normalizeText(b.characteristic) &&
-    normalizeClassValue((a.class as string | null | undefined) ?? null) === normalizeClassValue((b.class as string | null | undefined) ?? null) &&
-    normalizeText(a.current_prevention) === normalizeText(b.current_prevention) &&
-    normalizeText(a.current_detection) === normalizeText(b.current_detection)
-  )
-}
-
-function getComparableTime(value: string | null | undefined) {
-  const time = value ? new Date(value).getTime() : Number.NaN
-  return Number.isFinite(time) ? time : 0
 }
 
 export default function PcpPage() {

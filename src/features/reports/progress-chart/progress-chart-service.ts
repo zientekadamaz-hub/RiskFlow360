@@ -6,6 +6,8 @@ import {
   fetchProjectsWithRevision,
 } from '@/features/projects/projects-service'
 import { normalizeProjectText } from '@/features/projects/utils'
+import { getPfmeaReportRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
+import { getReportRevisionId } from '@/features/reports/report-revision-utils'
 import type {
   ProgressChartData,
   ProgressChartFilters,
@@ -18,15 +20,6 @@ type PfmeaHistoryRow = {
   avg_rpn?: number | string | null
   project_id?: string | null
   risk_count?: number | string | null
-}
-
-type PfmeaCurrentRow = {
-  detection?: number | string | null
-  occurrence?: number | string | null
-  oxd_current?: number | string | null
-  rpn?: number | string | null
-  rpn_current?: number | string | null
-  severity?: number | string | null
 }
 
 type BucketAggregate = {
@@ -45,8 +38,7 @@ const DEFAULT_FILTERS: ProgressChartFilters = {
 }
 
 function toNumber(value: unknown) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : null
+  return toReportNumber(value)
 }
 
 function startOfWeek(date: Date) {
@@ -144,27 +136,12 @@ function buildPoints(rows: PfmeaHistoryRow[], filters: ProgressChartFilters): Pr
     }))
 }
 
-function currentRpnForRow(row: PfmeaCurrentRow) {
-  const rpnCurrent = toNumber(row.rpn_current)
-  const rpn = toNumber(row.rpn)
-  if (rpnCurrent != null) return rpnCurrent
-  if (rpn != null) return rpn
-
-  const severity = toNumber(row.severity)
-  const oxdCurrent = toNumber(row.oxd_current)
-  const occurrence = toNumber(row.occurrence)
-  const detection = toNumber(row.detection)
-  const doValue = oxdCurrent ?? (occurrence != null && detection != null ? occurrence * detection : null)
-
-  return severity != null && doValue != null ? severity * doValue : null
-}
-
-function summarizeCurrentRows(rows: PfmeaCurrentRow[]) {
+function summarizeCurrentRows(rows: PfmeaReportRiskRow[]) {
   let sum = 0
   let count = 0
 
   for (const row of rows) {
-    const rpn = currentRpnForRow(row)
+    const rpn = getPfmeaReportRisk(row).rpn
     if (rpn == null) continue
     sum += rpn
     count += 1
@@ -227,7 +204,7 @@ export async function fetchProgressChartData(
     .map((project) => {
       const siteDept = project.site_department_id ? siteDeptData.siteDeptMap[project.site_department_id] : undefined
       return {
-        currentRevisionId: normalizeProjectText(project.current_draft_revision_id) || normalizeProjectText(project.current_open_revision_id),
+        currentRevisionId: getReportRevisionId(project),
         department: normalizeProjectText(siteDept?.department),
         id: normalizeProjectText(project.id),
         name: normalizeProjectText(project.name),
@@ -264,7 +241,7 @@ export async function fetchProgressChartData(
     .filter(Boolean)
 
   let rows: PfmeaHistoryRow[] = []
-  let currentRows: PfmeaCurrentRow[] = []
+  let currentRows: PfmeaReportRiskRow[] = []
   if (eligibleProjectIds.length) {
     const historyQuery = supabase
       .from('pfmea_change_history')
@@ -275,7 +252,7 @@ export async function fetchProgressChartData(
     const currentQuery = eligibleRevisionIds.length
       ? supabase
           .from('pfmea_rows')
-          .select('severity,occurrence,detection,oxd_current,rpn_current,rpn,operations!inner(project_id,active)')
+          .select('action_status,severity,occurrence,detection,occurrence2,detection2,oxd_current,rpn_current,rpn,operations!inner(project_id,active)')
           .in('revision_id', eligibleRevisionIds)
           .eq('operations.active', true)
       : Promise.resolve({ data: [], error: null })
@@ -288,7 +265,7 @@ export async function fetchProgressChartData(
     if (historyRes.error) throw historyRes.error
     if (currentRes.error) throw currentRes.error
     rows = (historyRes.data ?? []) as PfmeaHistoryRow[]
-    currentRows = (currentRes.data ?? []) as PfmeaCurrentRow[]
+    currentRows = (currentRes.data ?? []) as PfmeaReportRiskRow[]
   }
 
   const currentSummary = summarizeCurrentRows(currentRows)

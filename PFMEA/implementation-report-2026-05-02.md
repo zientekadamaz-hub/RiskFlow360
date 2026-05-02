@@ -123,6 +123,22 @@ Wdrozone zostaly tylko rekomendacje bezpieczne: poprawki stabilnosciowe, walidac
    Pliki: `app/pcp/page.tsx`, `src/features/pcp/pcp-utils.ts`, `scripts/regression/pcp-utils-smoke.js`.  
    Wydzielono z PCP page normalizacje tekstu, flag PCP, `SC/CC`, zakres ratingu, decyzje PFMEA->PCP, placeholder row ids oraz inkrementacje rewizji PCP. To zmniejsza page-level duplication i zabezpiecza zachowanie smoke testem.
 
+24. Report revision source hardening  
+   Pliki: `src/features/reports/report-revision-utils.ts`, `scripts/regression/report-revision-utils-smoke.js`, `src/features/reports/rpn-matrix/rpn-matrix-service.ts`, `src/features/reports/progress-chart/progress-chart-service.ts`.  
+   Raporty dla projektow `OPEN` uzywaja teraz domyslnie `current_open_revision_id`, a nie potencjalnie pustego `current_draft_revision_id`. To eliminuje przypadek, w ktorym otwarty projekt z pustym draftem znika z RPN Matrix / Progress Chart.
+
+25. Report current-risk calculation hardening  
+   Pliki: `src/features/reports/pfmea-report-risk-utils.ts`, `scripts/regression/pfmea-report-risk-utils-smoke.js`, RPN Matrix i Progress Chart services.  
+   Raporty licza current RPN z surowych pol PFMEA (`severity`, `occurrence`, `detection`, oraz dla `CLOSED`: `occurrence2`, `detection2`) zanim skorzystaja z zapisanych/cache'owanych `rpn_current`. Chroni to raporty przed historycznie niespojnymi kolumnami po edycjach.
+
+26. PCP row helper extraction, phase 2  
+   Pliki: `src/features/pcp/pcp-utils.ts`, `scripts/regression/pcp-utils-smoke.js`, `app/pcp/page.tsx`.  
+   Wydzielono z PCP page budowanie payloadu wiersza, porownanie row equivalence i helper czasu sortowania. To kolejny krok w kierunku `pcp-service`, bez zmiany Supabase flow.
+
+27. Supabase operational check  
+   Pliki: `PFMEA/supabase-operational-check-2026-05-02.md`, `supabase/DEPLOYMENT_CHECKLIST.md`.  
+   Zweryfikowano `supabase db lint --linked` - PASS. Proba `supabase db dump --linked --schema public` zostala zablokowana przez brak Docker Desktop / lokalnego `pg_dump`; pusty artefakt dumpu usunieto i opisano bezpieczne opcje backupu.
+
 ## Czesciowo wdrozone rekomendacje
 
 - React Compiler cleanup: czesc realnych problemow usunieta, ale kilka zasad jest nadal wylaczonych dla legacy modulow.
@@ -167,6 +183,7 @@ Uwaga: `riskflow-current-dev.err.log` i `riskflow-current-dev.out.log` sa zmieni
 | `npm run regression:pfmea-payload` | PASS |
 | `npm run regression:pfmea-pcp` | PASS |
 | `npm run regression:pfmea-revision` | PASS |
+| `npm run regression:pfmea-report-risk` | PASS |
 | `npm run regression:pfmea-row-factory` | PASS |
 | `npm run regression:pfmea-row-normalization` | PASS |
 | `npm run regression:pfmea-row-match` | PASS |
@@ -176,6 +193,8 @@ Uwaga: `riskflow-current-dev.err.log` i `riskflow-current-dev.out.log` sa zmieni
 | `npm run regression:pfmea-risk` | PASS |
 | `npm run regression:pfmea-value` | PASS |
 | `npm run regression:pcp-utils` | PASS |
+| `npm run regression:report-revision` | PASS |
+| `supabase db lint --linked` | PASS |
 | `npm run check` | PASS |
 | `npm run regression:all` | NOT RUN - brak dedykowanych env/data, testy moga mutowac drafty |
 

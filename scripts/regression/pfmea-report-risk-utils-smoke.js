@@ -1,0 +1,54 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
+const ts = require('typescript')
+
+function loadModule(relativePath) {
+  const sourcePath = path.join(__dirname, '..', '..', ...relativePath)
+  const source = fs.readFileSync(sourcePath, 'utf8')
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+    },
+  }).outputText
+
+  const sandbox = {
+    exports: {},
+    module: { exports: {} },
+    require,
+  }
+  sandbox.exports = sandbox.module.exports
+  vm.runInNewContext(transpiled, sandbox, { filename: sourcePath })
+  return sandbox.module.exports
+}
+
+const { getPfmeaReportRisk, toReportNumber } = loadModule(['src', 'features', 'reports', 'pfmea-report-risk-utils.ts'])
+
+assert.equal(toReportNumber('12'), 12)
+assert.equal(toReportNumber('x'), null)
+let risk = getPfmeaReportRisk({ severity: 10, occurrence: 10, detection: 10, rpn_current: 1000 })
+assert.equal(risk.severity, 10)
+assert.equal(risk.doValue, 100)
+assert.equal(risk.rpn, 1000)
+
+risk = getPfmeaReportRisk({
+    action_status: 'CLOSED',
+    severity: 10,
+    occurrence: 10,
+    detection: 10,
+    occurrence2: 9,
+    detection2: 7,
+    rpn_current: 1000,
+  })
+assert.equal(risk.severity, 10)
+assert.equal(risk.doValue, 63)
+assert.equal(risk.rpn, 630)
+
+risk = getPfmeaReportRisk({ severity: null, oxd_current: 12, rpn_current: 60 })
+assert.equal(risk.severity, null)
+assert.equal(risk.doValue, 12)
+assert.equal(risk.rpn, 60)
+
+console.log('pfmea report risk utils smoke passed')

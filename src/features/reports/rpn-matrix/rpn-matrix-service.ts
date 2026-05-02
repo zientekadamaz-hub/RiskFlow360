@@ -10,24 +10,12 @@ import {
   fetchRiskMatrixConfig,
 } from '@/features/projects/projects-service'
 import { clampInt, normalizeProjectText } from '@/features/projects/utils'
+import { getPfmeaReportRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
+import { getReportRevisionId } from '@/features/reports/report-revision-utils'
 import type { RpnMatrixCellSummary, RpnMatrixFilters, RpnMatrixProject, RpnMatrixProjectColorCounts, RpnMatrixReportData } from './types'
-
-type PfmeaRiskRow = {
-  detection?: number | string | null
-  occurrence?: number | string | null
-  oxd_current?: number | string | null
-  rpn?: number | string | null
-  rpn_current?: number | string | null
-  severity?: number | string | null
-}
 
 function normalizeOptionList(values: string[]) {
   return Array.from(new Set(values.map(normalizeProjectText).filter(Boolean))).sort((a, b) => a.localeCompare(b))
-}
-
-function toNumber(value: unknown) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : null
 }
 
 function emptyColorCounts(): Record<RiskColor, number> {
@@ -69,7 +57,7 @@ function buildProjectRows(
         id: normalizeProjectText(project.id),
         name: normalizeProjectText(project.name),
         openRevisionId: normalizeProjectText(project.current_open_revision_id),
-        revisionId: normalizeProjectText(project.current_draft_revision_id) || normalizeProjectText(project.current_open_revision_id),
+        revisionId: getReportRevisionId(project),
         site: normalizeProjectText(siteDept?.site),
       }
     })
@@ -121,28 +109,25 @@ export async function fetchRpnMatrixReportData(
   if (revisionIds.length) {
     const { data, error } = await supabase
       .from('pfmea_rows')
-      .select('revision_id,severity,occurrence,detection,oxd_current,rpn_current,rpn,operations!inner(active)')
+      .select('revision_id,action_status,severity,occurrence,detection,occurrence2,detection2,oxd_current,rpn_current,rpn,operations!inner(active)')
       .in('revision_id', revisionIds)
       .eq('operations.active', true)
 
     if (error) throw error
 
-    for (const row of (data ?? []) as Array<PfmeaRiskRow & { revision_id?: string | null }>) {
+    for (const row of (data ?? []) as Array<PfmeaReportRiskRow & { revision_id?: string | null }>) {
       const projectId = projectIdByRevision.get(normalizeProjectText(row.revision_id))
       if (!projectId) continue
 
-      const severity = toNumber(row.severity)
-      const occurrence = toNumber(row.occurrence)
-      const detection = toNumber(row.detection)
-      const oxdCurrent = toNumber(row.oxd_current)
-      const doValue = oxdCurrent ?? (occurrence != null && detection != null ? occurrence * detection : null)
+      const currentRisk = getPfmeaReportRisk(row)
+      const severity = currentRisk.severity
+      const doValue = currentRisk.doValue
       if (severity == null || doValue == null) continue
 
       const normalizedSeverity = clampInt(severity, 1, 10)
       const normalizedDoValue = clampInt(doValue, 1, 100)
       const key = cellKey(normalizedSeverity, normalizedDoValue)
-      const rpnCurrent = toNumber(row.rpn_current)
-      const rowRpn = rpnCurrent ?? normalizedSeverity * normalizedDoValue
+      const rowRpn = toReportNumber(currentRisk.rpn) ?? normalizedSeverity * normalizedDoValue
       const color = colorForCell(normalizedSeverity, normalizedDoValue, {
         matrixMode: matrixConfig.mode,
         riskMatrixCells,

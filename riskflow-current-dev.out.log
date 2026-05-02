@@ -1047,3 +1047,17 @@ Creating turbopack project { dir: 'C:\\Users\\zieada\\pfmea-app', testMode: true
  GET /projects 200 in 22ms (compile: 4ms, proxy.ts: 5ms, render: 13ms)
  GET /pfmea?project=eaa4df02-cc02-4e0a-8544-206ae6244df2 200 in 26ms (compile: 3ms, proxy.ts: 5ms, render: 17ms)
  GET /projects 200 in 28ms (compile: 4ms, proxy.ts: 10ms, render: 14ms)
+ GET /pfmea?project=662f17ce-540d-4b64-9140-7a86f010ebd0 200 in 24ms (compile: 5ms, proxy.ts: 5ms, render: 14ms)
+ GET /projects 200 in 30ms (compile: 10ms, proxy.ts: 5ms, render: 15ms)
+ GET /reports/progress-chart 200 in 37ms (compile: 8ms, proxy.ts: 6ms, render: 23ms)
+ GET /projects 200 in 23ms (compile: 4ms, proxy.ts: 5ms, render: 14ms)
+ GET /pfmea?project=662f17ce-540d-4b64-9140-7a86f010ebd0 200 in 31ms (compile: 5ms, proxy.ts: 12ms, render: 13ms)
+ GET /pcp?project=662f17ce-540d-4b64-9140-7a86f010ebd0 200 in 297ms (compile: 248ms, proxy.ts: 6ms, render: 43ms)
+ GET /pfd?project=662f17ce-540d-4b64-9140-7a86f010ebd0 200 in 32ms (compile: 9ms, proxy.ts: 6ms, render: 17ms)
+ GET /pfmea?project=662f17ce-540d-4b64-9140-7a86f010ebd0 200 in 22ms (compile: 3ms, proxy.ts: 6ms, render: 13ms)
+ GET /pcp?project=662f17ce-540d-4b64-9140-7a86f010ebd0 200 in 23ms (compile: 5ms, proxy.ts: 6ms, render: 12ms)
+✓ Compiled in 158ms
+✓ Compiled in 16ms
+✓ Compiled in 186ms
+✓ Compiled in 113ms
+✓ Compiled in 9ms
