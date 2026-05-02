@@ -23,7 +23,8 @@ function ensure(condition, message, context = {}) {
 }
 
 function indexOfMarker(rows, marker) {
-  return rows.findIndex((row) => row.text.includes(marker))
+  const compactMarker = String(marker ?? '').replace(/\s+/g, '')
+  return rows.findIndex((row) => (row.compactText ?? row.text.replace(/\s+/g, '')).includes(compactMarker))
 }
 
 async function pickCleanSeedRow(table) {
@@ -84,11 +85,11 @@ async function main() {
     const fm2 = await addFailureMode(table, fm1, fm2Text)
     const fm3 = await addFailureMode(table, fm2, fm3Text)
 
-    await addFailureMode(table, table.locator('tbody tr').filter({ hasText: fm2Text }).first(), fm2bText)
-    await addFailureMode(table, table.locator('tbody tr').filter({ hasText: fm1Text }).first(), fm1bText)
-    await addFailureMode(table, table.locator('tbody tr').filter({ hasText: fm2Text }).first(), fm2cText)
-    await addFailureMode(table, table.locator('tbody tr').filter({ hasText: fm3Text }).first(), fm3bText)
-    await addFailureMode(table, table.locator('tbody tr').filter({ hasText: fm1bText }).first(), fm1cText)
+    await addFailureMode(table, fm2, fm2bText)
+    const fm1b = await addFailureMode(table, fm1, fm1bText)
+    await addFailureMode(table, fm2, fm2cText)
+    await addFailureMode(table, fm3, fm3bText)
+    await addFailureMode(table, fm1b, fm1cText)
 
     const finalRows = await collectRunRows(table, RUN_ID)
     const orderScreenshot = await maybeScreenshot(page, 'final-order')
@@ -116,8 +117,8 @@ async function main() {
     const afterSaveRows = await collectRunRows(tableAfterSave, RUN_ID)
     const saveScreenshot = await maybeScreenshot(page, 'after-save')
 
-    const beforeTexts = finalRows.map((row) => row.text)
-    const afterTexts = afterSaveRows.map((row) => row.text)
+    const beforeTexts = finalRows.map((row) => row.compactText ?? row.text.replace(/\s+/g, ''))
+    const afterTexts = afterSaveRows.map((row) => row.compactText ?? row.text.replace(/\s+/g, ''))
     ensure(
       JSON.stringify(beforeTexts) === JSON.stringify(afterTexts),
       'Failure mode row order changed after save',

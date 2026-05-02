@@ -1,5 +1,11 @@
--- PFD private drafts + edit lock (one active editor per project)
--- Run in Supabase SQL editor.
+-- PFD private drafts + edit lock bootstrap
+-- This file defines structural objects only.
+-- It intentionally does not create permissive RLS policies.
+-- After running this bootstrap on a fresh environment, apply:
+--   - 2026-04-22_supabase_critical_auth_hardening.sql
+--   - 2026-04-22_supabase_session_history_hardening.sql
+--   - 2026-04-22_supabase_invites_projects_hardening.sql
+--   - 2026-04-22_supabase_anon_surface_reduction.sql
 
 create extension if not exists pgcrypto;
 
@@ -52,69 +58,3 @@ alter table public.pfd_edit_sessions enable row level security;
 alter table public.pfd_drafts enable row level security;
 alter table public.pfd_session_events enable row level security;
 alter table public.pfd_change_history enable row level security;
-
-drop policy if exists "pfd_edit_sessions_all_auth" on public.pfd_edit_sessions;
-create policy "pfd_edit_sessions_all_auth"
-  on public.pfd_edit_sessions
-  for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
-
-drop policy if exists "pfd_drafts_all_auth" on public.pfd_drafts;
-create policy "pfd_drafts_all_auth"
-  on public.pfd_drafts
-  for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
-
-drop policy if exists "pfd_session_events_all_auth" on public.pfd_session_events;
-create policy "pfd_session_events_all_auth"
-  on public.pfd_session_events
-  for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
-
-drop policy if exists "pfd_change_history_all_auth" on public.pfd_change_history;
-create policy "pfd_change_history_all_auth"
-  on public.pfd_change_history
-  for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
-
--- Optional one-time backfill from existing revision log
-do $$
-begin
-  if to_regclass('public.process_module_revisions') is not null then
-    insert into public.pfd_change_history (
-      project_id,
-      revision_label,
-      change_description,
-      author_id,
-      author_name,
-      node_count,
-      edge_count,
-      created_at
-    )
-    select
-      pmr.project_id,
-      coalesce(pmr.revision_label, '0.0.0'),
-      coalesce(pmr.change_description, ''),
-      pmr.user_id,
-      coalesce(nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), ''), 'Unknown user'),
-      0,
-      0,
-      coalesce(pmr.created_at, now())
-    from public.process_module_revisions pmr
-    left join public.profiles p on p.id = pmr.user_id
-    where pmr.module = 'PFD'
-      and not exists (
-        select 1
-        from public.pfd_change_history h
-        where h.project_id = pmr.project_id
-          and h.revision_label = coalesce(pmr.revision_label, '0.0.0')
-          and h.change_description = coalesce(pmr.change_description, '')
-          and h.created_at = coalesce(pmr.created_at, now())
-      );
-  end if;
-end
-$$;

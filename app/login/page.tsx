@@ -3,6 +3,36 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
+import { activateInvitedUser, fetchInvitationPreview, type InvitationPreview } from '@/lib/auth/invitation-auth'
+import { getSafeRedirectTarget } from '@/lib/auth/client-session'
+import { PasswordRulesHelp } from '@/features/auth/PasswordRulesHelp'
+import {
+  SettingsBackdrop,
+  SettingsConfirmDialog,
+  settingsCompactActionButtonStyle,
+  settingsCompactInputStyle,
+  settingsCompactPrimaryButtonStyle,
+  settingsFormLabelStyle,
+  settingsMutedTileStyle,
+  settingsPageStyle,
+  settingsProcessAccent,
+  settingsTableWrapStyle,
+} from '@/features/settings/invitation-shell'
+
+type Mode = 'login' | 'activate' | 'forgot' | 'reset'
+
+function getInvitationTokenFromRedirect(redirectTo: string) {
+  if (!redirectTo.includes('/waiting-for-invite?token=')) return null
+
+  try {
+    if (typeof window === 'undefined') return null
+    const url = new URL(redirectTo, window.location.origin)
+    const token = url.searchParams.get('token')?.trim() ?? ''
+    return token || null
+  } catch {
+    return null
+  }
+}
 
 export default function LoginPage() {
   return (
@@ -14,15 +44,20 @@ export default function LoginPage() {
 
 function LoginPageContent() {
   const sp = useSearchParams()
-  const redirectTo = useMemo(() => sp.get('next') ?? '/', [sp])
+  const redirectTo = useMemo(() => getSafeRedirectTarget(sp.get('next'), '/projects'), [sp])
+  const initialMode = useMemo<Mode>(() => {
+    if (sp.get('mode') === 'recovery') return 'reset'
+    return 'login'
+  }, [sp])
 
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const inviteFlow = useMemo(() => redirectTo.includes('/waiting-for-invite?token='), [redirectTo])
+  const inviteToken = useMemo(() => getInvitationTokenFromRedirect(redirectTo), [redirectTo])
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [loading, setLoading] = useState(false)
+  const [invitationPreview, setInvitationPreview] = useState<InvitationPreview | null>(null)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-
-  // signup only
   const [password2, setPassword2] = useState('')
 
   const [err, setErr] = useState('')
@@ -30,11 +65,11 @@ function LoginPageContent() {
 
   const rules = useMemo(
     () => [
-      'Minimum 8 znaków',
-      'Co najmniej 1 duża litera (A–Z)',
-      'Co najmniej 1 mała litera (a–z)',
-      'Co najmniej 1 cyfra (0–9)',
-      'Co najmniej 1 znak specjalny (np. !@#$%^&*)',
+      'Minimum 8 characters',
+      'At least 1 uppercase letter (A-Z)',
+      'At least 1 lowercase letter (a-z)',
+      'At least 1 number (0-9)',
+      'At least 1 special character (for example !@#$%^&*)',
     ],
     []
   )
@@ -45,17 +80,69 @@ function LoginPageContent() {
     const check = async () => {
       const { data } = await supabase.auth.getSession()
       if (!mounted) return
-      if (data.session) {
+      if (data.session && mode !== 'reset') {
         window.location.assign(redirectTo)
       }
     }
 
-    check()
+    void check()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (!mounted) return
+      if (event === 'PASSWORD_RECOVERY') {
+        setMode('reset')
+        setErr('')
+        setMsg('')
+      }
+    })
+
+    if (typeof window !== 'undefined' && window.location.hash.includes('type=recovery')) {
+      setMode('reset')
+    }
 
     return () => {
       mounted = false
+      subscription.unsubscribe()
     }
-  }, [redirectTo])
+  }, [mode, redirectTo])
+
+  useEffect(() => {
+    if (inviteFlow && mode === 'login') {
+      setMsg('Use your existing password to sign in, or choose "Set password" if this is your first access.')
+    } else if (mode !== 'login') {
+      setMsg('')
+    }
+  }, [inviteFlow, mode])
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!inviteToken) {
+      setInvitationPreview(null)
+      return
+    }
+
+    const loadInvitationPreview = async () => {
+      try {
+        const preview = await fetchInvitationPreview(supabase, inviteToken)
+        if (cancelled) return
+        setInvitationPreview(preview)
+        setEmail((currentEmail) => currentEmail || preview.email)
+      } catch (error) {
+        if (cancelled) return
+        setInvitationPreview(null)
+        setErr(error instanceof Error ? error.message : 'Invitation could not be loaded.')
+      }
+    }
+
+    void loadInvitationPreview()
+
+    return () => {
+      cancelled = true
+    }
+  }, [inviteToken])
 
   function validatePassword(pw: string) {
     const okLen = pw.length >= 8
@@ -67,7 +154,14 @@ function LoginPageContent() {
     return { ok, okLen, okUpper, okLower, okDigit, okSpecial }
   }
 
-  const v = useMemo(() => validatePassword(password), [password])
+  const validation = useMemo(() => validatePassword(password), [password])
+
+  const authRedirectUrl = useMemo(() => {
+    if (typeof window === 'undefined') return undefined
+    const basePath = (process.env.NEXT_PUBLIC_BASE_PATH ?? '').trim()
+    const normalizedBasePath = !basePath || basePath === '/' ? '' : basePath.startsWith('/') ? basePath.replace(/\/+$/, '') : `/${basePath.replace(/\/+$/, '')}`
+    return `${window.location.origin}${normalizedBasePath}/login?mode=recovery`
+  }, [])
 
   async function onLogin() {
     setErr('')
@@ -83,28 +177,60 @@ function LoginPageContent() {
         return
       }
 
-      // twardy redirect = stabilnie z guard/middleware
       window.location.assign(redirectTo)
     } finally {
       setLoading(false)
     }
   }
 
-  async function onSignup() {
+  async function onActivateAccount() {
     setErr('')
     setMsg('')
     setLoading(true)
 
     try {
-      const e = email.trim()
-      if (!e) return setErr('Email jest wymagany.')
-      if (!password) return setErr('Hasło jest wymagane.')
-      if (!v.ok) return setErr('Hasło nie spełnia zasad.')
-      if (password !== password2) return setErr('Hasła nie są identyczne.')
+      if (!inviteToken) {
+        setErr('Secure invitation link is required to set your first password.')
+        return
+      }
+      if (!password) return setErr('Password is required.')
+      if (!validation.ok) return setErr('Password does not meet the rules.')
+      if (password !== password2) return setErr('Passwords do not match.')
 
-      const { error } = await supabase.auth.signUp({
-        email: e,
+      const activation = await activateInvitedUser(supabase, inviteToken, password)
+      setEmail(activation.email)
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: activation.email,
         password,
+      })
+
+      if (!signInError) {
+        window.location.assign(redirectTo)
+        return
+      }
+
+      setErr('Account was created, but automatic sign-in failed. Use your new password to sign in manually.')
+      setMode('login')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function onForgotPassword() {
+    setErr('')
+    setMsg('')
+    setLoading(true)
+
+    try {
+      const safeEmail = email.trim().toLowerCase()
+      if (!safeEmail) {
+        setErr('Enter your email first.')
+        return
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(safeEmail, {
+        redirectTo: authRedirectUrl,
       })
 
       if (error) {
@@ -112,249 +238,390 @@ function LoginPageContent() {
         return
       }
 
-      setMsg('Konto utworzone. Zaloguj się.')
-      setMode('login')
-      setPassword('')
-      setPassword2('')
+      setMsg('Password recovery link sent. Check your inbox.')
     } finally {
       setLoading(false)
     }
   }
 
+  async function onResetPassword() {
+    setErr('')
+    setMsg('')
+    setLoading(true)
+
+    try {
+      if (!password) return setErr('Password is required.')
+      if (!validation.ok) return setErr('Password does not meet the rules.')
+      if (password !== password2) return setErr('Passwords do not match.')
+
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) {
+        setErr(error.message)
+        return
+      }
+
+      setMsg('Password updated. You can now sign in.')
+      setMode('login')
+      setPassword('')
+      setPassword2('')
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, document.title, '/login')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const title =
+    mode === 'reset'
+      ? 'Reset password'
+      : mode === 'forgot'
+        ? 'Recover password'
+        : mode === 'activate'
+          ? 'Set password'
+          : 'Log in'
+
+  const subtitle =
+    mode === 'reset'
+      ? 'Create a new password for your account.'
+      : mode === 'forgot'
+        ? 'We will send you a secure password recovery link.'
+        : inviteFlow
+          ? 'This invitation lets you either sign in or set your first password before access is granted.'
+          : 'Sign in to continue working in RiskFlow 360.'
+
+  const submitDisabled =
+    loading ||
+    (mode === 'login'
+      ? !email.trim() || !password
+      : mode === 'forgot'
+        ? !email.trim()
+        : !password || !password2 || !validation.ok || password !== password2)
+
+  const submitLabel = loading
+    ? 'Please wait...'
+    : mode === 'forgot'
+      ? 'Send recovery link'
+      : mode === 'reset'
+        ? 'Save new password'
+        : mode === 'activate'
+          ? 'Set password'
+          : 'Log in'
+
   return (
-    <div
-      style={{
-        minHeight: 'calc(100vh - 56px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        background: '#f6f6f7',
-      }}
-    >
-      <div
-        style={{
-          width: 'min(820px, 96vw)',
-          borderRadius: 16,
-          border: '1px solid rgba(0,0,0,0.10)',
-          background: '#fff',
-          boxShadow: '0 18px 60px rgba(0,0,0,0.12)',
-          padding: 22,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: '#111' }}>
-            {mode === 'login' ? 'Log in' : 'Create account'}
+    <div style={settingsPageStyle}>
+      <SettingsBackdrop />
+      <div style={loginPageCenterStyle}>
+        <div style={loginCardStyle}>
+          <div style={loginHeaderStyle}>
+            <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+              <div style={loginTitleStyle}>{title}</div>
+              <div style={loginSubtitleStyle}>{subtitle}</div>
+            </div>
+
+            <div style={loginHeaderActionsStyle}>
+              {inviteFlow && mode !== 'activate' && mode !== 'reset' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErr('')
+                    setMsg('')
+                    setMode('activate')
+                    setPassword('')
+                    setPassword2('')
+                  }}
+                  className="rf-button"
+                  style={settingsCompactActionButtonStyle}
+                >
+                  Set password
+                </button>
+              ) : null}
+
+              {mode !== 'login' && mode !== 'reset' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErr('')
+                    setMsg('')
+                    setMode('login')
+                    setPassword('')
+                    setPassword2('')
+                  }}
+                  className="rf-button"
+                  style={settingsCompactActionButtonStyle}
+                >
+                  I have a password
+                </button>
+              ) : null}
+
+              {mode === 'forgot' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErr('')
+                    setMsg('')
+                    setMode('login')
+                  }}
+                  className="rf-button"
+                  style={settingsCompactActionButtonStyle}
+                >
+                  Back to login
+                </button>
+              ) : null}
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setErr('')
-              setMsg('')
-              setMode((m) => (m === 'login' ? 'signup' : 'login'))
-              setPassword('')
-              setPassword2('')
-            }}
-            style={ghostBtn}
-          >
-            {mode === 'login' ? 'Create account' : 'I have an account'}
-          </button>
-        </div>
+          {msg ? <div style={successTextStyle}>{msg}</div> : null}
 
-        <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
-          Redirect after success: <b>{redirectTo}</b>
-        </div>
-
-        {err && <div style={{ marginTop: 10, color: 'crimson', fontSize: 13, fontWeight: 800 }}>{err}</div>}
-        {msg && <div style={{ marginTop: 10, color: '#0a7a2f', fontSize: 13, fontWeight: 800 }}>{msg}</div>}
-
-        {mode === 'login' ? (
           <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              onLogin()
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (mode === 'login') {
+                void onLogin()
+                return
+              }
+              if (mode === 'reset') {
+                void onResetPassword()
+                return
+              }
+              if (mode === 'forgot') {
+                void onForgotPassword()
+                return
+              }
+              void onActivateAccount()
             }}
+            style={{ marginTop: 16 }}
           >
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 16 }}>
-              <div>
-                <div style={label}>Email</div>
-                <input
-                  name="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={input}
-                  autoComplete="email"
-                  inputMode="email"
-                />
-              </div>
-              <div>
-                <div style={label}>Password</div>
-                <input
-                  name="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={input}
-                  type="password"
-                  autoComplete="current-password"
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
-              <button type="submit" disabled={loading} style={{ ...primaryBtn, opacity: loading ? 0.6 : 1 }}>
-                {loading ? 'Please wait…' : 'Log in'}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              onSignup()
-            }}
-          >
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 16 }}>
-              <div>
-                <div style={label}>Email</div>
-                <input
-                  name="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={input}
-                  autoComplete="email"
-                  inputMode="email"
-                />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }}>
+              <div style={fieldStyle}>
+                <div style={settingsFormLabelStyle}>{mode === 'activate' ? 'Invitation' : 'Email'}</div>
+                {mode === 'activate' ? (
+                  <div style={infoPanelStyle}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{invitationPreview?.email ?? 'Invitation-secured account'}</div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: 'rgba(255,255,255,0.72)', lineHeight: 1.55 }}>
+                      {invitationPreview?.organization_name
+                        ? `This password will activate your invited access to ${invitationPreview.organization_name}.`
+                        : 'This password will be attached to the invited email from your secure link.'}
+                    </div>
+                  </div>
+                ) : (
+                  <input
+                    className="rf-login-input"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    style={settingsCompactInputStyle}
+                    name="email"
+                    autoComplete="email"
+                    inputMode="email"
+                    disabled={mode === 'reset'}
+                  />
+                )}
               </div>
 
-              <div
-                style={{
-                  border: '1px solid rgba(0,0,0,0.08)',
-                  borderRadius: 14,
-                  padding: 12,
-                  background: 'rgba(0,0,0,0.02)',
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 900, color: '#111', marginBottom: 6 }}>Password rules</div>
-                <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: '#444', lineHeight: 1.6 }}>
-                  {rules.map((r) => (
-                    <li key={r}>{r}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div>
-                <div style={label}>Password</div>
-                <input
-                  name="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={input}
-                  type="password"
-                  autoComplete="new-password"
-                />
-                <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
-                  Strength: <b>{v.ok ? 'OK' : 'Not valid yet'}</b>
+              {mode === 'login' ? (
+                <div style={fieldStyle}>
+                  <div style={settingsFormLabelStyle}>Password</div>
+                  <input
+                    className="rf-login-input"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    style={settingsCompactInputStyle}
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                  />
                 </div>
-              </div>
-
-              <div>
-                <div style={label}>Repeat password</div>
-                <input
-                  name="new-password-repeat"
-                  value={password2}
-                  onChange={(e) => setPassword2(e.target.value)}
-                  style={input}
-                  type="password"
-                  autoComplete="new-password"
-                />
-                <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
-                  Match: <b>{password2 ? (password === password2 ? 'OK' : 'No') : '—'}</b>
+              ) : mode === 'forgot' ? (
+                <div style={infoPanelStyle}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: '#fff', marginBottom: 6 }}>Recovery</div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', lineHeight: 1.55 }}>
+                    We will send a secure recovery link to the email address.
+                  </div>
                 </div>
-              </div>
+              ) : null}
+
+              {mode !== 'login' && mode !== 'forgot' ? (
+                <>
+                  <div style={fieldStyle}>
+                    <div style={labelWithHelpStyle}>
+                      <span style={settingsFormLabelStyle}>Password</span>
+                      <PasswordRulesHelp rules={rules} />
+                    </div>
+                    <input
+                      className="rf-login-input"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      style={settingsCompactInputStyle}
+                      name="newPassword"
+                      type="password"
+                      autoComplete="new-password"
+                    />
+                    <div style={helperStyle}>
+                      Strength: <b>{validation.ok ? 'OK' : 'Not valid yet'}</b>
+                    </div>
+                  </div>
+
+                  <div style={fieldStyle}>
+                    <div style={settingsFormLabelStyle}>Repeat password</div>
+                    <input
+                      className="rf-login-input"
+                      value={password2}
+                      onChange={(event) => setPassword2(event.target.value)}
+                      style={settingsCompactInputStyle}
+                      name="repeatPassword"
+                      type="password"
+                      autoComplete="new-password"
+                    />
+                    <div style={helperStyle}>
+                      Match: <b>{password2 ? (password === password2 ? 'OK' : 'No') : '-'}</b>
+                    </div>
+                  </div>
+                </>
+              ) : null}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 18, flexWrap: 'wrap' }}>
+              {mode === 'login' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErr('')
+                    setMsg('')
+                    setMode('forgot')
+                  }}
+                  className="rf-button"
+                  style={{ ...settingsCompactActionButtonStyle, marginRight: 'auto' }}
+                >
+                  Forgot password?
+                </button>
+              ) : null}
+
+              {inviteFlow && mode === 'login' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErr('')
+                    setMsg('')
+                    setMode('activate')
+                    setPassword('')
+                    setPassword2('')
+                  }}
+                  className="rf-button"
+                  style={settingsCompactActionButtonStyle}
+                >
+                  First access? Set password
+                </button>
+              ) : null}
+
               <button
                 type="submit"
-                disabled={loading || !email.trim() || !password || !password2 || !v.ok || password !== password2}
-                style={{
-                  ...primaryBtn,
-                  opacity: loading || !email.trim() || !password || !password2 || !v.ok || password !== password2 ? 0.55 : 1,
-                }}
+                disabled={submitDisabled}
+                className="rf-button"
+                style={{ ...settingsCompactPrimaryButtonStyle, opacity: submitDisabled ? 0.55 : 1 }}
               >
-                {loading ? 'Please wait…' : 'Create account'}
+                {submitLabel}
               </button>
             </div>
           </form>
-        )}
+        </div>
       </div>
+
+      <SettingsConfirmDialog
+        open={!!err}
+        title="Error"
+        body={err}
+        cancelLabel="Cancel"
+        hideConfirm
+        onCancel={() => setErr('')}
+        onConfirm={() => undefined}
+      />
     </div>
   )
 }
 
 function LoginPageSkeleton() {
   return (
-    <div
-      style={{
-        minHeight: 'calc(100vh - 56px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        background: '#f6f6f7',
-      }}
-    >
-      <div
-        style={{
-          width: 'min(820px, 96vw)',
-          borderRadius: 16,
-          border: '1px solid rgba(0,0,0,0.10)',
-          background: '#fff',
-          boxShadow: '0 18px 60px rgba(0,0,0,0.12)',
-          padding: 22,
-          color: '#666',
-          fontSize: 14,
-          fontWeight: 700,
-        }}
-      >
-        Loading login...
+    <div style={settingsPageStyle}>
+      <SettingsBackdrop />
+      <div style={loginPageCenterStyle}>
+        <div style={{ ...loginCardStyle, color: 'rgba(255,255,255,0.78)', fontSize: 13, fontWeight: 700 }}>Loading login...</div>
       </div>
     </div>
   )
 }
 
-const label: React.CSSProperties = { fontSize: 12, fontWeight: 900, color: '#111', marginBottom: 6 }
-
-const input: React.CSSProperties = {
-  width: '100%',
-  height: 44,
-  borderRadius: 12,
-  border: '1px solid rgba(0,0,0,0.14)',
-  padding: '0 12px',
-  outline: 'none',
-  fontSize: 14,
-  fontWeight: 650,
+const loginPageCenterStyle: React.CSSProperties = {
+  position: 'relative',
+  zIndex: 1,
+  minHeight: 'calc(100vh - 56px)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 24,
+  boxSizing: 'border-box',
 }
 
-const primaryBtn: React.CSSProperties = {
-  height: 44,
-  padding: '0 16px',
-  borderRadius: 12,
-  border: '1px solid rgba(0,0,0,0.14)',
-  background: '#fff',
-  cursor: 'pointer',
-  fontWeight: 900,
-  boxShadow: '0 10px 26px rgba(0,0,0,0.10)',
+const loginCardStyle: React.CSSProperties = {
+  ...settingsTableWrapStyle,
+  width: 'min(460px, 96vw)',
+  padding: 22,
+  color: '#f8fafc',
+  boxSizing: 'border-box',
 }
 
-const ghostBtn: React.CSSProperties = {
-  height: 36,
-  padding: '0 12px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.10)',
-  background: 'rgba(0,0,0,0.02)',
-  cursor: 'pointer',
-  fontWeight: 900,
+const loginHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 12,
+  flexWrap: 'wrap',
+}
+
+const loginHeaderActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: 8,
+  flexWrap: 'wrap',
+}
+
+const loginTitleStyle: React.CSSProperties = {
+  fontSize: 24,
+  fontWeight: 800,
+  letterSpacing: -0.2,
+  color: settingsProcessAccent,
+}
+
+const loginSubtitleStyle: React.CSSProperties = {
+  marginTop: 6,
+  fontSize: 13,
+  lineHeight: 1.45,
+  color: 'rgba(255,255,255,0.72)',
+}
+
+const successTextStyle: React.CSSProperties = {
+  marginTop: 10,
+  color: '#16a34a',
+  fontSize: 12.5,
+  fontWeight: 800,
+}
+
+const fieldStyle: React.CSSProperties = { display: 'grid', gap: 6 }
+
+const labelWithHelpStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+}
+
+const helperStyle: React.CSSProperties = {
+  marginTop: 8,
   fontSize: 12,
+  color: 'rgba(255,255,255,0.62)',
+}
+
+const infoPanelStyle: React.CSSProperties = {
+  ...settingsMutedTileStyle,
+  padding: 12,
+  minHeight: 44,
 }

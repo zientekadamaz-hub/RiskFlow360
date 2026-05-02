@@ -7,21 +7,27 @@ on:
       - main
     paths:
       - 'app/**'
+      - 'src/**'
       - 'scripts/regression/**'
       - '.github/workflows/**'
+      - 'eslint.config.mjs'
       - 'package.json'
       - 'package-lock.json'
       - 'proxy.ts'
+      - 'tsconfig.json'
   pull_request:
     branches:
       - main
     paths:
       - 'app/**'
+      - 'src/**'
       - 'scripts/regression/**'
       - '.github/workflows/**'
+      - 'eslint.config.mjs'
       - 'package.json'
       - 'package-lock.json'
       - 'proxy.ts'
+      - 'tsconfig.json'
 
 concurrency:
   group: regression-${{ github.workflow }}-${{ github.ref }}
@@ -63,6 +69,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Build app
         run: npm run build

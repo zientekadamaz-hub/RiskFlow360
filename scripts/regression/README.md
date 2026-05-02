@@ -8,6 +8,14 @@ Required env vars:
 - `REGRESSION_PASSWORD`
 - `PFMEA_REGRESSION_PROJECT_ID`
 
+Additional env vars for invite / organization regression:
+
+- `REGRESSION_ADMIN_EMAIL`
+- `REGRESSION_ADMIN_PASSWORD`
+- optional: `REGRESSION_TEST_EMAIL_DOMAIN`
+  - default: `example.test`
+  - used only to generate unique synthetic addresses for invite-flow tests
+
 Optional extra project env:
 
 - `PCP_REGRESSION_PROJECT_ID`
@@ -27,10 +35,46 @@ Recommended usage:
 Available scripts:
 
 - `npm run regression:all`
+- `npm run regression:org:invite-flow`
+- `npm run regression:org:viewer-flow`
 - `npm run regression:pfmea:merge`
 - `npm run regression:pfmea:order`
 - `npm run regression:pfmea:save`
 - `npm run regression:pcp:smoke`
+
+## Invite / Organization flow
+
+`npm run regression:org:invite-flow` covers:
+
+1. global admin logs in
+2. admin creates a new organization with a pending champion invitation
+3. champion sets the first password from the secure invitation link
+4. champion sends an engineer invitation
+5. engineer sets the first password from the secure invitation link
+6. script verifies that engineer does not get settings-level access
+
+Important:
+
+- this flow does **not** require a real mailbox
+- the script uses unique synthetic emails like `rf360-champion-...@example.test`
+- invitation links are copied from the UI, so we validate the product workflow without depending on email delivery
+
+If you later want to validate real email delivery too, add a separate mailbox-backed pass. Keep that separate from core application regression.
+
+`npm run regression:org:viewer-flow` covers:
+
+1. global admin creates a new organization
+2. champion sets the first password from the secure invitation link
+3. champion confirms that `CUSTOMER` is not exposed in the invitation role selector
+4. champion sends a `VIEWER` invitation
+5. viewer sets the first password from the secure invitation link
+6. script verifies that viewer does not get settings-level access
+
+Why `customer` is still guarded:
+
+- current schema still grants broad org-level reads to regular members in several places
+- enabling `customer` as a normal org member now would over-grant access
+- the role should be enabled only together with a dedicated per-module access model
 
 GitHub Actions:
 

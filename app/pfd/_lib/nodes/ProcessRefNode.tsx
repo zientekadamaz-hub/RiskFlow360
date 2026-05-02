@@ -40,7 +40,6 @@ export default function ProcessRefNode({ id, data, selected }: NodeProps<PfdData
   const left = { x: 0, y: h / 2 }
 
   const cardBg = hasErrors ? 'rgba(255,242,242,0.96)' : 'rgba(232,243,237,0.96)'
-  const chipBg = hasErrors ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.62)'
   const chipRadius = 7 * S
   const edgePad = 12 * S
   const sideBarW = Math.max(24 * S, 30 * S)

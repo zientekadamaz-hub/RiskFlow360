@@ -1,0 +1,28 @@
+
+> pfmea-app@0.1.0 dev
+> next dev -H 127.0.0.1
+
+▲ Next.js 16.1.1 (Turbopack)
+- Local:         http://127.0.0.1:3000
+- Network:       http://127.0.0.1:3000
+- Environments: .env.local
+
+✓ Starting...
+Creating turbopack project { dir: 'C:\\Users\\zieada\\pfmea-app', testMode: true }
+✓ Ready in 3.5s
+ GET / 200 in 2.1s (compile: 1379ms, proxy.ts: 276ms, render: 468ms)
+ GET /login 200 in 165ms (compile: 127ms, proxy.ts: 8ms, render: 29ms)
+ GET / 200 in 178ms (compile: 7ms, proxy.ts: 17ms, render: 153ms)
+ GET /login?reason=idle 200 in 133ms (compile: 13ms, proxy.ts: 17ms, render: 103ms)
+ GET /login?next=%2Fprojects 200 in 174ms (compile: 76ms, proxy.ts: 16ms, render: 82ms)
+ GET /login?next=%2Fpfd 200 in 45ms (compile: 5ms, proxy.ts: 6ms, render: 35ms)
+ GET /login?next=%2Fpfmea 200 in 46ms (compile: 5ms, proxy.ts: 4ms, render: 37ms)
+ GET /login?next=%2Fpcp 200 in 46ms (compile: 5ms, proxy.ts: 4ms, render: 36ms)
+ GET /login?next=%2Fsettings%2Frisk-matrix 200 in 55ms (compile: 6ms, proxy.ts: 5ms, render: 44ms)
+ GET /login?next=%2Fsettings%2Fsites-departments 200 in 55ms (compile: 6ms, proxy.ts: 5ms, render: 45ms)
+ GET /login?next=%2Fsettings%2Fseverity 200 in 57ms (compile: 5ms, proxy.ts: 5ms, render: 47ms)
+ GET /login?next=%2Fsettings%2Foccurrence 200 in 75ms (compile: 6ms, proxy.ts: 5ms, render: 64ms)
+ GET /login?next=%2Fsettings%2Fdetection 200 in 42ms (compile: 4ms, proxy.ts: 4ms, render: 34ms)
+ GET /login?next=%2Fsettings%2Finvitations 200 in 50ms (compile: 5ms, proxy.ts: 5ms, render: 40ms)
+ GET /login 200 in 51ms (compile: 5ms, proxy.ts: 5ms, render: 40ms)
+[?25h

@@ -1,113 +1,291 @@
-﻿'use client'
+'use client'
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@app/lib/supabaseBrowser'
-
-type SiteDeptRow = {
-  id: string
-  organization_id: string
-  site: string
-  department: string
-  active: boolean
-  created_at: string
-}
+import type { CSSProperties, Dispatch, SetStateAction } from 'react'
+import {
+  SettingsActionColumnHeader,
+  SettingsFilterColumnHeader,
+  SettingsHiddenColumnHeader,
+} from '@/features/settings/column-filter-header'
+import {
+  SettingsBanner,
+  SettingsConfirmDialog,
+  SettingsPageShell,
+  SettingsSection,
+  SettingsTrashButton,
+  SettingsSummaryGrid,
+  SettingsSummaryTile,
+  getSettingsTableColumnWidths,
+  settingsCompactActionButtonStyle,
+  settingsCompactPrimaryButtonStyle,
+  settingsFrameStyle,
+  settingsHiddenTableColumnWidthPx,
+  settingsInlineStatusStyle,
+  settingsTableCellStyle,
+  settingsTableWrapStyle,
+} from '@/features/settings/invitation-shell'
+import {
+  projectsActionsStyle,
+  projectsCompactInputStyle,
+  PROJECTS_PROCESS_ACCENT,
+  projectsProcessCellStyle,
+  projectsStatusStyle,
+  projectsSummaryValueStyle,
+  projectsTableCellStyle,
+  projectsTableHeaderStyle,
+  projectsTableShellStyle,
+  projectsTableStyle,
+  projectsTableViewportScrollerStyle,
+} from '@/features/projects/view-styles'
+import {
+  deleteSiteDepartmentsForSite,
+  fetchSiteDepartmentContext,
+  replaceSiteDepartmentsForSite,
+  type SiteDeptRow,
+  updateSiteDepartmentsActiveState,
+} from '@/features/settings/site-departments-service'
 
 type UiSiteRow = {
   key: string
   site: string
-  departments: string[]
+  departments: UiDepartmentRow[]
   active: boolean
+  projectCount: number
+  used: boolean
+}
+
+type UiDepartmentRow = {
+  name: string
+  projectCount: number
+  used: boolean
+}
+
+type DepartmentInputRow = {
+  originalName: string | null
+  projectCount: number
+  used: boolean
+  value: string
+}
+
+type DeleteConfirmState = {
+  site: string
+  used: boolean
+} | null
+
+type BlockedActionState = {
+  action: 'delete'
+  site: string
+} | null
+
+type SitesDepartmentsColumnKey = 'departments' | 'site' | 'status' | 'usage'
+type SitesDepartmentsLayoutColumnKey = SitesDepartmentsColumnKey | 'actions'
+type SitesDepartmentsHiddenColumns = Record<SitesDepartmentsColumnKey, boolean>
+type SitesDepartmentsSortState = {
+  column: SitesDepartmentsColumnKey
+  direction: 'asc' | 'desc'
+} | null
+
+const DEFAULT_HIDDEN_COLUMNS: SitesDepartmentsHiddenColumns = {
+  departments: false,
+  site: false,
+  status: false,
+  usage: false,
+}
+
+const BASE_COLUMN_WIDTHS: Record<SitesDepartmentsLayoutColumnKey, number> = {
+  site: 200,
+  departments: 360,
+  status: 120,
+  usage: 120,
+  actions: 200,
 }
 
 const SESSION_RETRY_COUNT = 8
 const SESSION_RETRY_DELAY_MS = 250
-const QUERY_TIMEOUT_MS = 1800
+
+function normalizeText(value: string) {
+  return value.trim()
+}
+
+function uniqueList(list: string[]) {
+  const seen = new Set<string>()
+  const out: string[] = []
+
+  list.forEach((value) => {
+    const normalized = normalizeText(value)
+    if (!normalized) return
+    const key = normalized.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(normalized)
+  })
+
+  return out
+}
+
+function toUiRows(list: SiteDeptRow[]): UiSiteRow[] {
+  const bySite = new Map<string, { departments: Map<string, UiDepartmentRow>; activeAll: boolean; projectCount: number }>()
+
+  list.forEach((row) => {
+    const site = normalizeText(row.site)
+    if (!site) return
+
+    const department = normalizeText(row.department ?? '')
+    const entry = bySite.get(site) ?? { departments: new Map<string, UiDepartmentRow>(), activeAll: true, projectCount: 0 }
+    const projectCount = row.project_count ?? 0
+    if (department) {
+      const key = department.toLowerCase()
+      const current = entry.departments.get(key)
+      entry.departments.set(key, {
+        name: current?.name ?? department,
+        projectCount: (current?.projectCount ?? 0) + projectCount,
+        used: (current?.projectCount ?? 0) + projectCount > 0,
+      })
+    }
+    if (!row.active) entry.activeAll = false
+    entry.projectCount += projectCount
+    bySite.set(site, entry)
+  })
+
+  return Array.from(bySite.entries())
+    .map(([site, data]) => ({
+      key: site,
+      site,
+      departments: Array.from(data.departments.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      active: data.activeAll,
+      projectCount: data.projectCount,
+      used: data.projectCount > 0,
+    }))
+    .sort((a, b) => a.site.localeCompare(b.site))
+}
+
+function departmentNames(row: UiSiteRow) {
+  return row.departments.map((department) => department.name)
+}
+
+function normalizeDepartmentInputs(values: DepartmentInputRow[]) {
+  const next = values.map((item) => ({ ...item, value: item.value.trimStart() }))
+  while (next.length > 1 && !next[next.length - 1]?.value.trim() && !next[next.length - 2]?.value.trim()) {
+    next.pop()
+  }
+  if (next.length === 0) next.push({ originalName: null, projectCount: 0, used: false, value: '' })
+  return next
+}
+
+function statusLabel(row: UiSiteRow) {
+  return row.active ? 'ACTIVE' : 'INACTIVE'
+}
+
+function usageLabel(row: UiSiteRow) {
+  return row.used ? 'USED' : 'UNUSED'
+}
+
+const halfColumnInputStyle: CSSProperties = {
+  ...projectsCompactInputStyle,
+  width: '50%',
+}
+
+async function delay(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function hasAuthCookie() {
+  if (typeof document === 'undefined') return false
+  return document.cookie
+    .split(';')
+    .map((cookie) => cookie.trim().split('=')[0])
+    .some((name) => name.startsWith('sb-') && name.includes('auth-token'))
+}
+
+async function getSessionUser() {
+  for (let attempt = 0; attempt < SESSION_RETRY_COUNT; attempt += 1) {
+    const { data } = await supabase.auth.getSession()
+    const user = data.session?.user ?? null
+    if (user) return user
+    if (!hasAuthCookie()) return null
+
+    if (attempt === 2 || attempt === 5) {
+      try {
+        await supabase.auth.refreshSession()
+      } catch {}
+    }
+
+    await delay(SESSION_RETRY_DELAY_MS)
+  }
+
+  return null
+}
 
 export default function SettingsSitesDepartmentsPage() {
   const [orgId, setOrgId] = useState<string | null>(null)
-  const [orgName, setOrgName] = useState<string | null>(null)
-
   const [rows, setRows] = useState<SiteDeptRow[]>([])
   const [uiRows, setUiRows] = useState<UiSiteRow[]>([])
-
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
-
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<DeleteConfirmState>(null)
+  const [confirmDeleteError, setConfirmDeleteError] = useState<string | null>(null)
+  const [blockedAction, setBlockedAction] = useState<BlockedActionState>(null)
+  const [hiddenColumns, setHiddenColumns] = useState<SitesDepartmentsHiddenColumns>(DEFAULT_HIDDEN_COLUMNS)
+  const [selectedDepartments, setSelectedDepartments] = useState<string[] | null>(null)
+  const [selectedSites, setSelectedSites] = useState<string[] | null>(null)
+  const [selectedStatuses, setSelectedStatuses] = useState<string[] | null>(null)
+  const [selectedUsage, setSelectedUsage] = useState<string[] | null>(null)
+  const [sortState, setSortState] = useState<SitesDepartmentsSortState>({ column: 'site', direction: 'asc' })
 
   const hasOrg = useMemo(() => !!orgId, [orgId])
+  const activeSitesCount = useMemo(() => uiRows.filter((row) => row.active).length, [uiRows])
+  const siteOptions = useMemo(() => uniqueList(uiRows.map((row) => row.site)).sort((a, b) => a.localeCompare(b)), [uiRows])
+  const departmentOptions = useMemo(
+    () => uniqueList(uiRows.flatMap((row) => departmentNames(row))).sort((a, b) => a.localeCompare(b)),
+    [uiRows]
+  )
+  const statusOptions = useMemo(() => ['ACTIVE', 'INACTIVE'], [])
+  const usageOptions = useMemo(() => ['USED', 'UNUSED'], [])
+  const displayedRows = useMemo(() => {
+    const siteSet = selectedSites === null ? null : new Set(selectedSites)
+    const departmentSet = selectedDepartments === null ? null : new Set(selectedDepartments)
+    const statusSet = selectedStatuses === null ? null : new Set(selectedStatuses)
+    const usageSet = selectedUsage === null ? null : new Set(selectedUsage)
 
-  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
-  const withTimeout = async <T,>(p: PromiseLike<T>, ms: number, fallback: T): Promise<T> => {
-    let timeoutId: ReturnType<typeof setTimeout> | null = null
-    try {
-      return await Promise.race([
-        p,
-        new Promise<T>((resolve) => {
-          timeoutId = setTimeout(() => resolve(fallback), ms)
-        }),
-      ])
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId)
-    }
-  }
-  const hasAuthCookie = () => {
-    if (typeof document === 'undefined') return false
-    return document.cookie
-      .split(';')
-      .map((c) => c.trim().split('=')[0])
-      .some((n) => n.startsWith('sb-') && n.includes('auth-token'))
-  }
-  const getSessionUser = async () => {
-    for (let i = 0; i < SESSION_RETRY_COUNT; i += 1) {
-      const { data } = await supabase.auth.getSession()
-      const user = data.session?.user ?? null
-      if (user) return user
-      if (!hasAuthCookie()) return null
-      if (i === 2 || i === 5) {
-        try {
-          await supabase.auth.refreshSession()
-        } catch {}
+    const filtered = uiRows.filter((row) => {
+      const siteOk = siteSet === null ? true : siteSet.has(row.site)
+      const departmentsOk = departmentSet === null ? true : row.departments.some((department) => departmentSet.has(department.name))
+      const statusOk = statusSet === null ? true : statusSet.has(statusLabel(row))
+      const usageOk = usageSet === null ? true : usageSet.has(usageLabel(row))
+      return siteOk && departmentsOk && statusOk && usageOk
+    })
+
+    if (!sortState) return filtered
+
+    return [...filtered].sort((left, right) => {
+      let comparison = 0
+      if (sortState.column === 'site') comparison = left.site.localeCompare(right.site, undefined, { sensitivity: 'base' })
+      if (sortState.column === 'departments') {
+        comparison = departmentNames(left).join(', ').localeCompare(departmentNames(right).join(', '), undefined, { sensitivity: 'base' })
       }
-      await delay(SESSION_RETRY_DELAY_MS)
-    }
-    return null
-  }
-
-  const normalizeText = (v: string) => v.trim()
-  const uniqueList = (list: string[]) => {
-    const seen = new Set<string>()
-    const out: string[] = []
-    list.forEach((v) => {
-      const k = normalizeText(v)
-      if (!k) return
-      if (seen.has(k.toLowerCase())) return
-      seen.add(k.toLowerCase())
-      out.push(k)
+      if (sortState.column === 'status') comparison = statusLabel(left).localeCompare(statusLabel(right), undefined, { sensitivity: 'base' })
+      if (sortState.column === 'usage') comparison = left.projectCount - right.projectCount
+      return sortState.direction === 'asc' ? comparison : -comparison
     })
-    return out
-  }
-
-  const toUiRows = (list: SiteDeptRow[]): UiSiteRow[] => {
-    const bySite = new Map<string, { departments: string[]; activeAll: boolean }>()
-    list.forEach((r) => {
-      const site = normalizeText(r.site)
-      if (!site) return
-      const dept = normalizeText(r.department ?? '')
-      const entry = bySite.get(site) ?? { departments: [], activeAll: true }
-      const arr = entry.departments
-      if (dept) arr.push(dept)
-      if (!r.active) entry.activeAll = false
-      bySite.set(site, entry)
+  }, [selectedDepartments, selectedSites, selectedStatuses, selectedUsage, sortState, uiRows])
+  const columnWidths = useMemo(() => {
+    return getSettingsTableColumnWidths<SitesDepartmentsColumnKey>({
+      baseWidths: BASE_COLUMN_WIDTHS,
+      hiddenColumns,
     })
-    return Array.from(bySite.entries())
-      .map(([site, data]) => ({
-        key: site,
-        site,
-        departments: uniqueList(data.departments),
-        active: data.activeAll,
-      }))
-      .sort((a, b) => a.site.localeCompare(b.site))
+  }, [hiddenColumns])
+  const hiddenCellStyle: CSSProperties = {
+    ...projectsTableCellStyle,
+    padding: '0 6px',
+    width: settingsHiddenTableColumnWidthPx,
+  }
+  const hiddenHeaderStyle: CSSProperties = {
+    ...projectsTableHeaderStyle,
+    padding: '0 6px',
+    textAlign: 'center',
+    width: settingsHiddenTableColumnWidthPx,
   }
 
   async function load(foreground = true) {
@@ -116,92 +294,48 @@ export default function SettingsSitesDepartmentsPage() {
 
     const user = await getSessionUser()
     if (!user) {
-      setErr('Brak zalogowanego uĹĽytkownika.')
+      setErr('No signed-in user.')
       setLoading(false)
       return
     }
 
-    const profRes = await withTimeout(
-      supabase
-        .from('profiles')
-        .select('active_organization_id')
-        .eq('id', user.id)
-        .maybeSingle(),
-      QUERY_TIMEOUT_MS,
-      { data: null, error: new Error('timeout') } as any
-    )
-
-    if (profRes.error) {
-      setErr(profRes.error.message === 'timeout' ? 'Session read timeout. Try again.' : profRes.error.message)
+    try {
+      const context = await fetchSiteDepartmentContext(supabase, user.id)
+      setOrgId(context.organizationId)
+      setRows(context.rows)
+      setUiRows(toUiRows(context.rows))
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Could not load sites and departments.')
+    } finally {
       setLoading(false)
-      return
     }
-
-    const activeOrgId = (profRes.data as any)?.active_organization_id as string | null
-    setOrgId(activeOrgId)
-
-    if (!activeOrgId) {
-      setErr('UĹĽytkownik nie ma ustawionej aktywnej organizacji.')
-      setLoading(false)
-      return
-    }
-
-    const [orgRes, listRes] = await Promise.all([
-      withTimeout(
-        supabase.from('organizations').select('name').eq('id', activeOrgId).maybeSingle(),
-        QUERY_TIMEOUT_MS,
-        { data: null, error: new Error('timeout') } as any
-      ),
-      withTimeout(
-        supabase
-          .from('site_departments')
-          .select('id, organization_id, site, department, active, created_at')
-          .eq('organization_id', activeOrgId)
-          .order('site', { ascending: true })
-          .order('department', { ascending: true }),
-        QUERY_TIMEOUT_MS,
-        { data: [], error: new Error('timeout') } as any
-      ),
-    ])
-
-    if (!orgRes.error) setOrgName(orgRes.data?.name ?? null)
-
-    if (listRes.error) {
-      setErr(listRes.error.message === 'timeout' ? 'Sites read timeout. Try again.' : listRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    const nextRows = (listRes.data ?? []) as SiteDeptRow[]
-    setRows(nextRows)
-    setUiRows(toUiRows(nextRows))
-
-    setLoading(false)
   }
 
   useEffect(() => {
     void load(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const addUiRow = () => {
-    const next: UiSiteRow = { key: `new-${Date.now()}`, site: '', departments: [], active: true }
+  function addUiRow() {
+    const next: UiSiteRow = { key: `new-${Date.now()}`, site: '', departments: [], active: true, projectCount: 0, used: false }
     setUiRows((prev) => [next, ...prev])
   }
 
-  const removeUiRow = (key: string) => {
-    setUiRows((prev) => prev.filter((r) => r.key !== key))
+  function removeUiRow(key: string) {
+    setUiRows((prev) => prev.filter((row) => row.key !== key))
   }
 
   async function saveSiteRow(originalSite: string | null, site: string, departments: string[]) {
     if (!orgId) return
+
     const siteName = normalizeText(site)
-    const deptList = uniqueList(departments)
+    const departmentList = uniqueList(departments)
+
     if (!siteName) {
       setErr('Site name is required.')
       return
     }
-    if (!deptList.length) {
+
+    if (!departmentList.length) {
       setErr('Add at least one department for the site.')
       return
     }
@@ -209,533 +343,490 @@ export default function SettingsSitesDepartmentsPage() {
     setSaving(true)
     setErr(null)
 
-    if (originalSite) {
-      const delRes = await supabase
-        .from('site_departments')
-        .delete()
-        .eq('organization_id', orgId)
-        .eq('site', originalSite)
-      if (delRes.error) {
-        setErr(delRes.error.message)
-        setSaving(false)
-        return
-      }
-    }
-
-    const payload = deptList.map((d) => ({
-      organization_id: orgId,
-      site: siteName,
-      department: d,
-      active: true,
-    }))
-    const insRes = await supabase.from('site_departments').insert(payload)
-    if (insRes.error) {
-      setErr(insRes.error.message)
+    try {
+      await replaceSiteDepartmentsForSite(supabase, orgId, originalSite, siteName, departmentList)
+      await load(false)
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Could not save sites and departments.')
+    } finally {
       setSaving(false)
-      return
     }
-
-    setRows((prev) => {
-      const filtered = originalSite ? prev.filter((r) => r.site !== originalSite) : prev
-      const nextRows: SiteDeptRow[] = payload.map((p, idx) => ({
-        id: `tmp-${Date.now()}-${idx}`,
-        organization_id: p.organization_id,
-        site: p.site,
-        department: p.department,
-        active: true,
-        created_at: new Date().toISOString(),
-      }))
-      return [...filtered, ...nextRows]
-    })
-    setUiRows((prev) => {
-      const filtered = originalSite ? prev.filter((r) => r.site !== originalSite) : prev
-      const next: UiSiteRow = { key: siteName, site: siteName, departments: deptList, active: true }
-      return [next, ...filtered].sort((a, b) => a.site.localeCompare(b.site))
-    })
-
-    void load(false)
-    setSaving(false)
   }
 
   async function deleteSite(site: string) {
     if (!orgId) return
+
     setSaving(true)
     setErr(null)
-    const res = await supabase
-      .from('site_departments')
-      .delete()
-      .eq('organization_id', orgId)
-      .eq('site', site)
-    if (res.error) {
-      setErr(res.error.message)
+    setConfirmDeleteError(null)
+
+    try {
+      await deleteSiteDepartmentsForSite(supabase, orgId, site)
+      setConfirmDelete(null)
+      await load(false)
+    } catch (error) {
+      setConfirmDeleteError(error instanceof Error ? error.message : 'Could not delete site.')
+    } finally {
       setSaving(false)
-      return
     }
-    await load(false)
-    setSaving(false)
   }
 
   async function toggleSiteActive(site: string, active: boolean) {
     if (!orgId) return
+
     setSaving(true)
     setErr(null)
-    const res = await supabase
-      .from('site_departments')
-      .update({ active })
-      .eq('organization_id', orgId)
-      .eq('site', site)
-    if (res.error) {
-      setErr(res.error.message)
-      setSaving(false)
-      return
-    }
-    setRows((prev) => prev.map((r) => (r.site === site ? { ...r, active } : r)))
-    setUiRows((prev) => prev.map((r) => (r.site === site ? { ...r, active } : r)))
-    setSaving(false)
-  }
 
-  const frame: React.CSSProperties = { width: '80%', marginLeft: 'auto', marginRight: 'auto' }
-  const card: React.CSSProperties = {
-    background: '#fff',
-    borderStyle: 'solid',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.08)',
-    borderRadius: 16,
-    boxShadow: '0 8px 24px rgba(0,0,0,0.06)',
+    try {
+      await updateSiteDepartmentsActiveState(supabase, orgId, site, active)
+      setRows((prev) => prev.map((row) => (row.site === site ? { ...row, active } : row)))
+      setUiRows((prev) => prev.map((row) => (row.site === site ? { ...row, active } : row)))
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Could not update site status.')
+    } finally {
+      setSaving(false)
+    }
   }
-  const titleStyle: React.CSSProperties = { fontSize: 28, fontWeight: 600, letterSpacing: -0.3, color: '#111' }
-  const subtitleStyle: React.CSSProperties = { marginTop: 4, fontSize: 13.5, color: '#6e6e73' }
 
   if (loading) {
     return (
-      <div style={{ ...frame, paddingTop: 20 }}>
-        <div style={titleStyle}>Sites & Departments</div>
-        <div style={subtitleStyle}>Loading...</div>
-      </div>
+      <SettingsPageShell title="Sites & Departments" subtitle="Loading organization sites and departments.">
+        <SettingsSection style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>Loading sites and departments...</div>
+        </SettingsSection>
+      </SettingsPageShell>
     )
   }
 
   return (
-    <div style={{ minHeight: '100vh', paddingBottom: 14 }}>
-      <div
-        style={{
-          ...frame,
-          paddingTop: 20,
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: 12,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div>
-          <div style={titleStyle}>Sites & Departments</div>
-          <div style={subtitleStyle}>Define sites and their departments (each department is saved as a separate row).</div>
-        </div>
-        <button
-          onClick={addUiRow}
-          disabled={!hasOrg || saving}
-          className="rf-button"
-          style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #ddd', fontWeight: 650 }}
-        >
-          + Add site
-        </button>
-      </div>
-
-      <div style={{ ...frame, marginTop: 12 }}>
-        <div style={{ ...card, padding: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>Organization</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
-            <div style={{ padding: 10, borderRadius: 10, background: '#fafafa', border: '1px solid #eee' }}>
-              <div style={{ fontSize: 11, color: '#666' }}>Organization</div>
-              <div
-                style={{
-                  fontSize: 20,
-                  fontWeight: 800,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {orgName ?? orgId ?? 'â€”'}
-              </div>
-            </div>
-            <div style={{ padding: 10, borderRadius: 10, background: '#fafafa', border: '1px solid #eee' }}>
-              <div style={{ fontSize: 11, color: '#666' }}>Sites</div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{uiRows.length}</div>
-            </div>
-            <div style={{ padding: 10, borderRadius: 10, background: '#fafafa', border: '1px solid #eee' }}>
-              <div style={{ fontSize: 11, color: '#666' }}>Departments</div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{rows.length}</div>
-            </div>
+    <>
+      <SettingsPageShell
+        title="Sites & Departments"
+        titleStyle={{ color: PROJECTS_PROCESS_ACCENT }}
+        subtitle="Define and maintain the sites and departments available for project assignment."
+        summary={
+          <div style={{ width: '100%', maxWidth: 390, marginLeft: 'auto' }}>
+            <SettingsSummaryGrid columns={3}>
+              <SettingsSummaryTile label="Sites" value={uiRows.length} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
+              <SettingsSummaryTile label="Active sites" value={activeSitesCount} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
+              <SettingsSummaryTile label="Departments" value={rows.length} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
+            </SettingsSummaryGrid>
           </div>
-        </div>
-      </div>
+        }
+      >
+        {err ? (
+          <SettingsBanner tone="error">
+            <b>Error:</b> {err}
+          </SettingsBanner>
+        ) : null}
 
-      {err && (
-        <div style={{ ...frame, marginTop: 12 }}>
+        <div style={{ ...settingsFrameStyle, marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={addUiRow}
+            disabled={!hasOrg || saving}
+            className="rf-button"
+            style={{ ...settingsCompactPrimaryButtonStyle, opacity: hasOrg && !saving ? 1 : 0.6 }}
+          >
+            Add site
+          </button>
+        </div>
+
+        <div style={{ ...settingsFrameStyle, marginTop: 12, minHeight: 0 }}>
           <div
             style={{
-              fontSize: 12,
-              padding: '10px 12px',
-              borderRadius: 12,
-              background: '#fff1f1',
-              color: '#7a1111',
-              borderStyle: 'solid',
-              borderWidth: 1,
-              borderColor: '#f2b6b6',
+              ...projectsTableShellStyle,
+              ...settingsTableWrapStyle,
+              padding: 0,
+              background: 'rgba(255,255,255,0.08)',
             }}
           >
-            <b>Error:</b> {err}
+            <div style={projectsTableViewportScrollerStyle}>
+              <table style={projectsTableStyle}>
+                <colgroup>
+                  <col style={{ width: columnWidths.site }} />
+                  <col style={{ width: columnWidths.departments }} />
+                  <col style={{ width: columnWidths.status }} />
+                  <col style={{ width: columnWidths.usage }} />
+                  <col style={{ width: columnWidths.actions }} />
+                </colgroup>
+                <SitesDepartmentsTableHeader
+                  departmentOptions={departmentOptions}
+                  hiddenColumns={hiddenColumns}
+                  hiddenHeaderStyle={hiddenHeaderStyle}
+                  selectedDepartments={selectedDepartments ?? departmentOptions}
+                  selectedSites={selectedSites ?? siteOptions}
+                  selectedStatuses={selectedStatuses ?? statusOptions}
+                  selectedUsage={selectedUsage ?? usageOptions}
+                  setHiddenColumns={setHiddenColumns}
+                  setSelectedDepartments={setSelectedDepartments}
+                  setSelectedSites={setSelectedSites}
+                  setSelectedStatuses={setSelectedStatuses}
+                  setSelectedUsage={setSelectedUsage}
+                  setSortState={setSortState}
+                  siteOptions={siteOptions}
+                  statusOptions={statusOptions}
+                  usageOptions={usageOptions}
+                />
+                <tbody>
+                  {uiRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={settingsTableCellStyle}>
+                        No sites defined.
+                      </td>
+                    </tr>
+                  ) : displayedRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={settingsTableCellStyle}>
+                        No sites match the current filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    displayedRows.map((row) => (
+                      <SiteDeptRowItem
+                        key={`${row.key}:${departmentNames(row).join('|')}:${row.active ? '1' : '0'}:${row.projectCount}`}
+                        hiddenCellStyle={hiddenCellStyle}
+                        hiddenColumns={hiddenColumns}
+                        row={row}
+                        onDeleteRequest={(site) => {
+                          const target = uiRows.find((entry) => entry.site === site)
+                          if (target?.used) {
+                            setBlockedAction({ action: 'delete', site })
+                            return
+                          }
+                          setConfirmDeleteError(null)
+                          setConfirmDelete({ site, used: false })
+                        }}
+                        onRemove={removeUiRow}
+                        onSave={saveSiteRow}
+                        onToggleActive={toggleSiteActive}
+                        saving={saving}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      )}
+      </SettingsPageShell>
 
-      <div style={{ ...frame, marginTop: 12 }}>
-        <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 16, fontWeight: 800 }}>Sites & Departments</div>
-          </div>
+      <SettingsConfirmDialog
+        open={!!confirmDelete}
+        title="Delete site"
+        body={
+          <>
+            Are you sure you want to delete <b>{confirmDelete?.site ?? '-'}</b> and all assigned departments?
+          </>
+        }
+        warning={confirmDeleteError ?? 'Data will be permanently removed.'}
+        busy={saving}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        hideConfirm={!!confirmDeleteError}
+        onCancel={() => {
+          if (saving) return
+          setConfirmDelete(null)
+          setConfirmDeleteError(null)
+        }}
+        onConfirm={() => (confirmDelete ? deleteSite(confirmDelete.site) : undefined)}
+      />
 
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th
-                  style={{
-                    textAlign: 'left',
-                    padding: 10,
-                    fontSize: 12,
-                    color: '#333',
-                    fontWeight: 650,
-                    background: '#fafafa',
-                    borderBottom: '1px solid rgba(0,0,0,0.06)',
-                    width: 220,
-                  }}
-                >
-                  Site
-                </th>
-                <th
-                  style={{
-                    textAlign: 'left',
-                    padding: 10,
-                    fontSize: 12,
-                    color: '#333',
-                    fontWeight: 650,
-                    background: '#fafafa',
-                    borderBottom: '1px solid rgba(0,0,0,0.06)',
-                    width: 220,
-                  }}
-                >
-                  Departments
-                </th>
-                <th
-                  style={{
-                    textAlign: 'left',
-                    padding: 10,
-                    paddingLeft: 4,
-                    paddingRight: 4,
-                    fontSize: 12,
-                    color: '#333',
-                    fontWeight: 650,
-                    background: '#fafafa',
-                    borderBottom: '1px solid rgba(0,0,0,0.06)',
-                    width: 70,
-                  }}
-                >
-                  Active
-                </th>
-                <th
-                  style={{
-                    textAlign: 'left',
-                    padding: 10,
-                    paddingLeft: 4,
-                    paddingRight: 4,
-                    fontSize: 12,
-                    color: '#333',
-                    fontWeight: 650,
-                    background: '#fafafa',
-                    borderBottom: '1px solid rgba(0,0,0,0.06)',
-                    width: 190,
-                  }}
-                >
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {uiRows.length === 0 ? (
-                <tr>
-                  <td colSpan={4} style={{ padding: 12, color: '#666' }}>
-                    No sites defined.
-                  </td>
-                </tr>
-              ) : (
-                uiRows.map((r) => (
-                  <SiteDeptRowItem
-                    key={`${r.key}:${r.departments.join('|')}:${r.active ? '1' : '0'}`}
-                    row={r}
-                    onSave={saveSiteRow}
-                    onDelete={deleteSite}
-                    onRemove={removeUiRow}
-                    onToggleActive={toggleSiteActive}
-                    saving={saving}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <style jsx global>{`
-        .inviteTrashBtn {
-          min-height: 29px;
-          min-width: 36px;
-          padding: 6px 10px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 10px;
-          border: 1px solid #ddd;
-          background: white;
-          cursor: pointer;
-          transition: background 0.12s ease, transform 0.06s ease;
-          box-shadow: none;
+      <SettingsConfirmDialog
+        open={!!blockedAction}
+        title="Site cannot be deleted"
+        body={
+          <>
+            <b>{blockedAction?.site ?? '-'}</b> is assigned to existing projects.
+          </>
         }
-        .inviteTrashBtn:hover {
-          background: rgba(239, 68, 68, 0.1);
-        }
-        .inviteTrashBtn:active {
-          transform: translateY(1px);
-        }
-        .inviteTrashIcon {
-          width: 16px;
-          height: 16px;
-          color: rgba(0, 0, 0, 0.65);
-        }
-        .inviteTrashBtn:hover .inviteTrashIcon {
-          color: rgba(239, 68, 68, 0.95);
-        }
-        .inviteTrashBtn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-      `}</style>
-    </div>
+        warning="This site/department is used by existing projects and cannot be deleted. Reassign projects first."
+        cancelLabel="Cancel"
+        hideConfirm
+        onCancel={() => setBlockedAction(null)}
+        onConfirm={() => undefined}
+      />
+    </>
+  )
+}
+
+function SitesDepartmentsTableHeader({
+  departmentOptions,
+  hiddenColumns,
+  hiddenHeaderStyle,
+  selectedDepartments,
+  selectedSites,
+  selectedStatuses,
+  selectedUsage,
+  setHiddenColumns,
+  setSelectedDepartments,
+  setSelectedSites,
+  setSelectedStatuses,
+  setSelectedUsage,
+  setSortState,
+  siteOptions,
+  statusOptions,
+  usageOptions,
+}: {
+  departmentOptions: string[]
+  hiddenColumns: SitesDepartmentsHiddenColumns
+  hiddenHeaderStyle: CSSProperties
+  selectedDepartments: string[]
+  selectedSites: string[]
+  selectedStatuses: string[]
+  selectedUsage: string[]
+  setHiddenColumns: Dispatch<SetStateAction<SitesDepartmentsHiddenColumns>>
+  setSelectedDepartments: (values: string[] | null) => void
+  setSelectedSites: (values: string[] | null) => void
+  setSelectedStatuses: (values: string[] | null) => void
+  setSelectedUsage: (values: string[] | null) => void
+  setSortState: Dispatch<SetStateAction<SitesDepartmentsSortState>>
+  siteOptions: string[]
+  statusOptions: string[]
+  usageOptions: string[]
+}) {
+  return (
+    <thead>
+      <tr>
+        <th style={hiddenColumns.site ? hiddenHeaderStyle : projectsTableHeaderStyle}>
+          {hiddenColumns.site ? (
+            <SettingsHiddenColumnHeader label="Site" onShow={() => setHiddenColumns((current) => ({ ...current, site: false }))} />
+          ) : (
+            <SettingsFilterColumnHeader
+              label="Site"
+              values={siteOptions}
+              selectedValues={selectedSites}
+              onApplyValues={setSelectedSites}
+              onSort={(direction) => setSortState({ column: 'site', direction })}
+              onHideColumn={() => setHiddenColumns((current) => ({ ...current, site: true }))}
+            />
+          )}
+        </th>
+        <th style={hiddenColumns.departments ? hiddenHeaderStyle : projectsTableHeaderStyle}>
+          {hiddenColumns.departments ? (
+            <SettingsHiddenColumnHeader label="Departments" onShow={() => setHiddenColumns((current) => ({ ...current, departments: false }))} />
+          ) : (
+            <SettingsFilterColumnHeader
+              label="Departments"
+              values={departmentOptions}
+              selectedValues={selectedDepartments}
+              onApplyValues={setSelectedDepartments}
+              onSort={(direction) => setSortState({ column: 'departments', direction })}
+              onHideColumn={() => setHiddenColumns((current) => ({ ...current, departments: true }))}
+            />
+          )}
+        </th>
+        <th style={hiddenColumns.status ? hiddenHeaderStyle : projectsTableHeaderStyle}>
+          {hiddenColumns.status ? (
+            <SettingsHiddenColumnHeader label="Status" onShow={() => setHiddenColumns((current) => ({ ...current, status: false }))} />
+          ) : (
+            <SettingsFilterColumnHeader
+              label="Status"
+              values={statusOptions}
+              selectedValues={selectedStatuses}
+              onApplyValues={setSelectedStatuses}
+              onSort={(direction) => setSortState({ column: 'status', direction })}
+              onHideColumn={() => setHiddenColumns((current) => ({ ...current, status: true }))}
+            />
+          )}
+        </th>
+        <th style={hiddenColumns.usage ? hiddenHeaderStyle : projectsTableHeaderStyle}>
+          {hiddenColumns.usage ? (
+            <SettingsHiddenColumnHeader label="Used" onShow={() => setHiddenColumns((current) => ({ ...current, usage: false }))} />
+          ) : (
+            <SettingsFilterColumnHeader
+              label="Used"
+              values={usageOptions}
+              selectedValues={selectedUsage}
+              onApplyValues={setSelectedUsage}
+              onSort={(direction) => setSortState({ column: 'usage', direction })}
+              onHideColumn={() => setHiddenColumns((current) => ({ ...current, usage: true }))}
+            />
+          )}
+        </th>
+        <th style={projectsTableHeaderStyle}>
+          <SettingsActionColumnHeader
+            label="Actions"
+            onSort={(direction) => setSortState({ column: 'site', direction })}
+          />
+        </th>
+      </tr>
+    </thead>
   )
 }
 
 function SiteDeptRowItem({
+  hiddenCellStyle,
+  hiddenColumns,
   row,
-  onSave,
-  onDelete,
+  onDeleteRequest,
   onRemove,
+  onSave,
   onToggleActive,
   saving,
 }: {
+  hiddenCellStyle: CSSProperties
+  hiddenColumns: SitesDepartmentsHiddenColumns
   row: UiSiteRow
-  onSave: (originalSite: string | null, site: string, departments: string[]) => Promise<void>
-  onDelete: (site: string) => Promise<void>
+  onDeleteRequest: (site: string) => void
   onRemove: (key: string) => void
+  onSave: (originalSite: string | null, site: string, departments: string[]) => Promise<void>
   onToggleActive: (site: string, active: boolean) => Promise<void>
   saving: boolean
 }) {
   const [edit, setEdit] = useState(row.site.trim().length === 0)
   const [site, setSite] = useState(row.site)
-  const [departmentsText, setDepartmentsText] = useState((row.departments ?? []).join(', '))
+  const [departmentInputs, setDepartmentInputs] = useState<DepartmentInputRow[]>(() => {
+    const values = row.departments.length
+      ? [
+          ...row.departments.map((department) => ({
+            originalName: department.name,
+            projectCount: department.projectCount,
+            used: department.used,
+            value: department.name,
+          })),
+          { originalName: null, projectCount: 0, used: false, value: '' },
+        ]
+      : [{ originalName: null, projectCount: 0, used: false, value: '' }]
+    return normalizeDepartmentInputs(values)
+  })
   const [busy, setBusy] = useState(false)
-  const [confirm, setConfirm] = useState<null | { title: string; body: string; onConfirm: () => Promise<void> }>(null)
-
-  const normalize = (v: string) => v.trim()
 
   async function save() {
     if (busy || saving) return
+
     setBusy(true)
-    const siteName = normalize(site)
-    const deptList = departmentsText
-      .split(/[,;\n]+/)
-      .map((d) => normalize(d))
-      .filter(Boolean)
-    await onSave(row.site || null, siteName, deptList)
+    await onSave(row.site || null, site, uniqueList(departmentInputs.map((department) => department.value)))
     setBusy(false)
     setEdit(false)
   }
 
   return (
-    <tr style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-      <td style={{ padding: 10, verticalAlign: 'middle' }}>
-        {edit ? (
+    <tr className="rowHover">
+      <td style={hiddenColumns.site ? hiddenCellStyle : projectsTableCellStyle}>
+        {hiddenColumns.site ? null : edit ? (
           <input
             value={site}
-            onChange={(e) => setSite(e.target.value)}
-            placeholder="Site name..."
-            style={{ width: '100%', padding: '6px 8px', borderRadius: 10, border: '1px solid #ddd' }}
-          />
-        ) : (
-          <div style={{ fontWeight: 700 }}>{row.site}</div>
-        )}
-      </td>
-      <td style={{ padding: 10, verticalAlign: 'top' }}>
-        {edit ? (
-          <input
-            value={departmentsText}
-            onChange={(e) => setDepartmentsText(e.target.value)}
-            placeholder="Add departments, separated by commas"
-            style={{ width: '100%', padding: '6px 8px', borderRadius: 10, border: '1px solid #ddd' }}
-          />
-        ) : (
-          <div style={{ color: '#666', fontSize: 12 }}>{row.departments.join(', ')}</div>
-        )}
-      </td>
-      <td style={{ padding: 10, paddingLeft: 4, paddingRight: 4, verticalAlign: 'middle' }}>
-        <button
-          onClick={() => onToggleActive(row.site, !row.active)}
-          disabled={saving}
-          className="rf-button"
-          aria-label={`Set active ${row.active ? 'off' : 'on'}`}
-          style={{
-            position: 'relative',
-            width: 40,
-            height: 20,
-            padding: 2,
-            borderRadius: 999,
-            border: '1px solid rgba(16, 26, 64, 0.28)',
-            background: row.active ? 'rgba(16, 26, 64, 0.18)' : 'rgba(16, 26, 64, 0.06)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: row.active ? 'flex-end' : 'flex-start',
-            transition: 'background 140ms ease, border-color 140ms ease',
-          }}
-        >
-          <span
+            onChange={(event) => setSite(event.target.value)}
+            placeholder="Site name"
+            readOnly={row.used}
             style={{
-              width: 16,
-              height: 16,
-              borderRadius: 999,
-              background: row.active ? 'rgba(16, 26, 64, 0.95)' : 'rgba(16, 26, 64, 0.45)',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+              ...halfColumnInputStyle,
+              opacity: row.used ? 0.72 : 1,
+              cursor: row.used ? 'not-allowed' : 'text',
             }}
+            title={row.used ? 'Site name is locked because this site is assigned to existing projects.' : undefined}
           />
-        </button>
-      </td>
-      <td style={{ padding: 10, paddingLeft: 4, paddingRight: 4, verticalAlign: 'middle' }}>
-        {edit ? (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-start', alignItems: 'center' }}>
-            <button
-              onClick={save}
-              disabled={busy || saving}
-              className="rf-button"
-              style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid #ddd', fontWeight: 650 }}
-            >
-              Save
-            </button>
-            <button
-              onClick={() => {
-                if (!row.site) onRemove(row.key)
-                else setEdit(false)
-              }}
-              disabled={busy || saving}
-              className="rf-button"
-              style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid #ddd' }}
-            >
-              Cancel
-            </button>
-          </div>
         ) : (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-start', alignItems: 'center' }}>
-            <button
-              onClick={() => setEdit(true)}
-              className="rf-button"
-              style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid #ddd', fontWeight: 650 }}
-            >
-              Edit
-            </button>
-            <button
-              onClick={() =>
-                setConfirm({
-                  title: 'Caution',
-                  body: 'This will delete the site and all its departments. This action cannot be undone.',
-                  onConfirm: async () => {
-                    setBusy(true)
-                    await onDelete(row.site)
-                    setBusy(false)
-                  },
-                })
-              }
-              disabled={saving}
-              className="inviteTrashBtn"
-              aria-label="Delete site"
-              title="Delete site"
-            >
-              <svg className="inviteTrashIcon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M9 3h6m-8 4h10m-9 0 1 15h6l1-15M10 7v13m4-13v13"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          </div>
+          <div style={projectsProcessCellStyle}>{row.site}</div>
         )}
       </td>
-      {confirm && (
-        <td style={{ padding: 0 }}>
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.25)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 80,
-            }}
-            onClick={() => (busy ? null : setConfirm(null))}
-          >
-            <div
-              style={{
-                width: 520,
-                maxWidth: '92vw',
-                background: '#fff',
-                borderRadius: 16,
-                border: '1px solid rgba(0,0,0,0.12)',
-                boxShadow: '0 16px 36px rgba(0,0,0,0.2)',
-                padding: 20,
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 10 }}>{confirm.title}</div>
-              <div style={{ fontSize: 15, color: '#333', lineHeight: 1.5, marginBottom: 16 }}>
-                {confirm.body}
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => setConfirm(null)}
-                  disabled={busy}
-                  className="rf-button"
-                  style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #ddd' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    if (busy) return
-                    await confirm.onConfirm()
-                    setConfirm(null)
+      <td style={hiddenColumns.departments ? hiddenCellStyle : projectsTableCellStyle}>
+        {hiddenColumns.departments ? null : edit ? (
+          <div style={{ display: 'grid', gap: 6 }}>
+            {departmentInputs.map((value, index) => (
+              <div key={`${row.key}-department-${index}`} style={{ display: 'grid', gridTemplateColumns: value.used ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)', gap: 8, alignItems: 'center' }}>
+                <input
+                  value={value.value}
+                  onChange={(event) => {
+                    if (value.used) return
+                    const nextValue = event.target.value
+                    setDepartmentInputs((current) => {
+                      const next = [...current]
+                      next[index] = { ...next[index], value: nextValue }
+                      if (index === next.length - 1 && nextValue.trim()) {
+                        next.push({ originalName: null, projectCount: 0, used: false, value: '' })
+                      }
+                      return normalizeDepartmentInputs(next)
+                    })
                   }}
-                  disabled={busy}
-                  className="rf-button"
-                  style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #ddd', fontWeight: 650 }}
-                >
-                  OK
-                </button>
+                  placeholder="Department name"
+                  readOnly={value.used}
+                  style={{
+                    ...halfColumnInputStyle,
+                    opacity: value.used ? 0.72 : 1,
+                    cursor: value.used ? 'not-allowed' : 'text',
+                  }}
+                  title={value.used ? 'This department is assigned to existing projects and cannot be changed or removed.' : undefined}
+                />
+                {value.used ? (
+                  <span style={{ ...settingsInlineStatusStyle('pending'), fontSize: 11 }}>
+                    USED ({value.projectCount})
+                  </span>
+                ) : null}
               </div>
-            </div>
+            ))}
           </div>
-        </td>
-      )}
+        ) : (
+          <div style={{ color: 'rgba(255,255,255,0.68)', fontSize: 11 }}>
+            {departmentNames(row).join(', ') || '-'}
+          </div>
+        )}
+      </td>
+      <td style={hiddenColumns.status ? hiddenCellStyle : projectsTableCellStyle}>
+        {hiddenColumns.status ? null : edit ? (
+          <span style={projectsStatusStyle('DRAFT')}>DRAFT</span>
+        ) : (
+          <span style={settingsInlineStatusStyle(statusLabel(row))}>{statusLabel(row)}</span>
+        )}
+      </td>
+      <td style={hiddenColumns.usage ? hiddenCellStyle : projectsTableCellStyle}>
+        {hiddenColumns.usage ? null : (
+          <span style={settingsInlineStatusStyle(row.used ? 'pending' : 'inactive')}>
+            {row.used ? `USED (${row.projectCount})` : 'UNUSED'}
+          </span>
+        )}
+      </td>
+      <td style={projectsTableCellStyle}>
+        <div style={projectsActionsStyle}>
+          {edit ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={busy || saving}
+                className="rf-button"
+                style={{ ...settingsCompactPrimaryButtonStyle, opacity: busy || saving ? 0.6 : 1 }}
+              >
+                {busy ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!row.site) onRemove(row.key)
+                  else setEdit(false)
+                }}
+                disabled={busy || saving}
+                className="rf-button"
+                style={settingsCompactActionButtonStyle}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => void onToggleActive(row.site, !row.active)}
+                disabled={saving}
+                className="rf-button"
+                style={{ ...settingsCompactActionButtonStyle, opacity: saving ? 0.6 : 1 }}
+              >
+                {row.active ? 'Deactivate' : 'Activate'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEdit(true)}
+                className="rf-button"
+                style={settingsCompactActionButtonStyle}
+              >
+                Edit
+              </button>
+              <SettingsTrashButton onClick={() => onDeleteRequest(row.site)} title="Delete site" ariaLabel={`Delete ${row.site}`} />
+            </>
+          )}
+        </div>
+      </td>
     </tr>
   )
 }
-

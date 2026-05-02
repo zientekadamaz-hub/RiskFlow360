@@ -24,6 +24,34 @@ const basePath = normalizeBasePath(rawBasePath)
 const nextConfig: NextConfig = {
   reactStrictMode: false,
   devIndicators: false,
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        pathname: '/**',
+      },
+    ],
+  },
+  async redirects() {
+    return [
+      {
+        source: '/actions',
+        destination: '/projects',
+        permanent: false,
+      },
+      {
+        source: '/reports',
+        destination: '/projects',
+        permanent: false,
+      },
+      {
+        source: '/reports/progress',
+        destination: '/projects',
+        permanent: false,
+      },
+    ]
+  },
   ...(basePath
     ? {
         basePath,

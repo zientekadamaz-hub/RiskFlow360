@@ -74,6 +74,20 @@ function rowLocator(table, text) {
   return table.locator('tbody tr').filter({ hasText: text }).first()
 }
 
+function normalizeVisibleText(value) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function compactVisibleText(value) {
+  return normalizeVisibleText(value).replace(/\s+/g, '')
+}
+
+function rowLocatorById(table, rowId) {
+  return table.locator(`tbody tr[data-pfmea-row-id="${rowId}"]`).first()
+}
+
 async function hoverRow(row) {
   await row.scrollIntoViewIfNeeded()
   await row.hover({ force: true })
@@ -161,6 +175,28 @@ async function activateInsertedCell(table, anchorRowIndex, cellKey) {
   await table.page().waitForTimeout(250)
 }
 
+async function getActiveEditorRow(table, expectedCellKey, timeoutMs = 10000) {
+  return retryAction(async () => {
+    const editor = table.page().locator('.pfmeaEditor').last()
+    await editor.waitFor({ state: 'visible', timeout: timeoutMs })
+    const meta = await editor.evaluate((el) => {
+      const cell = el.closest('td')
+      const row = el.closest('tr')
+      return {
+        cellKey: cell?.getAttribute('data-pfmea-col') ?? null,
+        rowId: row?.getAttribute('data-pfmea-row-id') ?? null,
+      }
+    })
+    if (!meta.rowId) throw new Error('PFMEA editor opened without a row id.')
+    if (expectedCellKey && meta.cellKey !== expectedCellKey) {
+      throw new Error(`PFMEA editor opened in ${meta.cellKey ?? 'unknown'} instead of ${expectedCellKey}.`)
+    }
+    const row = rowLocatorById(table, meta.rowId)
+    await row.waitFor({ state: 'visible', timeout: 10000 })
+    return row
+  })
+}
+
 async function getInsertedRow(table, anchorRowIndex) {
   return retryAction(async () => {
     const rows = table.locator('tbody tr')
@@ -172,7 +208,7 @@ async function getInsertedRow(table, anchorRowIndex) {
   })
 }
 
-async function getInsertedRowByDiff(table, beforeRowIds, timeoutMs = 15000) {
+async function getInsertedRowByDiff(table, beforeRowIds, anchorRowIndex, timeoutMs = 15000) {
   const beforeSet = new Set(beforeRowIds)
   const deadline = Date.now() + timeoutMs
   let lastSeenCount = 0
@@ -181,14 +217,41 @@ async function getInsertedRowByDiff(table, beforeRowIds, timeoutMs = 15000) {
     const rows = table.locator('tbody tr')
     const count = await rows.count()
     lastSeenCount = count
+    const unseenRows = []
 
     for (let i = 0; i < count; i += 1) {
       const row = rows.nth(i)
       const rowId = await row.getAttribute('data-pfmea-row-id')
       if (rowId && !beforeSet.has(rowId)) {
-        await row.waitFor({ state: 'visible', timeout: 10000 })
-        return row
+        unseenRows.push({ rowId, index: i })
       }
+    }
+
+    if (unseenRows.length === 1) {
+      const resolvedRow = rowLocatorById(table, unseenRows[0].rowId)
+      await resolvedRow.waitFor({ state: 'visible', timeout: 10000 })
+      return resolvedRow
+    }
+
+    if (unseenRows.length > 1) {
+      const targetIndex = Math.min(Math.max(anchorRowIndex + 1, 0), count - 1)
+      const exactTarget = unseenRows.find((item) => item.index === targetIndex)
+      if (exactTarget) {
+        const resolvedRow = rowLocatorById(table, exactTarget.rowId)
+        await resolvedRow.waitFor({ state: 'visible', timeout: 10000 })
+        return resolvedRow
+      }
+
+      const fallbackRow = rows.nth(targetIndex)
+      await fallbackRow.waitFor({ state: 'visible', timeout: 10000 })
+      return fallbackRow
+    }
+
+    if (count > beforeRowIds.length) {
+      const targetIndex = Math.min(Math.max(anchorRowIndex + 1, 0), count - 1)
+      const fallbackRow = rows.nth(targetIndex)
+      await fallbackRow.waitFor({ state: 'visible', timeout: 10000 })
+      return fallbackRow
     }
 
     await table.page().waitForTimeout(300)
@@ -200,12 +263,14 @@ async function getInsertedRowByDiff(table, beforeRowIds, timeoutMs = 15000) {
 }
 
 async function waitForRowCellValue(row, cellKey, expectedValue) {
-  const normalizedExpected = expectedValue.replace(/\s+/g, ' ').trim()
+  const normalizedExpected = normalizeVisibleText(expectedValue)
+  const compactExpected = compactVisibleText(expectedValue)
   await retryAction(async () => {
     const cell = row.locator(`td[data-pfmea-col="${cellKey}"]`).first()
     await cell.waitFor({ state: 'visible', timeout: 10000 })
-    const actual = (await cell.innerText()).replace(/\s+/g, ' ').trim()
-    if (!actual.includes(normalizedExpected)) {
+    const actual = normalizeVisibleText(await cell.innerText())
+    const compactActual = compactVisibleText(actual)
+    if (!actual.includes(normalizedExpected) && !compactActual.includes(compactExpected)) {
       throw new Error(`Expected "${normalizedExpected}" in ${cellKey}, got "${actual}"`)
     }
   })
@@ -243,19 +308,34 @@ async function fillTextCellInRow(page, row, textTarget, value) {
     await cell.waitFor({ state: 'visible', timeout: 10000 })
     await cell.scrollIntoViewIfNeeded()
     await cell.click({ force: true })
+    const editor = page.locator('.pfmeaEditor').last()
+    try {
+      await editor.waitFor({ state: 'visible', timeout: 800 })
+    } catch {
+      await cell.evaluate((el) => {
+        if (el instanceof HTMLElement) el.click()
+      })
+      await editor.waitFor({ state: 'visible', timeout: 3000 })
+    }
     await fillActiveEditor(page, value)
   })
 }
 
 async function addFailureMode(table, anchorRow, fmText) {
   const insertion = await clickAddOnRow(anchorRow, /Add failure mode row/i)
-  const row = await getInsertedRowByDiff(table, insertion.beforeRowIds).catch(async () => {
-    await activateInsertedCell(table, insertion.rowIndex, 'failure_mode')
-    return getInsertedRow(table, insertion.rowIndex)
+  let editorReady = true
+  const row = await getActiveEditorRow(table, 'failure_mode').catch(async () => {
+    editorReady = false
+    return getInsertedRowByDiff(table, insertion.beforeRowIds, insertion.rowIndex).catch(async () => {
+      await activateInsertedCell(table, insertion.rowIndex, 'failure_mode')
+      return getInsertedRow(table, insertion.rowIndex)
+    })
   })
-  const cell = row.locator('td[data-pfmea-col="failure_mode"]').first()
-  await cell.waitFor({ state: 'visible', timeout: 10000 })
-  await cell.click({ force: true })
+  if (!editorReady) {
+    const cell = row.locator('td[data-pfmea-col="failure_mode"]').first()
+    await cell.waitFor({ state: 'visible', timeout: 10000 })
+    await cell.click({ force: true })
+  }
   await fillActiveEditor(anchorRow.page(), fmText)
   await waitForRowCellValue(row, 'failure_mode', fmText)
   return row
@@ -267,20 +347,25 @@ async function materializeFailureMode(table, anchorRow, fmText) {
   await editableCell.waitFor({ state: 'visible', timeout: 10000 })
   await editableCell.click({ force: true })
   await fillActiveEditor(anchorRow.page(), fmText)
-  const row = rowLocator(table, fmText)
-  await row.waitFor({ state: 'visible', timeout: 10000 })
-  return row
+  await waitForRowCellValue(anchorRow, 'failure_mode', fmText)
+  return anchorRow
 }
 
 async function addEffect(page, table, anchorRow, effectText, sev) {
   const insertion = await clickAddOnRow(anchorRow, /Add effect row/i)
-  const row = await getInsertedRowByDiff(table, insertion.beforeRowIds).catch(async () => {
-    await activateInsertedCell(table, insertion.rowIndex, 'effect')
-    return getInsertedRow(table, insertion.rowIndex)
+  let editorReady = true
+  const row = await getActiveEditorRow(table, 'effect').catch(async () => {
+    editorReady = false
+    return getInsertedRowByDiff(table, insertion.beforeRowIds, insertion.rowIndex).catch(async () => {
+      await activateInsertedCell(table, insertion.rowIndex, 'effect')
+      return getInsertedRow(table, insertion.rowIndex)
+    })
   })
-  const cell = row.locator('td[data-pfmea-col="effect"]').first()
-  await cell.waitFor({ state: 'visible', timeout: 10000 })
-  await cell.click({ force: true })
+  if (!editorReady) {
+    const cell = row.locator('td[data-pfmea-col="effect"]').first()
+    await cell.waitFor({ state: 'visible', timeout: 10000 })
+    await cell.click({ force: true })
+  }
   await fillActiveEditor(page, effectText)
   await waitForRowCellValue(row, 'effect', effectText)
   await selectScaleValueInRow(page, row, 'severity', sev)
@@ -289,13 +374,19 @@ async function addEffect(page, table, anchorRow, effectText, sev) {
 
 async function addCause(page, table, anchorRow, causeText, occ, prevText, detText, detVal) {
   const insertion = await clickAddOnRow(anchorRow, /Add cause row/i)
-  const row = await getInsertedRowByDiff(table, insertion.beforeRowIds).catch(async () => {
-    await activateInsertedCell(table, insertion.rowIndex, 'cause')
-    return getInsertedRow(table, insertion.rowIndex)
+  let editorReady = true
+  const row = await getActiveEditorRow(table, 'cause').catch(async () => {
+    editorReady = false
+    return getInsertedRowByDiff(table, insertion.beforeRowIds, insertion.rowIndex).catch(async () => {
+      await activateInsertedCell(table, insertion.rowIndex, 'cause')
+      return getInsertedRow(table, insertion.rowIndex)
+    })
   })
-  const cell = row.locator('td[data-pfmea-col="cause"]').first()
-  await cell.waitFor({ state: 'visible', timeout: 10000 })
-  await cell.click({ force: true })
+  if (!editorReady) {
+    const cell = row.locator('td[data-pfmea-col="cause"]').first()
+    await cell.waitFor({ state: 'visible', timeout: 10000 })
+    await cell.click({ force: true })
+  }
   await fillActiveEditor(page, causeText)
   await waitForRowCellValue(row, 'cause', causeText)
   await selectScaleValueInRow(page, row, 'occurrence', occ)
@@ -307,13 +398,19 @@ async function addCause(page, table, anchorRow, causeText, occ, prevText, detTex
 
 async function addAction(page, table, anchorRow, actionText) {
   const insertion = await clickAddOnRow(anchorRow, /Add recommended action row/i)
-  const row = await getInsertedRowByDiff(table, insertion.beforeRowIds).catch(async () => {
-    await activateInsertedCell(table, insertion.rowIndex, 'recommended_action')
-    return getInsertedRow(table, insertion.rowIndex)
+  let editorReady = true
+  const row = await getActiveEditorRow(table, 'recommended_action').catch(async () => {
+    editorReady = false
+    return getInsertedRowByDiff(table, insertion.beforeRowIds, insertion.rowIndex).catch(async () => {
+      await activateInsertedCell(table, insertion.rowIndex, 'recommended_action')
+      return getInsertedRow(table, insertion.rowIndex)
+    })
   })
-  const cell = row.locator('td[data-pfmea-col="recommended_action"]').first()
-  await cell.waitFor({ state: 'visible', timeout: 10000 })
-  await cell.click({ force: true })
+  if (!editorReady) {
+    const cell = row.locator('td[data-pfmea-col="recommended_action"]').first()
+    await cell.waitFor({ state: 'visible', timeout: 10000 })
+    await cell.click({ force: true })
+  }
   await fillActiveEditor(page, actionText)
   await waitForRowCellValue(row, 'recommended_action', actionText)
   return row
@@ -323,11 +420,14 @@ async function collectRunRows(table, runId) {
   const rows = table.locator('tbody tr')
   const count = await rows.count()
   const result = []
+  const normalizedRunId = normalizeVisibleText(runId)
+  const compactRunId = compactVisibleText(runId)
   for (let i = 0; i < count; i += 1) {
     const row = rows.nth(i)
-    const text = (await row.innerText()).replace(/\s+/g, ' ').trim()
-    if (!text.includes(runId)) continue
-    result.push({ index: i, text })
+    const text = normalizeVisibleText(await row.innerText())
+    const compactText = compactVisibleText(text)
+    if (!text.includes(normalizedRunId) && !compactText.includes(compactRunId)) continue
+    result.push({ index: i, text, compactText })
   }
   return result
 }

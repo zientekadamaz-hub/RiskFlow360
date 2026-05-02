@@ -1,0 +1,37 @@
+
+> pfmea-app@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.1 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.68.58:3000
+- Environments: .env.local
+
+✓ Starting...
+Creating turbopack project { dir: 'C:\\Users\\zieada\\pfmea-app', testMode: true }
+✓ Ready in 2.1s
+ GET / 404 in 1399ms (compile: 980ms, proxy.ts: 159ms, render: 260ms)
+ GET /login?reason=idle 404 in 1385ms (compile: 1142ms, proxy.ts: 151ms, render: 93ms)
+ GET / 200 in 410ms (compile: 155ms, proxy.ts: 8ms, render: 247ms)
+ GET / 200 in 123ms (compile: 8ms, proxy.ts: 9ms, render: 106ms)
+ GET / 200 in 128ms (compile: 6ms, proxy.ts: 8ms, render: 114ms)
+ GET /login 200 in 70ms (compile: 43ms, proxy.ts: 6ms, render: 21ms)
+ GET / 200 in 109ms (compile: 5ms, proxy.ts: 9ms, render: 96ms)
+ GET /settings/invitations 200 in 104ms (compile: 78ms, proxy.ts: 8ms, render: 19ms)
+ POST /api/invitations/send 500 in 1148ms (compile: 784ms, proxy.ts: 9ms, render: 356ms)
+✓ Compiled in 176ms
+ GET / 200 in 88ms (compile: 7ms, proxy.ts: 6ms, render: 75ms)
+ GET /login?reason=idle 200 in 144ms (compile: 74ms, proxy.ts: 6ms, render: 65ms)
+ GET / 200 in 156ms (compile: 6ms, proxy.ts: 6ms, render: 144ms)
+ GET /login?reason=idle 200 in 52ms (compile: 9ms, proxy.ts: 5ms, render: 38ms)
+ GET / 200 in 109ms (compile: 6ms, proxy.ts: 7ms, render: 96ms)
+ GET /settings/invitations 200 in 148ms (compile: 115ms, proxy.ts: 6ms, render: 28ms)
+ POST /api/invitations/send 200 in 957ms (compile: 90ms, proxy.ts: 7ms, render: 860ms)
+ GET /login?next=%2Fwaiting-for-invite%3Ftoken%3D52feeacc-a24a-450a-a6fa-72dd629f273b 200 in 93ms (compile: 7ms, proxy.ts: 9ms, render: 77ms)
+ POST /api/invitations/resend 200 in 1317ms (compile: 395ms, proxy.ts: 14ms, render: 908ms)
+ POST /api/invitations/resend 200 in 1306ms (compile: 7ms, proxy.ts: 8ms, render: 1291ms)
+ GET /login?next=%2Fwaiting-for-invite%3Ftoken%3Dcce8dad7-9220-48cf-a6ef-43671b19a570 200 in 88ms (compile: 8ms, proxy.ts: 7ms, render: 72ms)
+ GET /waiting-for-invite 200 in 85ms (compile: 9ms, proxy.ts: 15ms, render: 61ms)
+ GET /waiting-for-invite?token=cce8dad7-9220-48cf-a6ef-43671b19a570 200 in 411ms (compile: 109ms, proxy.ts: 9ms, render: 293ms)
+ GET / 200 in 184ms (compile: 8ms, proxy.ts: 13ms, render: 162ms)
+ GET / 200 in 97ms (compile: 7ms, proxy.ts: 10ms, render: 80ms)

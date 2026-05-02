@@ -1,11 +1,12 @@
 
 'use client'
 
-import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@app/lib/supabaseBrowser'
+import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 
 type ProjectView = {
   id: string
@@ -107,7 +108,6 @@ const SURFACE_RADIUS = 8
 const SURFACE_BG = 'rgba(255,255,255,0.08)'
 const SURFACE_BG_STRONG = 'rgba(255,255,255,0.12)'
 const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
-const SURFACE_BORDER_STRONG = 'rgba(255,255,255,0.22)'
 const SURFACE_PANEL_BG = 'rgb(40, 39, 47)'
 const SURFACE_TEXT = '#f8fafc'
 const SURFACE_MUTED = 'rgba(255,255,255,0.72)'
@@ -347,16 +347,15 @@ export default function PcpPage() {
 function PcpPageContent() {
   const sp = useSearchParams()
   const projectId = sp.get('project') ?? ''
-  const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
   const [userId, setUserId] = useState<string | null>(null)
+  const [moduleAccessState, setModuleAccessState] = useState<'checking' | 'allowed' | 'denied'>('checking')
   const [currentAuthorName, setCurrentAuthorName] = useState('Unknown user')
   const [isChampion, setIsChampion] = useState(false)
 
   const [project, setProject] = useState<ProjectView | null>(null)
   const [draftRevisionIdOverride, setDraftRevisionIdOverride] = useState<string | null>(null)
-  const [ops, setOps] = useState<Operation[]>([])
   const [rows, setRows] = useState<PcpRow[]>([])
 
   const [editSession, setEditSession] = useState<PcpEditSession | null>(null)
@@ -379,7 +378,6 @@ function PcpPageContent() {
   const [pcpYellowMax, setPcpYellowMax] = useState(168)
 
   const [edit, setEdit] = useState<{ rowId: string; col: keyof PcpRow } | null>(null)
-  const [requiredRowCountByOperation, setRequiredRowCountByOperation] = useState<Record<string, number>>({})
 
   const isDirty = dirtyIds.length > 0 || deletedIds.length > 0
   const isObsolete = (project?.status ?? 'DRAFT') === 'OBSOLETE'
@@ -434,7 +432,6 @@ function PcpPageContent() {
     setVisibleColumns((prev) => {
       const next = { ...prev }
       for (const id of ids) next[id] = false
-      next.delete = true
       return next
     })
   }, [])
@@ -537,7 +534,10 @@ function PcpPageContent() {
       .eq('operation_id', row.operation_id)
       .order('created_at', { ascending: true })
     if (res.error) throw res.error
-    const revisionRows = (res.data ?? []) as PcpRow[]
+    const revisionRows = ((res.data ?? []) as Array<PcpRow & { operations?: Operation[] | Operation | null }>).map((candidate) => ({
+      ...candidate,
+      operations: Array.isArray(candidate.operations) ? (candidate.operations[0] ?? null) : (candidate.operations ?? null),
+    }))
     return revisionRows.find((candidate) => isEquivalentPcpRow(candidate, row)) ?? null
   }, [])
 
@@ -559,7 +559,7 @@ function PcpPageContent() {
       .eq('user_id', userId)
       .maybeSingle()
     const role = ((memberRes.data as { role?: string | null } | null)?.role ?? '').toLowerCase()
-    setIsChampion(role === 'champion' || role === 'admin')
+    setIsChampion(role === 'champion')
   }, [projectId, userId])
 
   const ensureDraftIfNeeded = useCallback(async () => {
@@ -591,7 +591,6 @@ function PcpPageContent() {
 
   const loadAll = useCallback(async (forceRevisionId?: string | null) => {
     if (!projectId) return
-    setLoading(true)
     setErr('')
     try {
       const pv = await loadProjectView()
@@ -605,7 +604,6 @@ function PcpPageContent() {
         .order('operation_number', { ascending: true })
       if (opsRes.error) throw opsRes.error
       const operations = (opsRes.data ?? []) as Operation[]
-      setOps(operations)
 
       const openRevId = pv.current_open_revision_id ?? null
       const draftRevId = draftRevisionIdOverride ?? pv.current_draft_revision_id ?? null
@@ -614,7 +612,6 @@ function PcpPageContent() {
 
       if (!revId) {
         setRows([])
-        setLoading(false)
         return
       }
 
@@ -671,16 +668,13 @@ function PcpPageContent() {
         }
       }
 
-      const requiredCounts: Record<string, number> = {}
       const seedRowsByOperation = new Map<string, PfmeaPcpSeedRow[]>()
       const seedRowsFiltered = pfmeaSeedRows.filter((row) => isPfmeaSeedSelectedForPcp(row, pcpYellowMax))
       for (const row of seedRowsFiltered) {
         const items = seedRowsByOperation.get(row.operation_id) ?? []
         items.push(row)
         seedRowsByOperation.set(row.operation_id, items)
-        requiredCounts[row.operation_id] = items.length
       }
-      setRequiredRowCountByOperation(requiredCounts)
 
       const existingByOperation = new Map<string, PcpRow[]>()
       for (const row of normalizedRows) {
@@ -720,7 +714,7 @@ function PcpPageContent() {
                 operation_id: seed.operation_id,
                 pfmea_row_id: seed.id,
                 failure_mode: seed.failure_mode,
-                characteristic: seed.characteristic,
+                characteristic: seed.characteristic ?? '',
                 class: seed.class,
                 current_prevention: seed.current_prevention,
                 current_detection: seed.current_detection,
@@ -828,11 +822,8 @@ function PcpPageContent() {
       }
 
       setRows(mergedRows)
-
-      setLoading(false)
     } catch (e: any) {
       setErr(e?.message ?? String(e))
-      setLoading(false)
     }
   }, [projectId, loadProjectView, loadPcpSelectionThreshold, draftRevisionIdOverride, isEditOwner])
   const loadRevisionHistory = useCallback(async () => {
@@ -861,25 +852,7 @@ function PcpPageContent() {
         })))
         return
       }
-
-      const fallbackRes = await supabase
-        .from('process_module_revisions')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('module', 'PCP')
-        .order('created_at', { ascending: false })
-        .limit(200)
-      if (fallbackRes.error) throw fallbackRes.error
-
-      const rowsRaw = (fallbackRes.data ?? []) as Array<Record<string, unknown>>
-      setHistoryEntries(rowsRaw.map((x, idx) => ({
-        id: normalizeText(x.id) || `pcp-h-fb-${idx}`,
-        at: normalizeText(x.created_at) || new Date(0).toISOString(),
-        revisionLabel: normalizeText(x.revision_label) || '0.0.0',
-        author: normalizeText(x.author_name) || normalizeText(x.updated_by_name) || normalizeText(x.created_by_name) || normalizeText(x.user_name) || 'Unknown user',
-        controlCount: null,
-        description: normalizeText(x.change_description),
-      })))
+      setHistoryEntries([])
     } catch (e: any) {
       setErr(e?.message ?? String(e))
       setHistoryEntries([])
@@ -1029,54 +1002,19 @@ function PcpPageContent() {
     }
   }, [readOnly, ensureDraftIfNeeded, project?.current_draft_revision_id, project?.current_open_revision_id, workingRevisionId, markDirty, loadAll, ensureDraftRowsHydrated, findEquivalentRowInRevision])
 
-  const deleteRow = useCallback(async (id: string) => {
-    if (readOnly) return
-    if (!window.confirm('Delete PCP row? This cannot be undone.')) return
-    try {
-      if (isPlaceholderPcpRowId(id)) return
-      await ensureDraftIfNeeded()
-      const currentRow = rows.find((row) => row.id === id)
-      if (!currentRow) return
-      const opId = currentRow.operation_id
-      const currentRowsForOperation = rows.filter((row) => !isPlaceholderPcpRowId(row.id) && row.operation_id === opId)
-      const requiredCount = requiredRowCountByOperation[opId] ?? 0
-      if (currentRowsForOperation.length <= requiredCount) {
-        const clearPayload = {
-          control_method: '',
-          sample_size: '',
-          frequency: '',
-          reaction_plan: '',
-          source: currentRow.source || 'MANUAL',
-          status: 'OPEN',
-        }
-        const res = await supabase.from('control_plan_rows').update(clearPayload).eq('id', id)
-        if (res.error) throw res.error
-        markDirty(id)
-        setRows((prev) => prev.map((row) => (row.id === id ? ({ ...row, ...clearPayload } as PcpRow) : row)))
-      } else {
-        const res = await supabase.from('control_plan_rows').delete().eq('id', id)
-        if (res.error) throw res.error
-        setDeletedIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
-        setDirtyIds((prev) => prev.filter((x) => x !== id))
-        await loadAll()
-      }
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    }
-  }, [readOnly, ensureDraftIfNeeded, rows, requiredRowCountByOperation, markDirty, loadAll])
-
   const handleSaveRevision = useCallback(async (descInput?: string) => {
-    if (saveBusy) return
+    if (saveBusy) return false
     if (!isDirty) {
-      return
+      return false
     }
     const desc = (descInput ?? '').trim()
     if (!desc) {
       setErr('Change description is required.')
-      return
+      return false
     }
     try {
       setSaveBusy(true)
+      setErr('')
       const { data: sess } = await supabase.auth.getSession()
       const uid = sess?.session?.user?.id
       if (!uid) throw new Error('Not authenticated.')
@@ -1097,8 +1035,10 @@ function PcpPageContent() {
       await loadAll()
       await loadRevisionHistory()
       await loadEditSession()
+      return true
     } catch (e: any) {
       setErr(e?.message ?? String(e))
+      return false
     } finally {
       setSaveBusy(false)
     }
@@ -1122,6 +1062,45 @@ function PcpPageContent() {
   }, [])
 
   useEffect(() => {
+    let alive = true
+
+    void (async () => {
+      if (!projectId || !userId) return
+
+      const headerRes = await supabase.rpc('get_my_header').maybeSingle()
+      const header = (headerRes.data as { org_role?: string | null } | null) ?? null
+      const role = (header?.org_role ?? '').toLowerCase()
+
+      if (role !== 'customer') {
+        if (alive) setModuleAccessState('allowed')
+        return
+      }
+
+      try {
+        const accessMap = await loadOwnCustomerAccessMap(userId, [projectId])
+        const canReadPcp = hasCustomerModuleAccess(accessMap, projectId, 'PCP')
+        if (!alive) return
+
+        if (!canReadPcp) {
+          setModuleAccessState('denied')
+          window.location.assign('/projects')
+          return
+        }
+
+        setModuleAccessState('allowed')
+      } catch {
+        if (!alive) return
+        setModuleAccessState('denied')
+        window.location.assign('/projects')
+      }
+    })()
+
+    return () => {
+      alive = false
+    }
+  }, [projectId, userId])
+
+  useEffect(() => {
     if (!userId) return
     supabase.from('profiles').select('first_name,last_name').eq('id', userId).maybeSingle().then((res) => {
       const first = ((res.data as { first_name?: string | null } | null)?.first_name ?? '').trim()
@@ -1133,23 +1112,26 @@ function PcpPageContent() {
 
   useEffect(() => {
     if (!projectId || !userId) return
+    if (moduleAccessState !== 'allowed') return
     void loadUserContext()
     void loadEditSession()
-  }, [projectId, userId, loadUserContext, loadEditSession])
+  }, [projectId, userId, loadUserContext, loadEditSession, moduleAccessState])
 
   useEffect(() => {
     if (!projectId) return
+    if (moduleAccessState !== 'allowed') return
     loadAll()
-  }, [projectId, isEditOwner, draftRevisionIdOverride, loadAll])
+  }, [projectId, isEditOwner, draftRevisionIdOverride, loadAll, moduleAccessState])
 
   useEffect(() => {
     if (!projectId) return
+    if (moduleAccessState !== 'allowed') return
     const t = setInterval(() => {
       void loadEditSession()
       setSessionNow(Date.now())
     }, 30_000)
     return () => clearInterval(t)
-  }, [projectId, loadEditSession])
+  }, [projectId, loadEditSession, moduleAccessState])
 
   useEffect(() => {
     if (!projectId || !userId || !isEditOwner) return
@@ -1170,7 +1152,6 @@ function PcpPageContent() {
         const value = parsed?.[col.id]
         if (typeof value === 'boolean') next[col.id] = value
       }
-      next.delete = true
       setVisibleColumns(next)
     } catch {}
   }, [userId])
@@ -1211,6 +1192,10 @@ function PcpPageContent() {
     lineHeight: 1,
   }
 
+  if (moduleAccessState !== 'allowed') {
+    return null
+  }
+
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 18, position: 'relative', overflow: 'hidden', background: '#171f33' }}>
       <div
@@ -1229,7 +1214,7 @@ function PcpPageContent() {
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'linear-gradient(180deg, rgba(101, 69, 46, 0.58), rgba(23, 31, 51, 0.86))',
+          background: 'linear-gradient(180deg, rgba(88, 58, 39, 0.58), rgba(23, 31, 51, 0.86))',
         }}
       />
       <div style={{ position: 'relative', zIndex: 1 }}>
@@ -1466,7 +1451,7 @@ function PcpPageContent() {
             <div style={{ fontSize: 12, color: SURFACE_MUTED, marginBottom: 14 }}>Current PCP: <b>{rowsSorted.length}</b> controls</div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => setShowSave(false)} disabled={saveBusy}>Cancel</button>
-              <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => { void handleSaveRevision(saveDescription).then(() => { setShowSave(false); setSaveDescription('') }) }} disabled={saveBusy || !saveDescription.trim()}>{saveBusy ? 'Saving...' : 'Save'}</button>
+              <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => { void handleSaveRevision(saveDescription).then((saved) => { if (!saved) return; setShowSave(false); setSaveDescription('') }) }} disabled={saveBusy || !saveDescription.trim()}>{saveBusy ? 'Saving...' : 'Save'}</button>
             </div>
           </div>
         </div>

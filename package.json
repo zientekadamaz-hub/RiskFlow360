@@ -6,12 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run build",
     "regression:all": "node scripts/regression/run-all.js",
+    "regression:org:invite-flow": "node scripts/regression/org/invite-flow.js",
+    "regression:org:viewer-flow": "node scripts/regression/org/viewer-flow.js",
+    "regression:org:customer-flow": "node scripts/regression/org/customer-flow.js",
+    "regression:org:customer-revoke-flow": "node scripts/regression/org/customer-revoke-flow.js",
+    "regression:org:customer-multi-grant-flow": "node scripts/regression/org/customer-multi-grant-flow.js",
     "regression:pfmea:merge": "node scripts/regression/pfmea/merge-blocks.js",
     "regression:pfmea:order": "node scripts/regression/pfmea/failure-mode-order.js",
     "regression:pfmea:save": "node scripts/regression/pfmea/tree-save.js",
-    "regression:pcp:smoke": "node scripts/regression/pcp/smoke.js"
+    "regression:pcp:smoke": "node scripts/regression/pcp/smoke.js",
+    "regression:pcp:save": "node scripts/regression/pcp/save.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

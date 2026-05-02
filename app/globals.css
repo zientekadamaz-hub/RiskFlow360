@@ -27,6 +27,125 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+.rf-button {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  font-family: inherit;
+  font-weight: 650;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.rf-button:hover {
+  background: rgba(59, 130, 246, 0.18) !important;
+  border-color: rgba(96, 165, 250, 0.45) !important;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.18) !important;
+}
+
+.rf-button:disabled {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.35);
+  cursor: not-allowed;
+}
+
+.rowHover:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.rowOpen {
+  background: transparent;
+}
+
+.rowOpen:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.projectSelect option {
+  color: #d9a86c;
+  background: rgb(52, 57, 69);
+}
+
+.projectSelect:disabled option {
+  color: rgba(217, 168, 108, 0.48);
+  background: rgb(52, 57, 69);
+}
+
+select option,
+select optgroup {
+  color: #d9a86c;
+  background: rgb(52, 57, 69);
+}
+
+select:disabled option,
+select:disabled optgroup {
+  color: rgba(217, 168, 108, 0.48);
+  background: rgb(52, 57, 69);
+}
+
+.settings-popup-button {
+  background: transparent;
+  color: #d9a86c;
+  border-color: transparent;
+}
+
+.settings-popup-button:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: transparent !important;
+  color: #d9a86c !important;
+  box-shadow: none !important;
+}
+
+.settings-trash-btn {
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.rf-button.settings-trash-btn:hover {
+  background: rgba(127, 29, 29, 0.18) !important;
+  border-color: rgba(248, 113, 113, 0.28) !important;
+  color: #fca5a5 !important;
+  box-shadow: 0 10px 20px rgba(127, 29, 29, 0.18) !important;
+}
+
+input.rf-login-input {
+  background-color: rgb(40, 39, 47) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  color-scheme: dark;
+}
+
+.rf-login-input:autofill {
+  background-color: rgb(40, 39, 47) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 9999px rgb(40, 39, 47) !important;
+}
+
+.rf-login-input:-webkit-autofill,
+.rf-login-input:-webkit-autofill:hover,
+.rf-login-input:-webkit-autofill:focus,
+.rf-login-input:-webkit-autofill:active {
+  appearance: none !important;
+  background-color: rgb(40, 39, 47) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
+  box-shadow: inset 0 0 0 9999px rgb(40, 39, 47) !important;
+  -webkit-box-shadow: inset 0 0 0 9999px rgb(40, 39, 47) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background-clip: padding-box !important;
+  color-scheme: dark;
+  filter: none !important;
+  transition:
+    background-color 999999s ease-out 0s,
+    color 999999s ease-out 0s;
+}
+
 .pfd-step-textarea::placeholder {
   color: #8e97a8;
   opacity: 1;

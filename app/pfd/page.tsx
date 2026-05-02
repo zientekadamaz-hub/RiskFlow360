@@ -4,14 +4,12 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import ReactFlow, {
-  addEdge,
   Background,
   MiniMap,
   MarkerType,
   useEdgesState,
   useNodesState,
   type Connection,
-  type Edge as ReactFlowEdge,
   type Node,
   type OnConnect,
   type OnNodesChange,
@@ -20,6 +18,67 @@ import ReactFlow, {
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { supabase } from '../lib/supabaseBrowser'
+import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
+import {
+  appendConnectionEdge,
+  applySelectionToEdges,
+  pruneRecentConnectionKeys,
+  removeDanglingUpdatedEdge,
+  snapDraggedNode,
+  updateEdgeConnection,
+} from '@/features/pfd/pfd-editor-utils'
+import {
+  createCircleNode,
+  createDecisionNode,
+  createFrameNode,
+  createLinearStepEdge,
+  createProcessRefNode,
+  createStartStopNode,
+  createTriangleNode,
+  makeLocalNodeId,
+} from '@/features/pfd/pfd-node-factory'
+import {
+  findLinearTail,
+  findSmallestFree10,
+  isLinearStepNode,
+  isOperationId,
+  isOperationNode,
+  sanitizeEdges,
+  sanitizeNodes,
+  sortLinearSteps,
+  sortOperationsByNumber,
+  type PfdFlowEdge,
+} from '@/features/pfd/pfd-flow-utils'
+import {
+  clampPfmeaMiniScore,
+  computePfmeaMiniDerived,
+  createPfmeaMiniRow,
+  fetchPfmeaMiniRows,
+  updatePfmeaMiniRow,
+} from '@/features/pfd/pfmea-mini-service'
+import {
+  archiveOperationsAndDeletePfmea,
+  createOperationRecord,
+  patchOperationRecord,
+  renumberOperationRecords,
+  resequenceOperationRecords,
+} from '@/features/pfd/pfd-operations-service'
+import {
+  discardPfdDraftAndCloseSession,
+  fetchOwnPfdDraft,
+  fetchPfdCanvasData,
+  fetchPfdEditSession,
+  fetchPfdHistory,
+  fetchPfdProcessOptions,
+  fetchPfdRevisionLabel,
+  fetchPfdUserContext,
+  fetchUnreadPfdSessionNotice,
+  heartbeatPfdEditSession,
+  publishPfdDiagram,
+  savePfdDraft,
+  startPfdEditSession,
+} from '@/features/pfd/pfd-service'
+import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
 
 // ✅ biblioteka symboli obok route
 import { nodeTypes, type PfdData } from './_lib/nodes'
@@ -30,61 +89,9 @@ import { UI_FONT, S, OP_WIDTH, OP_HEIGHT, DEC_H, DEC_W, CIRCLE_D, HIT, START_W, 
  * PFD + PFMEA mini panel (Supabase)
  */
 
-type OperationRow = {
-  id: string
-  project_id: string
-  operation_number: number | null
-  name: string
-  machine: string | null
-  operation: string | null
-  active: boolean
-}
-
-type PfmeaMiniRow = {
-  id: string
-  operation_id: string
-  failure_mode: string
-  effect: string
-  cause: string
-  severity: number | null
-  occurrence: number | null
-  detection: number | null
-  rpn: number | null
-  oxd: number | null
-  created_at: string
-}
-
-type Edge = ReactFlowEdge & {
-  pathOptions?: {
-    borderRadius?: number
-    offset?: number
-  }
-}
+type Edge = PfdFlowEdge
 
 type ColKey = 'failure_mode' | 'effect' | 'cause' | 'severity' | 'occurrence' | 'detection'
-type PfdHistoryEntry = {
-  id: string
-  at: string
-  revision: number
-  revisionLabel: string
-  author: string
-  description: string
-  nodeCount: number
-  edgeCount: number
-}
-
-type PfdEditSession = {
-  projectId: string
-  lockedBy: string
-  startedAt: string
-  lastActivityAt: string
-  lockedByName: string
-}
-
-type ProjectProcessOptionRow = {
-  name?: string | null
-}
-
 const EDIT_LOCK_HOURS = 48
 const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
 const SURFACE_RADIUS = 8
@@ -96,36 +103,6 @@ const SURFACE_TEXT = '#f8fafc'
 const SURFACE_MUTED = 'rgba(255,255,255,0.72)'
 const PFMEA_CELL_TEXT = '#d7dbe3'
 const PFMEA_ACCENT = '#d9a86c'
-
-/* ===================== PFMEA helpers (mini) ===================== */
-
-function isInt1to10(n: any): n is number {
-  return typeof n === 'number' && Number.isFinite(n) && Number.isInteger(n) && n >= 1 && n <= 10
-}
-function safeMul(a: number | null, b: number | null): number | null {
-  if (a == null || b == null) return null
-  const x = a * b
-  if (!Number.isFinite(x)) return null
-  return Math.trunc(x)
-}
-function safeRpn(sev: number | null, oxd: number | null): number | null {
-  if (sev == null || oxd == null) return null
-  const x = sev * oxd
-  if (!Number.isFinite(x)) return null
-  return Math.trunc(x)
-}
-function computeMiniDerived(row: PfmeaMiniRow): Pick<PfmeaMiniRow, 'oxd' | 'rpn'> {
-  const sev = isInt1to10(row.severity) ? row.severity : null
-  const occ = isInt1to10(row.occurrence) ? row.occurrence : null
-  const det = isInt1to10(row.detection) ? row.detection : null
-  const oxd = safeMul(occ, det)
-  const rpn = safeRpn(sev, oxd)
-  return { oxd, rpn }
-}
-function clamp10(n: number) {
-  if (!Number.isFinite(n)) return 1
-  return Math.max(1, Math.min(10, Math.round(n)))
-}
 
 /* ===================== Layout ===================== */
 
@@ -141,105 +118,6 @@ const EDGE_MARKER = {
 }
 const ZOOM_BASE = 0.6
 
-
-/* ===================== HELPERS ===================== */
-
-function isOperation(n: Node<PfdData>) {
-  return n.data.kind === 'operation'
-}
-function isLinearStepNode(n: Node<PfdData>) {
-  return n.data.kind === 'operation' || n.data.kind === 'processref'
-}
-function sortOpsByNumber(nodes: Node<PfdData>[]) {
-  return [...nodes].sort((a, b) => (a.data.opNo ?? 0) - (b.data.opNo ?? 0))
-}
-function sortLinearSteps(nodes: Node<PfdData>[]) {
-  return [...nodes].sort((a, b) => (a.position.y - b.position.y) || (a.position.x - b.position.x))
-}
-function findLinearTail(nodes: Node<PfdData>[], edges: Edge[]) {
-  const linearSteps = sortLinearSteps(nodes.filter(isLinearStepNode))
-  if (linearSteps.length === 0) return null
-
-  const linearIds = new Set(linearSteps.map((n) => n.id))
-  const tails = linearSteps.filter(
-    (node) => !edges.some((edge) => edge.source === node.id && linearIds.has(edge.target))
-  )
-
-  return tails.at(-1) ?? linearSteps.at(-1) ?? null
-}
-function findSmallestFree10(existing: number[]) {
-  const set = new Set(existing)
-  for (let x = 10; x <= 10000; x += 10) if (!set.has(x)) return x
-  return (existing.length ? Math.max(...existing) : 0) + 10
-}
-function isOperationId(id: string) {
-  return typeof id === 'string' && !id.startsWith('dec-') && !id.startsWith('cir-')
-}
-
-function nodeRect(n: Node<PfdData>) {
-  if (n.data.kind === 'operation') return { w: OP_WIDTH, h: OP_HEIGHT }
-  if (n.data.kind === 'processref') return { w: OP_WIDTH, h: OP_HEIGHT }
-  if (n.data.kind === 'decision') return { w: DEC_W, h: DEC_H }
-  if (n.data.kind === 'circle') return { w: CIRCLE_D, h: CIRCLE_D }
-  if (n.data.kind === 'startstop') {
-    return { w: START_W, h: START_H }
-  }
-  if (n.data.kind === 'triangle') {
-    return { w: TRI_W, h: TRI_H }
-  }
-  if (n.data.kind === 'frame') {
-    return { w: n.data.frameW ?? 360, h: n.data.frameH ?? 220 }
-  }
-  return { w: 0, h: 0 }
-}
-
-function overlapRatio(aStart: number, aEnd: number, bStart: number, bEnd: number) {
-  const overlap = Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart))
-  const len = Math.min(aEnd - aStart, bEnd - bStart)
-  if (len <= 0) return 0
-  return overlap / len
-}
-
- 
-
-function sanitizeNodes(nodes: Node<PfdData>[]): Node<PfdData>[] {
-  return nodes.map((n) => {
-    if (n.data.kind === 'frame') {
-      return {
-        ...n,
-        selected: false,
-        draggable: true,
-        selectable: true,
-        connectable: false,
-        dragHandle: '.frame-drag-handle',
-        style: { ...(n.style ?? {}), zIndex: -1, pointerEvents: 'none' as const },
-      }
-    }
-    return { ...n, selected: false }
-  })
-}
-
-function sanitizeEdges(edges: Edge[]) {
-  return edges.map((e) => {
-    if (!e.data || typeof e.data !== 'object') {
-      return { ...e, selected: false }
-    }
-
-    const raw = e.data as Record<string, unknown>
-    const routeV = raw.routeV
-    const keepCenter = routeV === 2
-
-    const nextData: Record<string, unknown> = { ...raw }
-    delete nextData.cpX
-    delete nextData.cpY
-    if (!keepCenter) {
-      delete nextData.centerX
-      delete nextData.centerY
-    }
-
-    return { ...e, data: nextData, selected: false }
-  })
-}
 
 /* ===================== Symbol Palette (miniaturki) ===================== */
 
@@ -455,13 +333,12 @@ function PfdPageContent() {
   const [historyAuthor, setHistoryAuthor] = useState('Unknown user')
   const [currentRevisionLabel, setCurrentRevisionLabel] = useState('0.0.0')
   const [processOptions, setProcessOptions] = useState<string[]>([])
-  const [organizationName, setOrganizationName] = useState('Unknown organization')
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [isChampion, setIsChampion] = useState(false)
+  const [moduleAccessState, setModuleAccessState] = useState<'checking' | 'allowed' | 'denied'>('checking')
+  const [canOpenPfmeaPanel, setCanOpenPfmeaPanel] = useState(true)
   const [editSession, setEditSession] = useState<PfdEditSession | null>(null)
   const [sessionMsg, setSessionMsg] = useState('')
   const [sessionBusy, setSessionBusy] = useState(false)
-  const [sessionNow, setSessionNow] = useState(() => Date.now())
   const draftLoadedFor = useRef<string>('')
   const [confirmDialog, setConfirmDialog] = useState<null | {
     title: string
@@ -477,7 +354,6 @@ function PfdPageContent() {
   }>(null)
 
   const canWork = !!projectId
-  const revisionAuthor = historyEntries[0]?.author ?? 'Unknown user'
   const sessionExpired = useMemo(() => {
     if (!editSession) return false
     const last = new Date(editSession.lastActivityAt).getTime()
@@ -487,234 +363,50 @@ function PfdPageContent() {
   const isEditOwner = !!currentUserId && !!editSession && editSession.lockedBy === currentUserId && !sessionExpired
   const isLockedByOther = !!editSession && !isEditOwner && !sessionExpired
   const isReadOnly = !isEditOwner
-  const lockRemainingText = useMemo(() => {
-    if (!editSession || !isLockedByOther) return ''
-    const last = new Date(editSession.lastActivityAt).getTime()
-    const left = Math.max(0, EDIT_LOCK_MS - (sessionNow - last))
-    const h = Math.floor(left / 3_600_000)
-    const m = Math.floor((left % 3_600_000) / 60_000)
-    return `${h}h ${m}m`
-  }, [editSession, isLockedByOther, sessionNow])
 
   const loadHistoryAuthor = useCallback(async () => {
     try {
-      const authRes = await supabase.auth.getUser()
-      const u = authRes.data.user
-      if (!u) return
-
-      const profRes = await supabase
-        .from('profiles')
-        .select('first_name,last_name')
-        .eq('id', u.id)
-        .maybeSingle()
-
-      const prof = (profRes.data ?? null) as { first_name?: string | null; last_name?: string | null } | null
-      const profFirst = prof?.first_name
-      const profLast = prof?.last_name
-      const profileFull = `${(profFirst ?? '').trim()} ${(profLast ?? '').trim()}`.trim()
-      if (profileFull) {
-        setHistoryAuthor(profileFull)
-        return
-      }
-
-      const metaFirst = (u.user_metadata?.first_name as string | undefined) ?? ''
-      const metaLast = (u.user_metadata?.last_name as string | undefined) ?? ''
-      const metaFull = `${metaFirst.trim()} ${metaLast.trim()}`.trim()
-      if (metaFull) {
-        setHistoryAuthor(metaFull)
-        return
-      }
-
-      setHistoryAuthor('Unknown user')
+      const ctx = await fetchPfdUserContext(supabase)
+      setHistoryAuthor(ctx.historyAuthor)
     } catch {}
   }, [])
 
   const loadUserContext = useCallback(async () => {
     if (!projectId) return
     try {
-      const authRes = await supabase.auth.getUser()
-      const u = authRes.data.user
-      if (!u) {
-        setCurrentUserId(null)
-        setHistoryAuthor('Unknown user')
-        setIsChampion(false)
-        return
-      }
-      setCurrentUserId(u.id)
-
-      const profRes = await supabase
-        .from('profiles')
-        .select('first_name,last_name')
-        .eq('id', u.id)
-        .maybeSingle()
-      const prof = (profRes.data ?? null) as { first_name?: string | null; last_name?: string | null } | null
-      const profileFull = `${(prof?.first_name ?? '').trim()} ${(prof?.last_name ?? '').trim()}`.trim()
-      if (profileFull) setHistoryAuthor(profileFull)
-
-      const projectRes = await supabase.from('projects').select('organization_id').eq('id', projectId).maybeSingle()
-      const organizationId = (projectRes.data as { organization_id?: string | null } | null)?.organization_id ?? null
-      if (!organizationId) {
-        setIsChampion(false)
-        return
-      }
-      const memberRes = await supabase
-        .from('organization_members')
-        .select('role')
-        .eq('organization_id', organizationId)
-        .eq('user_id', u.id)
-        .maybeSingle()
-      const role = ((memberRes.data as { role?: string | null } | null)?.role ?? '').toLowerCase()
-      setIsChampion(role === 'champion' || role === 'admin')
+      const ctx = await fetchPfdUserContext(supabase)
+      setCurrentUserId(ctx.currentUserId)
+      setHistoryAuthor(ctx.historyAuthor)
     } catch {}
   }, [projectId])
 
   const loadEditSession = useCallback(async () => {
-    if (!projectId) {
-      setEditSession(null)
-      return
-    }
     try {
-      const res = await supabase
-        .from('pfd_edit_sessions')
-        .select('project_id,locked_by,started_at,last_activity_at')
-        .eq('project_id', projectId)
-        .maybeSingle()
-      if (res.error || !res.data) {
-        setEditSession(null)
-        return
-      }
-      const row = res.data as {
-        project_id?: string | null
-        locked_by?: string | null
-        started_at?: string | null
-        last_activity_at?: string | null
-      }
-      if (!row.locked_by) {
-        setEditSession(null)
-        return
-      }
-      let lockedByName = 'Unknown user'
-      const profRes = await supabase
-        .from('profiles')
-        .select('first_name,last_name')
-        .eq('id', row.locked_by)
-        .maybeSingle()
-      if (!profRes.error && profRes.data) {
-        const p = profRes.data as { first_name?: string | null; last_name?: string | null }
-        const full = `${(p.first_name ?? '').trim()} ${(p.last_name ?? '').trim()}`.trim()
-        if (full) lockedByName = full
-      }
-      setEditSession({
-        projectId: row.project_id ?? projectId,
-        lockedBy: row.locked_by,
-        startedAt: row.started_at ?? new Date().toISOString(),
-        lastActivityAt: row.last_activity_at ?? row.started_at ?? new Date().toISOString(),
-        lockedByName,
-      })
+      const next = await fetchPfdEditSession(supabase, projectId)
+      setEditSession(next)
     } catch {
       setEditSession(null)
     }
   }, [projectId])
 
   const loadSessionNotice = useCallback(async () => {
-    if (!projectId || !currentUserId) return
     try {
-      const res = await supabase
-        .from('pfd_session_events')
-        .select('id,message')
-        .eq('project_id', projectId)
-        .eq('user_id', currentUserId)
-        .is('read_at', null)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (res.error || !res.data) return
-      const event = res.data as { id: string; message?: string | null }
-      setSessionMsg((event.message ?? '').trim() || 'Your draft session is no longer available.')
-      await supabase.from('pfd_session_events').update({ read_at: new Date().toISOString() }).eq('id', event.id)
+      if (!projectId || !currentUserId) return
+      const message = await fetchUnreadPfdSessionNotice(supabase, projectId, currentUserId)
+      if (message) setSessionMsg(message)
     } catch {}
   }, [projectId, currentUserId])
 
   const loadRevisionLabel = useCallback(async () => {
-    if (!projectId) {
-      setCurrentRevisionLabel('0.0.0')
-      return
-    }
     try {
-      const res = await supabase
-        .from('projects_with_revision')
-        .select('open_revision_label,draft_revision_label')
-        .eq('id', projectId)
-        .maybeSingle()
-      if (res.error) return
-      const row = (res.data ?? null) as { open_revision_label?: string | null; draft_revision_label?: string | null } | null
-      const label = (row?.draft_revision_label ?? row?.open_revision_label ?? '0.0.0').toString()
-      setCurrentRevisionLabel(label || '0.0.0')
+      const label = await fetchPfdRevisionLabel(supabase, projectId)
+      setCurrentRevisionLabel(label)
     } catch {}
   }, [projectId])
 
-  const loadOrganizationName = useCallback(async () => {
-    if (!projectId) {
-      setOrganizationName('Unknown organization')
-      return
-    }
-    try {
-      const projRes = await supabase.from('projects').select('organization_id').eq('id', projectId).maybeSingle()
-      const orgId = (projRes.data as { organization_id?: string | null } | null)?.organization_id ?? null
-      if (!orgId) {
-        setOrganizationName('Unknown organization')
-        return
-      }
-      const orgRes = await supabase.from('organizations').select('name').eq('id', orgId).maybeSingle()
-      const name = ((orgRes.data as { name?: string | null } | null)?.name ?? '').trim()
-      setOrganizationName(name || 'Unknown organization')
-    } catch {
-      setOrganizationName('Unknown organization')
-    }
-  }, [projectId])
-
   const loadProcessOptions = useCallback(async () => {
-    if (!projectId) {
-      setProcessOptions([])
-      return
-    }
     try {
-      const projectRes = await supabase
-        .from('projects')
-        .select('organization_id,site_department_id,name')
-        .eq('id', projectId)
-        .maybeSingle()
-      const projectRow = (projectRes.data as { organization_id?: string | null; site_department_id?: string | null; name?: string | null } | null) ?? null
-      const organizationId = projectRow?.organization_id ?? null
-      const siteDepartmentId = projectRow?.site_department_id ?? null
-      if (!organizationId) {
-        setProcessOptions([])
-        return
-      }
-
-      let query = supabase
-        .from('projects')
-        .select('name')
-        .eq('organization_id', organizationId)
-        .not('name', 'is', null)
-        .order('name', { ascending: true })
-
-      if (siteDepartmentId) query = query.eq('site_department_id', siteDepartmentId)
-
-      const optionsRes = await query
-      if (optionsRes.error) {
-        setProcessOptions([])
-        return
-      }
-
-      const values = Array.from(
-        new Set(
-          ((optionsRes.data ?? []) as ProjectProcessOptionRow[])
-            .map((row) => (row.name ?? '').trim())
-            .filter(Boolean)
-        )
-      ).sort((a, b) => a.localeCompare(b))
-
+      const values = await fetchPfdProcessOptions(supabase, projectId)
       setProcessOptions(values)
     } catch {
       setProcessOptions([])
@@ -722,79 +414,9 @@ function PfdPageContent() {
   }, [projectId])
 
   const loadHistory = useCallback(async () => {
-    if (!projectId) {
-      setHistoryEntries([])
-      return
-    }
     try {
-      const dbRes = await supabase
-        .from('pfd_change_history')
-        .select('id,created_at,revision_label,change_description,author_name,node_count,edge_count')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(200)
-
-      if (!dbRes.error && (dbRes.data?.length ?? 0) > 0) {
-        const rows = (dbRes.data ?? []) as Array<{
-          id?: string | null
-          created_at?: string | null
-          revision_label?: string | null
-          change_description?: string | null
-          author_name?: string | null
-          node_count?: number | null
-          edge_count?: number | null
-        }>
-        const normalized: PfdHistoryEntry[] = rows.map((x, idx) => {
-          const revisionLabel = (x.revision_label ?? '').toString() || '0.0.0'
-          const revision = Number.parseInt(revisionLabel.split('.')[0] ?? '', 10)
-          return {
-            id: x.id ?? `pfd-h-db-${idx}`,
-            at: x.created_at ?? new Date(0).toISOString(),
-            revision: Number.isFinite(revision) ? revision : 0,
-            revisionLabel,
-            author: (x.author_name ?? '').trim() || 'Unknown user',
-            description: x.change_description ?? '',
-            nodeCount: Number.isFinite(x.node_count) ? Number(x.node_count) : 0,
-            edgeCount: Number.isFinite(x.edge_count) ? Number(x.edge_count) : 0,
-          }
-        })
-        setHistoryEntries(normalized)
-        return
-      }
-
-      const fallbackRes = await supabase
-        .from('process_module_revisions')
-        .select('id,created_at,change_description,revision_label')
-        .eq('project_id', projectId)
-        .eq('module', 'PFD')
-        .order('created_at', { ascending: false })
-        .limit(200)
-      if (fallbackRes.error) {
-        setHistoryEntries([])
-        return
-      }
-      const fallbackRows = (fallbackRes.data ?? []) as Array<{
-        id?: string | null
-        created_at?: string | null
-        change_description?: string | null
-        revision_label?: string | null
-      }>
-      setHistoryEntries(
-        fallbackRows.map((x, idx) => {
-          const revisionLabel = (x.revision_label ?? '').toString() || '0.0.0'
-          const revision = Number.parseInt(revisionLabel.split('.')[0] ?? '', 10)
-          return {
-            id: x.id ?? `pfd-h-fb-${idx}`,
-            at: x.created_at ?? new Date(0).toISOString(),
-            revision: Number.isFinite(revision) ? revision : 0,
-            revisionLabel,
-            author: 'Unknown user',
-            description: x.change_description ?? '',
-            nodeCount: 0,
-            edgeCount: 0,
-          }
-        })
-      )
+      const entries = await fetchPfdHistory(supabase, projectId)
+      setHistoryEntries(entries)
     } catch {
       setHistoryEntries([])
     }
@@ -807,47 +429,14 @@ function PfdPageContent() {
     setSaveBusy(true)
     setErr('')
     try {
-      const payload = {
-        project_id: projectId,
+      await publishPfdDiagram(supabase, {
+        projectId,
+        currentUserId,
+        historyAuthor,
+        description,
         nodes,
         edges,
-        updated_at: new Date().toISOString(),
-      }
-      const res = await supabase.from('pfd_diagrams').upsert([payload], { onConflict: 'project_id' })
-      if (res.error) throw new Error(res.error.message)
-      const pubRes = await supabase.rpc('publish_process_module_revision', {
-        p_project_id: projectId,
-        p_module: 'PFD',
-        p_change_description: description,
-        p_user_id: currentUserId,
       })
-      if (pubRes.error) throw new Error(pubRes.error.message)
-
-      const revRes = await supabase
-        .from('process_module_revisions')
-        .select('revision_label')
-        .eq('project_id', projectId)
-        .eq('module', 'PFD')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      const revRow = (revRes.data ?? null) as { revision_label?: string | null } | null
-      const revisionLabel = (revRow?.revision_label ?? '0.0.0').toString()
-      await supabase.from('pfd_change_history').insert([
-        {
-          project_id: projectId,
-          revision_label: revisionLabel || '0.0.0',
-          change_description: description,
-          author_id: currentUserId,
-          author_name: historyAuthor || 'Unknown user',
-          node_count: nodes.length,
-          edge_count: edges.length,
-          created_at: new Date().toISOString(),
-        },
-      ])
-
-      await supabase.from('pfd_drafts').delete().eq('project_id', projectId).eq('user_id', currentUserId)
-      await supabase.from('pfd_edit_sessions').delete().eq('project_id', projectId).eq('locked_by', currentUserId)
 
       await loadRevisionLabel()
       await loadHistory()
@@ -867,66 +456,17 @@ function PfdPageContent() {
     setErr('')
     setSessionMsg('')
     try {
-      const nowIso = new Date().toISOString()
-      const res = await supabase
-        .from('pfd_edit_sessions')
-        .select('project_id,locked_by,last_activity_at')
-        .eq('project_id', projectId)
-        .maybeSingle()
-      const row = (res.data ?? null) as { locked_by?: string | null; last_activity_at?: string | null } | null
-      const otherOwner = row?.locked_by ?? null
-      const last = row?.last_activity_at ? new Date(row.last_activity_at).getTime() : 0
-      const hasActiveOther = !!otherOwner && otherOwner !== currentUserId && Date.now() - last < EDIT_LOCK_MS
-      if (hasActiveOther) {
-        setErr('This PFD is currently locked by another user.')
+      const result = await startPfdEditSession(supabase, {
+        projectId,
+        currentUserId,
+        nodes,
+        edges,
+        editLockMs: EDIT_LOCK_MS,
+      })
+
+      if (result.blocked) {
+        setErr(result.message)
         return
-      }
-
-      if (otherOwner && otherOwner !== currentUserId) {
-        await supabase.from('pfd_drafts').delete().eq('project_id', projectId).neq('user_id', currentUserId)
-        const reason = Date.now() - last >= EDIT_LOCK_MS ? '48h inactivity timeout' : 'session takeover'
-        await supabase.from('pfd_session_events').insert([
-          {
-            project_id: projectId,
-            user_id: otherOwner,
-            message: `Your PFD draft session was taken over by another user (${reason}).`,
-          },
-        ])
-      }
-
-      const upsertRes = await supabase.from('pfd_edit_sessions').upsert(
-        [
-          {
-            project_id: projectId,
-            locked_by: currentUserId,
-            started_at: nowIso,
-            last_activity_at: nowIso,
-            updated_at: nowIso,
-          },
-        ],
-        { onConflict: 'project_id' }
-      )
-      if (upsertRes.error) throw new Error(upsertRes.error.message)
-
-      const ownDraftRes = await supabase
-        .from('pfd_drafts')
-        .select('project_id')
-        .eq('project_id', projectId)
-        .eq('user_id', currentUserId)
-        .maybeSingle()
-      if (!ownDraftRes.data) {
-        await supabase.from('pfd_drafts').upsert(
-          [
-            {
-              project_id: projectId,
-              user_id: currentUserId,
-              nodes,
-              edges,
-              updated_at: nowIso,
-            },
-          ],
-          { onConflict: 'project_id,user_id' }
-        )
       }
 
       await loadEditSession()
@@ -938,106 +478,43 @@ function PfdPageContent() {
     }
   }, [projectId, currentUserId, nodes, edges, loadEditSession])
 
-  const forceUnlockSession = useCallback(async () => {
-    if (!projectId || !editSession || !isChampion) return
-    setSessionBusy(true)
-    setErr('')
-    setSessionMsg('')
-    try {
-      if (editSession.lockedBy) {
-        await supabase.from('pfd_session_events').insert([
-          {
-            project_id: projectId,
-            user_id: editSession.lockedBy,
-            message: 'Your PFD draft session was closed by Champion.',
-          },
-        ])
-      }
-      await supabase.from('pfd_drafts').delete().eq('project_id', projectId).eq('user_id', editSession.lockedBy)
-      await supabase.from('pfd_edit_sessions').delete().eq('project_id', projectId)
-      await loadEditSession()
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    } finally {
-      setSessionBusy(false)
-    }
-  }, [projectId, editSession, isChampion, loadEditSession])
-
   const loadAll = useCallback(async () => {
     if (!projectId) return
     setLoading(true)
     setErr('')
-
-    const diagRes = await supabase
-      .from('pfd_diagrams')
-      .select('project_id,nodes,edges')
-      .eq('project_id', projectId)
-      .maybeSingle()
-
-    if (diagRes.error) {
-      setErr(diagRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    const opsRes = await supabase
-      .from('operations')
-      .select('id,project_id,operation_number,name,machine,operation,active')
-      .eq('project_id', projectId)
-      .eq('active', true)
-      .order('operation_number', { ascending: true })
-
-    if (opsRes.error) {
-      setErr(opsRes.error.message)
-      setLoading(false)
-      return
-    }
-
-    const ops = (opsRes.data ?? []) as OperationRow[]
-
-    const d = diagRes.data as any
-    if (d?.nodes && d?.edges) {
-      const cleanNodes = sanitizeNodes(d.nodes as Node<PfdData>[])
-      const nodeIds = new Set(cleanNodes.map((n) => n.id))
-      setNodes(cleanNodes)
-      setEdges(sanitizeEdges(d.edges as Edge[]).filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)))
-      setLoading(false)
-      triggerCenterView()
-      return
-    }
-
-    if (ops.length === 0) {
-      const ins = await supabase
-        .from('operations')
-        .insert([{ project_id: projectId, operation_number: 10, name: '', machine: '', operation: '', active: true }])
-        .select('id,project_id,operation_number,name,machine,operation,active')
-        .single()
-
-      if (ins.error) {
-        setErr(ins.error.message)
+    try {
+      const data = await fetchPfdCanvasData(supabase, projectId)
+      if (data.diagram?.nodes && data.diagram?.edges) {
+        const cleanNodes = sanitizeNodes(data.diagram.nodes as Node<PfdData>[])
+        const nodeIds = new Set(cleanNodes.map((n) => n.id))
+        setNodes(cleanNodes)
+        setEdges(sanitizeEdges(data.diagram.edges as Edge[]).filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)))
         setLoading(false)
+        triggerCenterView()
         return
       }
-      ops.push(ins.data as any)
+
+      const startNodes: Node<PfdData>[] = data.operations.map((operation, index) => ({
+        id: operation.id,
+        type: 'operation',
+        position: { x: OPS_X, y: OPS_Y0 + index * OPS_GAP },
+        data: {
+          kind: 'operation',
+          name: operation.name ?? '',
+          opNo: operation.operation_number ?? 0,
+          station: operation.machine ?? '',
+          operation: operation.operation ?? '',
+        },
+      }))
+
+      setNodes(sanitizeNodes(startNodes))
+      setEdges([])
+      setLoading(false)
+      triggerCenterView()
+    } catch (error: any) {
+      setErr(error?.message ?? String(error))
+      setLoading(false)
     }
-
-    const startNodes: Node<PfdData>[] = ops.map((o, idx) => ({
-      id: o.id,
-      type: 'operation',
-      position: { x: OPS_X, y: OPS_Y0 + idx * OPS_GAP },
-      data: {
-        kind: 'operation',
-        name: o.name ?? '',
-        opNo: o.operation_number ?? 0,
-        station: o.machine ?? '',
-        operation: o.operation ?? '',
-      },
-    }))
-
-    setNodes(sanitizeNodes(startNodes))
-    setEdges([])
-    setLoading(false)
-    triggerCenterView()
   }, [projectId, setEdges, setNodes, triggerCenterView])
 
   const discardDraftAndCloseSession = useCallback(async () => {
@@ -1045,8 +522,7 @@ function PfdPageContent() {
     setSessionBusy(true)
     setErr('')
     try {
-      await supabase.from('pfd_drafts').delete().eq('project_id', projectId).eq('user_id', currentUserId)
-      await supabase.from('pfd_edit_sessions').delete().eq('project_id', projectId).eq('locked_by', currentUserId)
+      await discardPfdDraftAndCloseSession(supabase, { projectId, currentUserId })
       draftLoadedFor.current = ''
       await loadEditSession()
       await loadAll()
@@ -1059,23 +535,79 @@ function PfdPageContent() {
   }, [projectId, currentUserId, isEditOwner, loadEditSession, loadAll])
 
   useEffect(() => {
-    if (!projectId) return
-    loadAll()
-  }, [projectId, loadAll])
+    let alive = true
+
+    void (async () => {
+      if (!projectId) {
+        if (alive) setModuleAccessState('denied')
+        return
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      const user = session?.user ?? null
+      if (!user) return
+
+      const headerRes = await supabase.rpc('get_my_header').maybeSingle()
+      const header = (headerRes.data as { org_role?: string | null } | null) ?? null
+      const role = (header?.org_role ?? '').toLowerCase()
+
+      if (role !== 'customer') {
+        if (!alive) return
+        setCanOpenPfmeaPanel(true)
+        setModuleAccessState('allowed')
+        return
+      }
+
+      try {
+        const accessMap = await loadOwnCustomerAccessMap(user.id, [projectId])
+        const canReadPfd = hasCustomerModuleAccess(accessMap, projectId, 'PFD')
+        if (!alive) return
+
+        setCanOpenPfmeaPanel(hasCustomerModuleAccess(accessMap, projectId, 'PFMEA'))
+
+        if (!canReadPfd) {
+          setModuleAccessState('denied')
+          window.location.assign('/projects')
+          return
+        }
+
+        setModuleAccessState('allowed')
+      } catch {
+        if (!alive) return
+        setModuleAccessState('denied')
+        window.location.assign('/projects')
+      }
+    })()
+
+    return () => {
+      alive = false
+    }
+  }, [projectId])
 
   useEffect(() => {
     if (!projectId) return
+    if (moduleAccessState !== 'allowed') return
+    loadAll()
+  }, [projectId, loadAll, moduleAccessState])
+
+  useEffect(() => {
+    if (!projectId) return
+    if (moduleAccessState !== 'allowed') return
     void loadUserContext()
     void loadEditSession()
-  }, [projectId, loadUserContext, loadEditSession])
+  }, [projectId, loadUserContext, loadEditSession, moduleAccessState])
 
   useEffect(() => {
     if (!projectId) return
+    if (moduleAccessState !== 'allowed') return
     const timer = setInterval(() => {
       void loadEditSession()
     }, 30_000)
     return () => clearInterval(timer)
-  }, [projectId, loadEditSession])
+  }, [projectId, loadEditSession, moduleAccessState])
 
   useEffect(() => {
     void loadHistory()
@@ -1088,10 +620,6 @@ function PfdPageContent() {
   useEffect(() => {
     void loadRevisionLabel()
   }, [loadRevisionLabel])
-
-  useEffect(() => {
-    void loadOrganizationName()
-  }, [loadOrganizationName])
 
   useEffect(() => {
     void loadProcessOptions()
@@ -1107,19 +635,12 @@ function PfdPageContent() {
     if (draftLoadedFor.current === key) return
     draftLoadedFor.current = key
     void (async () => {
-      const res = await supabase
-        .from('pfd_drafts')
-        .select('nodes,edges')
-        .eq('project_id', projectId)
-        .eq('user_id', currentUserId)
-        .maybeSingle()
-      if (res.error || !res.data) return
-      const d = res.data as { nodes?: Node<PfdData>[]; edges?: Edge[] }
-      if (!d.nodes || !d.edges) return
-      const cleanNodes = sanitizeNodes(d.nodes as Node<PfdData>[])
+      const draft = await fetchOwnPfdDraft(supabase, { projectId, currentUserId })
+      if (!draft?.nodes || !draft?.edges) return
+      const cleanNodes = sanitizeNodes(draft.nodes as Node<PfdData>[])
       const nodeIds = new Set(cleanNodes.map((n) => n.id))
       setNodes(cleanNodes)
-      setEdges(sanitizeEdges(d.edges as Edge[]).filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)))
+      setEdges(sanitizeEdges(draft.edges as Edge[]).filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)))
       triggerCenterView()
     })()
   }, [projectId, currentUserId, isEditOwner, editSession?.startedAt, nodes.length, setEdges, setNodes, triggerCenterView])
@@ -1136,20 +657,10 @@ function PfdPageContent() {
   useEffect(() => {
     if (!projectId || !currentUserId || !isEditOwner) return
     const timer = setInterval(async () => {
-      const nowIso = new Date().toISOString()
-      await supabase
-        .from('pfd_edit_sessions')
-        .update({ last_activity_at: nowIso, updated_at: nowIso })
-        .eq('project_id', projectId)
-        .eq('locked_by', currentUserId)
+      await heartbeatPfdEditSession(supabase, { projectId, currentUserId })
     }, 60_000)
     return () => clearInterval(timer)
   }, [projectId, currentUserId, isEditOwner])
-
-  useEffect(() => {
-    const timer = setInterval(() => setSessionNow(Date.now()), 30_000)
-    return () => clearInterval(timer)
-  }, [])
 
   const saveTimer = useRef<any>(null)
   const scheduleSaveDiagram = useCallback(
@@ -1157,24 +668,12 @@ function PfdPageContent() {
       if (!projectId || !currentUserId || !isEditOwner) return
       if (saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(async () => {
-        const nowIso = new Date().toISOString()
-        await supabase.from('pfd_drafts').upsert(
-          [
-            {
-              project_id: projectId,
-              user_id: currentUserId,
-              nodes: nextNodes,
-              edges: nextEdges,
-              updated_at: nowIso,
-            },
-          ],
-          { onConflict: 'project_id,user_id' }
-        )
-        await supabase
-          .from('pfd_edit_sessions')
-          .update({ last_activity_at: nowIso, updated_at: nowIso })
-          .eq('project_id', projectId)
-          .eq('locked_by', currentUserId)
+        await savePfdDraft(supabase, {
+          projectId,
+          currentUserId,
+          nodes: nextNodes,
+          edges: nextEdges,
+        })
       }, 450)
     },
     [projectId, currentUserId, isEditOwner]
@@ -1190,14 +689,22 @@ function PfdPageContent() {
       if (!isEditOwner) return
       setNodes((nds) => nds.map((n) => (n.id === operationId ? { ...n, data: { ...n.data, ...patch } } : n)))
 
-      const upd: Partial<OperationRow> = {}
-      if (typeof patch.opNo === 'number') upd.operation_number = patch.opNo
+      const upd: {
+        operationNumber?: number
+        name?: string
+        machine?: string
+        operation?: string
+      } = {}
+      if (typeof patch.opNo === 'number') upd.operationNumber = patch.opNo
       if (typeof patch.name === 'string') upd.name = patch.name
       if (typeof patch.station === 'string') upd.machine = patch.station
       if (typeof patch.operation === 'string') upd.operation = patch.operation
 
-      const res = await supabase.from('operations').update(upd).eq('id', operationId)
-      if (res.error) setErr(res.error.message)
+      try {
+        await patchOperationRecord(supabase, operationId, upd)
+      } catch (error: any) {
+        setErr(error?.message ?? String(error))
+      }
     },
     [setNodes, isEditOwner]
   )
@@ -1205,7 +712,7 @@ function PfdPageContent() {
   const patchFrame = useCallback((frameId: string, patch: Partial<PfdData>) => {
     if (!isEditOwner) return
     setNodes((nds) => nds.map((n) => (n.id === frameId ? { ...n, data: { ...n.data, ...patch } } : n)))
-  }, [isEditOwner])
+  }, [setNodes, isEditOwner])
 
   const openPfmeaFor = useCallback(
     async (operationId: string) => {
@@ -1214,18 +721,13 @@ function PfdPageContent() {
       setSelectedEdgeId(null)
       stopEdit()
 
-      const res = await supabase
-        .from('pfmea_rows')
-        .select('id,operation_id,failure_mode,effect,cause,severity,occurrence,detection,rpn,oxd,created_at')
-        .eq('operation_id', operationId)
-        .order('created_at', { ascending: true })
-
-      if (res.error) {
-        setErr(res.error.message)
+      try {
+        const rows = await fetchPfmeaMiniRows(supabase, operationId)
+        setPfmeaMiniRows(rows)
+      } catch (error: any) {
+        setErr(error?.message ?? String(error))
         setPfmeaMiniRows([])
-        return
       }
-      setPfmeaMiniRows((res.data ?? []) as PfmeaMiniRow[])
     },
     [stopEdit]
   )
@@ -1255,7 +757,7 @@ function PfdPageContent() {
   const nodesWithHandlers = useMemo(() => {
     const mapped: Node<PfdData>[] = nodes.map((n) => {
       if (n.data.kind === 'operation') {
-        return { ...n, data: { ...n.data, editable: isEditOwner, onOpenPfmea: openPfmeaFor, onPatch: patchOperation } }
+        return { ...n, data: { ...n.data, editable: isEditOwner, onOpenPfmea: canOpenPfmeaPanel ? openPfmeaFor : undefined, onPatch: patchOperation } }
       }
       if (n.data.kind === 'processref') {
         return { ...n, data: { ...n.data, editable: isEditOwner, onPatch: patchFrame, processOptions } }
@@ -1277,7 +779,7 @@ function PfdPageContent() {
       return n
     })
     return mapped.sort((a, b) => (a.data.kind === 'frame' ? -1 : b.data.kind === 'frame' ? 1 : 0))
-  }, [nodes, openPfmeaFor, patchFrame, patchOperation, isEditOwner, processOptions])
+  }, [nodes, openPfmeaFor, patchFrame, patchOperation, isEditOwner, processOptions, canOpenPfmeaPanel])
 
   const selectedOperationLabel = useMemo(() => {
     if (!pfmeaOpenOperationId) return ''
@@ -1330,16 +832,8 @@ function PfdPageContent() {
       const selectedEdgeIds = new Set(selEdges.map((e) => e.id))
 
       setEdges((eds) => {
-        let changed = false
-        const next = eds.map((e) => {
-          const shouldSelect =
-            selectedEdgeIds.has(e.id) ||
-            (selectedNodeIds.size > 0 && selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target))
-          if (!!e.selected === shouldSelect) return e
-          changed = true
-          return { ...e, selected: shouldSelect }
-        })
-        return changed ? next : eds
+        const { changed, nextEdges } = applySelectionToEdges(eds, selectedNodeIds, selectedEdgeIds)
+        return changed ? nextEdges : eds
       })
     },
     [isEditOwner, lassoEnabled, setEdges]
@@ -1348,9 +842,7 @@ function PfdPageContent() {
   const onEdgeUpdateEnd = useCallback(
   (_e: any, edge: Edge) => {
     // jeśli po update edge nie ma source/target → usuń
-    if (!edge.source || !edge.target) {
-      setEdges((eds) => eds.filter((e) => e.id !== edge.id))
-    }
+    setEdges((eds) => removeDanglingUpdatedEdge(eds, edge))
   },
   [setEdges]
 )
@@ -1358,19 +850,7 @@ function PfdPageContent() {
 
   const onEdgeUpdate = useCallback(
   (oldEdge: Edge, newConnection: Connection) => {
-    setEdges((eds) =>
-      eds.map((e) =>
-        e.id === oldEdge.id
-          ? {
-              ...e,
-              source: newConnection.source ?? e.source,
-              sourceHandle: newConnection.sourceHandle ?? e.sourceHandle,
-              target: newConnection.target ?? e.target,
-              targetHandle: newConnection.targetHandle ?? e.targetHandle,
-            }
-          : e
-      )
-    )
+    setEdges((eds) => updateEdgeConnection(eds, oldEdge, newConnection))
   },
   [setEdges]
 )
@@ -1381,29 +861,20 @@ function PfdPageContent() {
     (params: Connection, key: string, label?: string) => {
       if (!isEditOwner) return
       if (!params.source || !params.target) return
-      const source = params.source
-      const target = params.target
       const now = Date.now()
-      for (const [k, t] of recentConnectKeys.current.entries()) {
-        if (now - t > 10000) recentConnectKeys.current.delete(k)
-      }
+      pruneRecentConnectionKeys(recentConnectKeys.current, now, 10_000)
       if (recentConnectKeys.current.has(key)) return
       recentConnectKeys.current.set(key, now)
 
-      setEdges((eds) => {
-        const edge: Edge = {
-          ...params,
-          source,
-          target,
-          id: `e-${source}-${params.sourceHandle ?? 's'}-${target}-${params.targetHandle ?? 't'}-${Date.now()}`,
-          type: 'smoothedit',
+      setEdges((eds) =>
+        appendConnectionEdge(eds, params, {
           pathOptions: { borderRadius: Math.max(8, Math.round(14 * S)), offset: Math.round(15 * S) },
-          label,
           markerEnd: EDGE_MARKER,
-          style: { strokeWidth: 1 * S, stroke: '#dbe7f5' },
-        }
-        return addEdge(edge, eds)
-      })
+          stroke: '#dbe7f5',
+          strokeWidth: 1 * S,
+          label,
+        })
+      )
     },
     [setEdges, isEditOwner]
   )
@@ -1429,7 +900,7 @@ function PfdPageContent() {
     if (!projectId || !isEditOwner) return
     setErr('')
 
-    const opsSorted = sortOpsByNumber(nodes.filter(isOperation))
+    const opsSorted = sortOperationsByNumber(nodes.filter(isOperationNode))
     const last = opsSorted.at(-1) ?? null
     const anchor = findLinearTail(nodes, edges) ?? last
 
@@ -1439,27 +910,20 @@ function PfdPageContent() {
     const prevStation = last?.data.station ?? ''
     const prevOperation = last?.data.operation ?? ''
 
-    const ins = await supabase
-      .from('operations')
-      .insert([
-        {
-          project_id: projectId,
-          operation_number: newOpNo,
-          name: '',
-          machine: prevStation,
-          operation: prevOperation,
-          active: true,
-        },
-      ])
-      .select('id')
-      .single()
-
-    if (ins.error) {
-      setErr(ins.error.message)
+    let inserted
+    try {
+      inserted = await createOperationRecord(supabase, {
+        projectId,
+        operationNumber: newOpNo,
+        machine: prevStation,
+        operation: prevOperation,
+      })
+    } catch (error: any) {
+      setErr(error?.message ?? String(error))
       return
     }
 
-    const newId = ins.data.id as string
+    const newId = inserted.id
     const x = anchor ? anchor.position.x : OPS_X
     const y = anchor ? anchor.position.y + OPS_GAP : OPS_Y0
 
@@ -1495,7 +959,7 @@ function PfdPageContent() {
     const sel = nodes.find((n) => n.id === selectedNodeId)
     if (!sel || sel.data.kind !== 'operation') return
 
-    const opsSorted = sortOpsByNumber(nodes.filter(isOperation))
+    const opsSorted = sortOperationsByNumber(nodes.filter(isOperationNode))
     const idx = opsSorted.findIndex((n) => n.id === sel.id)
     if (idx < 0) return
 
@@ -1518,11 +982,12 @@ function PfdPageContent() {
     }
 
     if (renumberMap.size) {
-      await Promise.all(
-        [...renumberMap.entries()].map(([id, newNo]) =>
-          supabase.from('operations').update({ operation_number: newNo }).eq('id', id)
-        )
-      )
+      try {
+        await renumberOperationRecords(supabase, renumberMap)
+      } catch (error: any) {
+        setErr(error?.message ?? String(error))
+        return
+      }
     }
 
     setNodes((nds) =>
@@ -1544,27 +1009,20 @@ function PfdPageContent() {
     const station = sel.data.station ?? ''
     const operation = sel.data.operation ?? ''
 
-    const ins = await supabase
-      .from('operations')
-      .insert([
-        {
-          project_id: projectId,
-          operation_number: insertedNo,
-          name: '',
-          machine: station,
-          operation: operation,
-          active: true,
-        },
-      ])
-      .select('id')
-      .single()
-
-    if (ins.error) {
-      setErr(ins.error.message)
+    let inserted
+    try {
+      inserted = await createOperationRecord(supabase, {
+        projectId,
+        operationNumber: insertedNo,
+        machine: station,
+        operation,
+      })
+    } catch (error: any) {
+      setErr(error?.message ?? String(error))
       return
     }
 
-    const newId = ins.data.id as string
+    const newId = inserted.id
 
     const newNode: Node<PfdData> = {
       id: newId,
@@ -1608,14 +1066,6 @@ function PfdPageContent() {
     })
   }, [nodes, selectedNodeId, projectId, setNodes, setEdges, isEditOwner])
 
-  const makeLocalNodeId = useCallback((prefix: string, nds: Node<PfdData>[]) => {
-    let id = ''
-    do {
-      id = `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-    } while (nds.some((n) => n.id === id))
-    return id
-  }, [])
-
   const decIdCounter = useRef(0)
   const addDecisionNearSelected = useCallback(() => {
     if (!isEditOwner) return
@@ -1623,19 +1073,12 @@ function PfdPageContent() {
     setNodes((nds) => {
       decIdCounter.current += 1
       const id = makeLocalNodeId('dec', nds)
-      const w = DEC_W
-      const h = DEC_H
       return [
         ...nds,
-        {
-          id,
-          type: 'decision',
-          position: { x: center.x - w / 2, y: center.y - h / 2 },
-          data: { kind: 'decision', name: `Decision ${decIdCounter.current}` },
-        },
+        createDecisionNode(id, { x: center.x - DEC_W / 2, y: center.y - DEC_H / 2 }, decIdCounter.current),
       ]
     })
-  }, [getFlowCenter, makeLocalNodeId, setNodes, isEditOwner])
+  }, [getFlowCenter, setNodes, isEditOwner])
 
   const ssIdCounter = useRef(0)
   const addStartStopNearSelected = useCallback(() => {
@@ -1644,19 +1087,12 @@ function PfdPageContent() {
     setNodes((nds) => {
       ssIdCounter.current += 1
       const id = makeLocalNodeId('ss', nds)
-      const h = START_H
-      const w = START_W
       return [
         ...nds,
-        {
-          id,
-          type: 'startstop',
-          position: { x: center.x - w / 2, y: center.y - h / 2 },
-          data: { kind: 'startstop', name: ssIdCounter.current === 1 ? 'START' : `STOP ${ssIdCounter.current}` },
-        },
+        createStartStopNode(id, { x: center.x - START_W / 2, y: center.y - START_H / 2 }, ssIdCounter.current),
       ]
     })
-  }, [getFlowCenter, makeLocalNodeId, setNodes, isEditOwner])
+  }, [getFlowCenter, setNodes, isEditOwner])
 
 
   const circleIdCounter = useRef(0)
@@ -1666,18 +1102,12 @@ function PfdPageContent() {
     setNodes((nds) => {
       circleIdCounter.current += 1
       const id = makeLocalNodeId('cir', nds)
-      const d = CIRCLE_D
       return [
         ...nds,
-        {
-          id,
-          type: 'circle',
-          position: { x: center.x - d / 2, y: center.y - d / 2 },
-          data: { kind: 'circle', name: '00' },
-        },
+        createCircleNode(id, { x: center.x - CIRCLE_D / 2, y: center.y - CIRCLE_D / 2 }),
       ]
     })
-  }, [getFlowCenter, makeLocalNodeId, setNodes, isEditOwner])
+  }, [getFlowCenter, setNodes, isEditOwner])
 
   const triangleIdCounter = useRef(0)
   const addTriangleNearSelected = useCallback(() => {
@@ -1688,15 +1118,10 @@ function PfdPageContent() {
       const id = makeLocalNodeId('tri', nds)
       return [
         ...nds,
-        {
-          id,
-          type: 'triangle',
-          position: { x: center.x - TRI_W / 2, y: center.y - TRI_H / 2 },
-          data: { kind: 'triangle', name: `Storage ${triangleIdCounter.current}` },
-        },
+        createTriangleNode(id, { x: center.x - TRI_W / 2, y: center.y - TRI_H / 2 }, triangleIdCounter.current),
       ]
     })
-  }, [getFlowCenter, makeLocalNodeId, setNodes, isEditOwner])
+  }, [getFlowCenter, setNodes, isEditOwner])
 
   const frameIdCounter = useRef(0)
   const addFrameNearSelected = useCallback(() => {
@@ -1705,24 +1130,12 @@ function PfdPageContent() {
     setNodes((nds) => {
       frameIdCounter.current += 1
       const id = makeLocalNodeId('frame', nds)
-      const w = 360
-      const h = 220
       return [
         ...nds,
-        {
-          id,
-          type: 'frame',
-          position: { x: center.x - w / 2, y: center.y - h / 2 },
-          data: { kind: 'frame', name: 'Frame', frameW: w, frameH: h, frameLabel: '' },
-          draggable: true,
-          selectable: true,
-          connectable: false,
-          dragHandle: '.frame-drag-handle',
-          style: { zIndex: -1, pointerEvents: 'none' as const },
-        } as Node<PfdData>,
+        createFrameNode(id, { x: center.x - 180, y: center.y - 110 }, { w: 360, h: 220 }),
       ]
     })
-  }, [getFlowCenter, makeLocalNodeId, setNodes, isEditOwner])
+  }, [getFlowCenter, setNodes, isEditOwner])
 
   const addProcessRefNearSelected = useCallback(() => {
     if (!isEditOwner) return
@@ -1737,34 +1150,26 @@ function PfdPageContent() {
 
       return [
         ...nds,
-        {
-          id: newId,
-          type: 'processref',
-          position: { x, y },
-          data: { kind: 'processref', name: '', processOptions },
-        },
+        createProcessRefNode(newId, { x, y }, processOptions),
       ]
     })
 
     if (anchor) {
       setEdges((eds) => {
-        const e1: Edge = {
-          id: `e-${anchor.id}-bottom-${newId}-top-${Date.now()}`,
-          source: anchor.id,
-          sourceHandle: 'bottom-s',
-          target: newId,
-          targetHandle: 'top-t',
-          type: 'smoothedit',
-          pathOptions: { borderRadius: Math.max(8, Math.round(14 * S)), offset: Math.round(15 * S) },
-          markerEnd: EDGE_MARKER,
-          style: { strokeWidth: 1 * S, stroke: '#dbe7f5' },
-        }
+        const e1: Edge = createLinearStepEdge(
+          anchor.id,
+          newId,
+          { borderRadius: Math.max(8, Math.round(14 * S)), offset: Math.round(15 * S) },
+          EDGE_MARKER,
+          '#dbe7f5',
+          1 * S
+        )
 
         return [...eds, e1]
       })
       return
     }
-  }, [isEditOwner, makeLocalNodeId, nodes, edges, processOptions, setEdges, setNodes])
+  }, [isEditOwner, nodes, edges, processOptions, setEdges, setNodes])
 
   
 
@@ -1807,8 +1212,7 @@ function PfdPageContent() {
       if (nodesToDelete.length === 0) return
 
       if (opNodes.length > 0) {
-        await Promise.all(opNodes.map((n) => supabase.from('pfmea_rows').delete().eq('operation_id', n.id)))
-        await Promise.all(opNodes.map((n) => supabase.from('operations').update({ active: false }).eq('id', n.id)))
+        await archiveOperationsAndDeletePfmea(supabase, opNodes.map((n) => n.id))
       }
 
       const ids = new Set(nodesToDelete.map((n) => n.id))
@@ -1852,11 +1256,14 @@ function PfdPageContent() {
 
   const resequenceOperations = useCallback(async () => {
     if (!isEditOwner) return
-    const ops = sortOpsByNumber(nodes.filter(isOperation))
-    const map = new Map<string, number>()
-    ops.forEach((n, idx) => map.set(n.id, (idx + 1) * 10))
-
-    await Promise.all(ops.map((n) => supabase.from('operations').update({ operation_number: map.get(n.id) }).eq('id', n.id)))
+    const ops = sortOperationsByNumber(nodes.filter(isOperationNode))
+    let map: Map<string, number>
+    try {
+      map = await resequenceOperationRecords(supabase, ops.map((n) => n.id))
+    } catch (error: any) {
+      setErr(error?.message ?? String(error))
+      return
+    }
     setNodes((nds) =>
       nds.map((n) => (n.data.kind === 'operation' ? { ...n, data: { ...n.data, opNo: map.get(n.id) } } : n))
     )
@@ -1916,81 +1323,10 @@ function PfdPageContent() {
   const onNodeDrag = useCallback(
     (_e: any, n: Node<PfdData>) => {
       if (!isEditOwner) return
-      if (n.data.kind === 'frame') return
-      const SNAP_DIST = 24
-      const GAP = MAGNET_GAP
-      const r = nodeRect(n)
-      if (r.w <= 0 || r.h <= 0) return
-      const offA = { x: 0, y: 0 }
-
-      let bestDx = 0
-      let bestDy = 0
-      let bestDxDist = Infinity
-      let bestDyDist = Infinity
-
-      const aLeft = n.position.x + offA.x
-      const aTop = n.position.y + offA.y
-      const aRight = n.position.x + r.w + offA.x
-      const aBottom = n.position.y + r.h + offA.y
-      const aCenterX = n.position.x + r.w / 2 + offA.x
-      const aCenterY = n.position.y + r.h / 2 + offA.y
-
-      const considerDx = (dx: number) => {
-        const d = Math.abs(dx)
-        if (d < bestDxDist && d <= SNAP_DIST) {
-          bestDxDist = d
-          bestDx = dx
-        }
-      }
-      const considerDy = (dy: number) => {
-        const d = Math.abs(dy)
-        if (d < bestDyDist && d <= SNAP_DIST) {
-          bestDyDist = d
-          bestDy = dy
-        }
-      }
-
-      nodes.forEach((other) => {
-        if (other.id === n.id) return
-        if (other.data.kind === 'frame') return
-        const or = nodeRect(other)
-        if (or.w <= 0 || or.h <= 0) return
-        const offB = { x: 0, y: 0 }
-
-        const bLeft = other.position.x + offB.x
-        const bTop = other.position.y + offB.y
-        const bRight = other.position.x + or.w + offB.x
-        const bBottom = other.position.y + or.h + offB.y
-        const bCenterX = other.position.x + or.w / 2 + offB.x
-        const bCenterY = other.position.y + or.h / 2 + offB.y
-
-        // Existing center-to-center magnet
-        considerDx(bCenterX - aCenterX)
-        considerDy(bCenterY - aCenterY)
-
-        // New gap magnet: keep the same gap as default Operation spacing, for all node types except frame.
-        const vertOverlap = overlapRatio(aTop, aBottom, bTop, bBottom)
-        if (vertOverlap > 0.12) {
-          // A to the right of B => A.left = B.right + GAP
-          considerDx(bRight + GAP - aLeft)
-          // A to the left of B => A.right = B.left - GAP
-          considerDx(bLeft - GAP - aRight)
-        }
-
-        const horOverlap = overlapRatio(aLeft, aRight, bLeft, bRight)
-        if (horOverlap > 0.12) {
-          // A below B => A.top = B.bottom + GAP
-          considerDy(bBottom + GAP - aTop)
-          // A above B => A.bottom = B.top - GAP
-          considerDy(bTop - GAP - aBottom)
-        }
-      })
-
-      if (bestDxDist !== Infinity || bestDyDist !== Infinity) {
+      const snapped = snapDraggedNode(nodes, n, { snapDistance: 24, gap: MAGNET_GAP })
+      if (snapped) {
         setNodes((nds) =>
-          nds.map((node) =>
-            node.id === n.id ? { ...node, position: { x: n.position.x + bestDx, y: n.position.y + bestDy } } : node
-          )
+          nds.map((node) => (node.id === n.id ? { ...node, position: snapped } : node))
         )
       }
     },
@@ -2062,83 +1398,39 @@ function PfdPageContent() {
 
   const reloadMini = useCallback(async () => {
     if (!pfmeaOpenOperationId) return
-    const res = await supabase
-      .from('pfmea_rows')
-      .select('id,operation_id,failure_mode,effect,cause,severity,occurrence,detection,rpn,oxd,created_at')
-      .eq('operation_id', pfmeaOpenOperationId)
-      .order('created_at', { ascending: true })
-
-    if (res.error) {
-      setErr(res.error.message)
+    try {
+      const rows = await fetchPfmeaMiniRows(supabase, pfmeaOpenOperationId)
+      setPfmeaMiniRows(rows)
+    } catch (error: any) {
+      setErr(error?.message ?? String(error))
+      setPfmeaMiniRows([])
       return
     }
-    setPfmeaMiniRows((res.data ?? []) as PfmeaMiniRow[])
   }, [pfmeaOpenOperationId])
 
   const addMiniRow = useCallback(async () => {
     if (!pfmeaOpenOperationId) return
     setErr('')
-
-    const payload = {
-      operation_id: pfmeaOpenOperationId,
-      failure_mode: '',
-      effect: '',
-      cause: '',
-      severity: null,
-      occurrence: null,
-      detection: null,
-      oxd: null,
-      rpn: null,
-
-      class: null,
-      current_prevention: '',
-      current_detection: '',
-      recommended_action: '',
-      responsible: '',
-      target_date: null,
-      action_status: 'OPEN',
-      occurrence2: null,
-      detection2: null,
-      rpn2: null,
-      oxd2: null,
-      rpn_current: null,
-      oxd_current: null,
+    try {
+      await createPfmeaMiniRow(supabase, pfmeaOpenOperationId)
+      await reloadMini()
+    } catch (error: any) {
+      setErr(error?.message ?? String(error))
     }
-
-    const ins = await supabase.from('pfmea_rows').insert([payload])
-    if (ins.error) {
-      setErr(ins.error.message)
-      return
-    }
-    await reloadMini()
   }, [pfmeaOpenOperationId, reloadMini])
 
 
   const updateMiniCell = useCallback(async (row: PfmeaMiniRow, patch: Partial<PfmeaMiniRow>) => {
     setErr('')
-
-    const guarded: any = { ...patch }
-    ;(['severity', 'occurrence', 'detection'] as (keyof PfmeaMiniRow)[]).forEach((k) => {
-      if (k in guarded) {
-        const v = guarded[k]
-        if (v === null) return
-        if (!isInt1to10(v)) guarded[k] = null
-      }
-    })
-
-    const merged: PfmeaMiniRow = { ...row, ...(guarded as any) }
-    const derived = computeMiniDerived(merged)
-
-    const res = await supabase.from('pfmea_rows').update({ ...guarded, ...derived }).eq('id', row.id)
-    if (res.error) {
-      setErr(res.error.message)
-      return
+    try {
+      const nextRow = await updatePfmeaMiniRow(supabase, row, patch)
+      setPfmeaMiniRows((rows) => rows.map((current) => (current.id === row.id ? nextRow : current)))
+    } catch (error: any) {
+      setErr(error?.message ?? String(error))
     }
-
-    setPfmeaMiniRows((rows) => rows.map((r) => (r.id === row.id ? ({ ...r, ...(guarded as any), ...derived } as any) : r)))
   }, [])
 
-  const colOrder: ColKey[] = ['failure_mode', 'effect', 'cause', 'severity', 'occurrence', 'detection']
+  const colOrder = useMemo<ColKey[]>(() => ['failure_mode', 'effect', 'cause', 'severity', 'occurrence', 'detection'], [])
   const colIndex = (c: ColKey) => colOrder.indexOf(c)
 
   const startEdit = useCallback((rowId: string, col: ColKey) => setEdit({ rowId, col }), [])
@@ -2147,7 +1439,7 @@ function PfdPageContent() {
     setTimeout(() => editRef.current?.focus(), 0)
   }, [edit])
 
-  function nextCell(rowIndex: number, colIdx: number) {
+  const nextCell = useCallback((rowIndex: number, colIdx: number) => {
     let c = colIdx + 1
     let r = rowIndex
     if (c >= colOrder.length) {
@@ -2155,8 +1447,9 @@ function PfdPageContent() {
       r = Math.min(rowIndex + 1, Math.max(0, pfmeaMiniRows.length - 1))
     }
     return { r, c }
-  }
-  function prevCell(rowIndex: number, colIdx: number) {
+  }, [colOrder, pfmeaMiniRows.length])
+
+  const prevCell = useCallback((rowIndex: number, colIdx: number) => {
     let c = colIdx - 1
     let r = rowIndex
     if (c < 0) {
@@ -2164,7 +1457,7 @@ function PfdPageContent() {
       r = Math.max(rowIndex - 1, 0)
     }
     return { r, c }
-  }
+  }, [colOrder])
 
   const handleCellKeyDown = useCallback(
     (
@@ -2190,12 +1483,16 @@ function PfdPageContent() {
         return
       }
     },
-    [pfmeaMiniRows, stopEdit]
+    [colOrder, nextCell, pfmeaMiniRows, prevCell, stopEdit]
   )
 
   const pfmeaOpen = Boolean(pfmeaOpenOperationId)
   const flowHeight = pfmeaOpen ? '75vh' : '100vh'
   const panelHeight = pfmeaOpen ? '25vh' : '0px'
+
+  if (moduleAccessState !== 'allowed') {
+    return null
+  }
 
   if (!canWork) {
     return (
@@ -2227,7 +1524,7 @@ function PfdPageContent() {
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'linear-gradient(180deg, rgba(101, 69, 46, 0.58), rgba(23, 31, 51, 0.86))',
+          background: 'linear-gradient(180deg, rgba(88, 58, 39, 0.58), rgba(23, 31, 51, 0.86))',
         }}
       />
       {sessionMsg ? (
@@ -2610,7 +1907,7 @@ function PfdPageContent() {
                           value={row.severity ?? 1}
                           editing={edit?.rowId === row.id && edit?.col === 'severity'}
                           onStart={() => startEdit(row.id, 'severity')}
-                          onChange={(v) => updateMiniCell(row, { severity: clamp10(v) })}
+                          onChange={(v) => updateMiniCell(row, { severity: clampPfmeaMiniScore(v) })}
                           onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('severity'), false)}
                           onBlur={stopEdit}
                           editorRef={editRef}
@@ -2622,7 +1919,7 @@ function PfdPageContent() {
                           value={row.occurrence ?? 1}
                           editing={edit?.rowId === row.id && edit?.col === 'occurrence'}
                           onStart={() => startEdit(row.id, 'occurrence')}
-                          onChange={(v) => updateMiniCell(row, { occurrence: clamp10(v) })}
+                          onChange={(v) => updateMiniCell(row, { occurrence: clampPfmeaMiniScore(v) })}
                           onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('occurrence'), false)}
                           onBlur={stopEdit}
                           editorRef={editRef}
@@ -2634,7 +1931,7 @@ function PfdPageContent() {
                           value={row.detection ?? 1}
                           editing={edit?.rowId === row.id && edit?.col === 'detection'}
                           onStart={() => startEdit(row.id, 'detection')}
-                          onChange={(v) => updateMiniCell(row, { detection: clamp10(v) })}
+                          onChange={(v) => updateMiniCell(row, { detection: clampPfmeaMiniScore(v) })}
                           onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('detection'), false)}
                           onBlur={stopEdit}
                           editorRef={editRef}
@@ -2650,7 +1947,7 @@ function PfdPageContent() {
                           fontSize: 15,
                         })}
                       >
-                        {row.rpn ?? computeMiniDerived(row).rpn ?? ''}
+                        {row.rpn ?? computePfmeaMiniDerived(row).rpn ?? ''}
                       </td>
                     </tr>
                   ))}

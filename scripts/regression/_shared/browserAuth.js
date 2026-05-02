@@ -1,8 +1,32 @@
 const { buildTargetUrl } = require('./env')
 
-function isAuthRedirect(url, baseUrl) {
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isLoginPage(url) {
+  return /\/login(?:\?|$)/.test(url)
+}
+
+function isHomePage(url, baseUrl) {
   const normalizedBase = baseUrl.replace(/\/+$/, '')
-  return /\/login(?:\?|$)/.test(url) || url === `${normalizedBase}/`
+  return url === `${normalizedBase}/`
+}
+
+function targetReached(url, targetPath) {
+  return new RegExp(escapeRegExp(targetPath) + '(?:[?#]|$)').test(url)
+}
+
+async function hasLoginForm(page) {
+  const emailInput = page.locator('input[name="email"]').first()
+  const passwordInput = page.locator('input[name="password"]').first()
+  return (await emailInput.count()) > 0 && (await passwordInput.count()) > 0
+}
+
+async function hasAuthenticatedShell(page) {
+  if (await page.getByRole('button', { name: /^Log out$/i }).count()) return true
+  if (await page.getByRole('link', { name: /^Projects$/i }).count()) return true
+  return false
 }
 
 async function setReactInputValue(page, selector, value) {
@@ -24,20 +48,49 @@ async function ensureLoggedIn(page, { baseUrl, targetPath, email, password }) {
   const targetUrl = buildTargetUrl(baseUrl, targetPath)
   await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
-  if (!isAuthRedirect(page.url(), baseUrl)) return
+
+  if (targetReached(page.url(), targetPath)) return
+
+  if (isHomePage(page.url(), baseUrl) && (await hasAuthenticatedShell(page))) {
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
+    if (targetReached(page.url(), targetPath)) return
+  }
+
+  if (!isLoginPage(page.url()) && !(await hasLoginForm(page))) {
+    const bodyText = (await page.locator('body').innerText()).slice(0, 3000)
+    throw new Error(`User did not reach ${targetPath} and is not on login page. URL=${page.url()}\n\n${bodyText}`)
+  }
 
   const loginUrl = buildTargetUrl(baseUrl, `/login?next=${encodeURIComponent(targetPath)}`)
   await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
 
+  const emailInput = page.locator('input[name="email"]').first()
+  const passwordInput = page.locator('input[name="password"]').first()
+
+  if (!(await emailInput.count()) || !(await passwordInput.count())) {
+    await page.waitForTimeout(1500)
+    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
+
+    if (targetReached(page.url(), targetPath)) {
+      return
+    }
+  }
+
+  if (!(await emailInput.count()) || !(await passwordInput.count())) {
+    const bodyText = (await page.locator('body').innerText()).slice(0, 3000)
+    throw new Error(`Login form did not become available for ${targetPath}. URL=${page.url()}\n\n${bodyText}`)
+  }
+
   await setReactInputValue(page, 'input[name="email"]', email)
   await setReactInputValue(page, 'input[name="password"]', password)
 
   await page.locator('form').first().getByRole('button', { name: /^Log in$/i }).click()
-  await page.waitForURL(new RegExp(targetPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), { timeout: 30000 }).catch(() => {})
+  await page.waitForURL(new RegExp(escapeRegExp(targetPath)), { timeout: 30000 }).catch(() => {})
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
 
-  if (isAuthRedirect(page.url(), baseUrl)) {
+  if (!targetReached(page.url(), targetPath)) {
     const bodyText = (await page.locator('body').innerText()).slice(0, 3000)
     throw new Error(`UI login did not reach ${targetPath}. URL=${page.url()}\n\n${bodyText}`)
   }

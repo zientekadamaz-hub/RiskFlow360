@@ -36,61 +36,74 @@ async function maybeScreenshot(page, label) {
   return screenshotPath
 }
 
-async function fillEffectCauseAndActionOnCurrentRow(page, row, { effect, sev, cause, occ, prev, detText, detVal, action }) {
-  await fillTextCellInRow(page, row, 'effect', effect)
-  await selectScaleValueInRow(page, row, 'severity', sev)
-  await fillTextCellInRow(page, row, 'cause', cause)
-  await selectScaleValueInRow(page, row, 'occurrence', occ)
-  await fillTextCellInRow(page, row, 'current_prevention', prev)
-  await fillTextCellInRow(page, row, 'current_detection', detText)
-  await selectScaleValueInRow(page, row, 'detection', detVal)
-  await fillTextCellInRow(page, row, 'recommended_action', action)
-}
+async function pickCleanSeedRow(table) {
+  const rows = table.locator('tbody tr')
+  const count = await rows.count()
 
-async function fillCauseAndActionOnCurrentRow(page, row, { cause, occ, prev, detText, detVal, action }) {
-  await fillTextCellInRow(page, row, 'cause', cause)
-  await selectScaleValueInRow(page, row, 'occurrence', occ)
-  await fillTextCellInRow(page, row, 'current_prevention', prev)
-  await fillTextCellInRow(page, row, 'current_detection', detText)
-  await selectScaleValueInRow(page, row, 'detection', detVal)
-  await fillTextCellInRow(page, row, 'recommended_action', action)
+  for (let i = 0; i < count; i += 1) {
+    const row = rows.nth(i)
+    const hasAddButton = (await row.getByRole('button', { name: /Add failure mode row/i }).count()) > 0
+    if (!hasAddButton) continue
+
+    const text = (await row.innerText()).replace(/\s+/g, ' ').trim()
+    if (/TREE_|MERGE_|FMORD_|DBG_/i.test(text)) continue
+
+    return row
+  }
+
+  return null
 }
 
 async function main() {
   const config = getPfmeaConfig()
   const { browser, page } = await launchRegressionPage()
+  let step = 'launch'
 
   try {
+    step = 'open-pfmea'
     await openPfmea(page, config)
+    step = 'start-edit'
     const editState = await startPfmeaEdit(page)
+    step = 'find-table'
     const table = await findPfmeaTable(page)
 
     const rowsWithAddButton = table
       .locator('tbody tr')
       .filter({ has: table.locator('button[title="Add failure mode row"]') })
     const hasAddableRow = (await rowsWithAddButton.count()) > 0
-    const seedRow = hasAddableRow ? rowsWithAddButton.first() : table.locator('tbody tr').first()
+    const cleanSeedRow = hasAddableRow ? await pickCleanSeedRow(table) : null
+    const seedRow = cleanSeedRow ?? (hasAddableRow ? rowsWithAddButton.first() : table.locator('tbody tr').first())
     await seedRow.waitFor({ state: 'visible', timeout: 30000 })
 
     const fmText = `${RUN_ID}_FM_1`
+    step = 'add-failure-mode-1'
     const fmRow = hasAddableRow
       ? await addFailureMode(table, seedRow, fmText)
       : await materializeFailureMode(table, seedRow, fmText)
 
-    await fillEffectCauseAndActionOnCurrentRow(page, fmRow, {
-      effect: `${RUN_ID}_E_1_1`,
-      sev: 9,
-      cause: `${RUN_ID}_C_1_1_1`,
-      occ: 3,
-      prev: `${RUN_ID}_P_1_1_1`,
-      detText: `${RUN_ID}_D_1_1_1`,
-      detVal: 9,
-      action: `${RUN_ID}_A_1_1_1_1`,
-    })
+    step = 'fill-first-branch-effect'
+    await fillTextCellInRow(page, fmRow, 'effect', `${RUN_ID}_E_1_1`)
+    step = 'fill-first-branch-severity'
+    await selectScaleValueInRow(page, fmRow, 'severity', 9)
+    step = 'fill-first-branch-cause'
+    await fillTextCellInRow(page, fmRow, 'cause', `${RUN_ID}_C_1_1_1`)
+    step = 'fill-first-branch-occurrence'
+    await selectScaleValueInRow(page, fmRow, 'occurrence', 3)
+    step = 'fill-first-branch-prev'
+    await fillTextCellInRow(page, fmRow, 'current_prevention', `${RUN_ID}_P_1_1_1`)
+    step = 'fill-first-branch-det-text'
+    await fillTextCellInRow(page, fmRow, 'current_detection', `${RUN_ID}_D_1_1_1`)
+    step = 'fill-first-branch-det'
+    await selectScaleValueInRow(page, fmRow, 'detection', 9)
+    await page.waitForTimeout(1000)
+    step = 'fill-first-branch-action'
+    await fillTextCellInRow(page, fmRow, 'recommended_action', `${RUN_ID}_A_1_1_1_1`)
 
+    step = 'add-second-action'
     await addAction(page, table, fmRow, `${RUN_ID}_A_1_1_1_2`)
 
-    const cause2Row = await addCause(
+    step = 'add-second-cause'
+    await addCause(
       page,
       table,
       fmRow,
@@ -101,30 +114,41 @@ async function main() {
       6
     )
 
+    step = 'add-second-effect'
     const effect2Row = await addEffect(page, table, fmRow, `${RUN_ID}_E_1_2`, 7)
-    await fillCauseAndActionOnCurrentRow(page, effect2Row, {
-      cause: `${RUN_ID}_C_1_2_1`,
-      occ: 5,
-      prev: `${RUN_ID}_P_1_2_1`,
-      detText: `${RUN_ID}_D_1_2_1`,
-      detVal: 7,
-      action: `${RUN_ID}_A_1_2_1_1`,
-    })
+    step = 'fill-second-branch-cause'
+    await fillTextCellInRow(page, effect2Row, 'cause', `${RUN_ID}_C_1_2_1`)
+    step = 'fill-second-branch-occurrence'
+    await selectScaleValueInRow(page, effect2Row, 'occurrence', 5)
+    step = 'fill-second-branch-prev'
+    await fillTextCellInRow(page, effect2Row, 'current_prevention', `${RUN_ID}_P_1_2_1`)
+    step = 'fill-second-branch-det-text'
+    await fillTextCellInRow(page, effect2Row, 'current_detection', `${RUN_ID}_D_1_2_1`)
+    step = 'fill-second-branch-det'
+    await selectScaleValueInRow(page, effect2Row, 'detection', 7)
+    await page.waitForTimeout(1000)
+    step = 'fill-second-branch-action'
+    await fillTextCellInRow(page, effect2Row, 'recommended_action', `${RUN_ID}_A_1_2_1_1`)
 
+    step = 'collect-before-save'
     await page.waitForTimeout(1000)
     const beforeSaveRows = await collectRunRows(table, RUN_ID)
     const beforeScreenshot = await maybeScreenshot(page, 'before-save')
 
+    step = 'save-draft'
     await savePfmeaDraft(page, `PFMEA tree save regression ${RUN_ID}`)
+    step = 'reload-after-save'
     await page.goto(`${config.baseUrl}/pfmea?project=${config.projectId}`, { waitUntil: 'domcontentloaded', timeout: 30000 })
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
+    step = 'find-table-after-save'
     const tableAfter = await findPfmeaTable(page)
     await page.waitForTimeout(1500)
+    step = 'collect-after-save'
     const afterSaveRows = await collectRunRows(tableAfter, RUN_ID)
     const afterScreenshot = await maybeScreenshot(page, 'after-save')
 
-    const beforeTexts = beforeSaveRows.map((row) => row.text)
-    const afterTexts = afterSaveRows.map((row) => row.text)
+    const beforeTexts = beforeSaveRows.map((row) => row.compactText ?? row.text.replace(/\s+/g, ''))
+    const afterTexts = afterSaveRows.map((row) => row.compactText ?? row.text.replace(/\s+/g, ''))
     ensure(beforeSaveRows.length === afterSaveRows.length, 'Row count changed after save', {
       beforeCount: beforeSaveRows.length,
       afterCount: afterSaveRows.length,
@@ -152,6 +176,24 @@ async function main() {
         2
       )
     )
+  } catch (error) {
+    const highlightedMissing = await page
+      .locator('td.flashMissing')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          cellKey: node.getAttribute('data-pfmea-col'),
+          text: (node.textContent || '').replace(/\s+/g, ' ').trim(),
+        }))
+      )
+      .catch(() => [])
+    const failureScreenshot = await maybeScreenshot(page, `failure-${step.replace(/[^a-z0-9]+/gi, '-')}`).catch(() => null)
+    error.context = {
+      ...(error.context ?? {}),
+      step,
+      highlightedMissing,
+      failureScreenshot,
+    }
+    throw error
   } finally {
     await browser.close()
   }

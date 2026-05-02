@@ -1,0 +1,21 @@
+
+> pfmea-app@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.1 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.68.57:3000
+- Environments: .env.local
+
+✓ Starting...
+Creating turbopack project { dir: 'C:\\Users\\zieada\\pfmea-app', testMode: true }
+✓ Ready in 2.2s
+ GET / 200 in 2.8s (compile: 1773ms, proxy.ts: 324ms, render: 701ms)
+ GET / 200 in 1231ms (compile: 607ms, proxy.ts: 7ms, render: 617ms)
+ GET /login 200 in 325ms (compile: 229ms, proxy.ts: 44ms, render: 53ms)
+ GET /request-access 200 in 244ms (compile: 178ms, proxy.ts: 6ms, render: 60ms)
+ GET /waiting-for-invite?token=test 200 in 187ms (compile: 121ms, proxy.ts: 8ms, render: 58ms)
+ GET /waiting-for-invite?token=test 200 in 56ms (compile: 5ms, proxy.ts: 6ms, render: 46ms)
+ GET /login?next=%2Fprojects 200 in 84ms (compile: 16ms, proxy.ts: 5ms, render: 63ms)
+ GET /waiting-for-invite?token=test 200 in 308ms (compile: 123ms, proxy.ts: 9ms, render: 176ms)
+[?25h

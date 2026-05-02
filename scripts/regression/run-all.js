@@ -15,7 +15,7 @@ function commandForScript(script) {
 }
 
 function isBrowserRegression(script) {
-  return script.startsWith('regression:pfmea:') || script === 'regression:pcp:smoke'
+  return script.startsWith('regression:pfmea:') || script === 'regression:pcp:smoke' || script === 'regression:pcp:save'
 }
 
 function getMaxAttempts(script) {
@@ -57,6 +57,7 @@ function main() {
     ['PFMEA merge', 'regression:pfmea:merge'],
     ['PFMEA save', 'regression:pfmea:save'],
     ['PCP smoke', 'regression:pcp:smoke'],
+    ['PCP save', 'regression:pcp:save'],
   ]
 
   if (process.env.REGRESSION_SKIP_PFMEA_ORDER !== '1') {

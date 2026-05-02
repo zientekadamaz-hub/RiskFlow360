@@ -1,11 +1,8 @@
 // src/app/lib/supabaseBrowser.ts
 import { createBrowserClient } from '@supabase/ssr'
+import { env } from '@/lib/env'
 import { createBrowserSessionCookieAdapter } from './supabaseSessionCookies'
 
-export const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    cookies: createBrowserSessionCookieAdapter(),
-  }
-)
+export const supabase = createBrowserClient(env.supabaseUrl, env.supabaseAnonKey, {
+  cookies: createBrowserSessionCookieAdapter(),
+})

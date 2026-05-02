@@ -1,39 +1,49 @@
-﻿'use client'
+'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@app/lib/supabaseBrowser'
+import {
+  SETTINGS_ACCESS_CACHE_KEY,
+  getHeaderContext,
+  hasSupabaseAuthCookie,
+  isSettingsAllowed,
+  readHeaderCache,
+  withTimeout,
+} from '@/lib/auth/client-session'
 
 const ROLE_RETRY_COUNT = 1
 const ROLE_RETRY_DELAY_MS = 0
 const AUTH_UNKNOWN_TIMEOUT_MS = 6000
 const AUTH_UNKNOWN_RETRY_MS = 1000
 const AUTH_UNKNOWN_MAX_RETRIES = 5
-const SETTINGS_ACCESS_CACHE_KEY = '__SETTINGS_ACCESS_OK__'
-const HEADER_CACHE_KEY = '__APP_HEADER_CACHE__'
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const isAdminOnlyRoute = pathname === '/settings/ui-preview' || pathname.startsWith('/settings/ui-preview/')
+
+  const isRouteAllowed = useCallback(
+    (row: { org_role?: string | null; global_role?: string | null } | null) => {
+      if (!row) return false
+      if (isAdminOnlyRoute) return row.global_role === 'admin'
+      return isSettingsAllowed(row)
+    },
+    [isAdminOnlyRoute]
+  )
 
   const [checking, setChecking] = useState(true)
   const [optimisticRender, setOptimisticRender] = useState(false)
   const [hardBlock, setHardBlock] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    try {
-      const raw = window.sessionStorage.getItem(HEADER_CACHE_KEY)
-      if (!raw) return false
-      const parsed = JSON.parse(raw) as {
-        userId?: string
-        orgRole?: string | null
-        userRole?: string | null
-      }
-      if (!parsed || typeof parsed.userId !== 'string') return false
-      const allowed =
-        parsed.userRole === 'admin' || parsed.orgRole === 'admin' || parsed.orgRole === 'champion'
-      return !allowed
-    } catch {
-      return false
-    }
+    const cached = readHeaderCache()
+    return !isRouteAllowed(
+      cached
+        ? {
+            org_role: cached.orgRole ?? null,
+            global_role: cached.userRole ?? null,
+          }
+        : null
+    )
   })
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -65,43 +75,28 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       }
     } catch {}
 
-    const checkRole = async (userId: string) => {
-      const withTimeout = async <T,>(p: PromiseLike<T>, ms: number): Promise<T> => {
-        let timeoutId: ReturnType<typeof setTimeout> | null = null
-        try {
-          return await Promise.race([
-            p,
-            new Promise<T>((_, reject) => {
-              timeoutId = setTimeout(() => reject(new Error('timeout')), ms)
-            }),
-          ])
-        } finally {
-          if (timeoutId) clearTimeout(timeoutId)
-        }
-      }
-
+    const checkRole = async () => {
       for (let i = 0; i < ROLE_RETRY_COUNT; i += 1) {
-        let memRes: any = null
         try {
-          memRes = await withTimeout(
-            supabase
-              .from('organization_members')
-              .select('role')
-              .eq('user_id', userId)
-              .limit(1)
-              .maybeSingle(),
-            1200
-          )
+          const headerRes = await withTimeout(getHeaderContext(), 1200)
+          if (!alive) return null
+
+          if (headerRes.status === 'error') {
+            throw new Error('header-error')
+          }
+
+          if (headerRes.status === 'no-org') {
+            return { ok: false, role: null, hasOrganization: false, error: false }
+          }
+
+          return {
+            ok: isRouteAllowed(headerRes.row),
+            role: headerRes.row?.org_role ?? headerRes.row?.global_role ?? null,
+            hasOrganization: true,
+            error: false,
+          }
         } catch {
-          memRes = { error: new Error('timeout'), data: null }
-        }
-
-        if (!alive) return null
-
-        if (!memRes.error) {
-          const role = (memRes.data as any)?.role as string | undefined
-          const ok = role === 'admin' || role === 'champion'
-          return { ok, role: role ?? null, error: false }
+          if (!alive) return null
         }
 
         if (i < ROLE_RETRY_COUNT - 1) {
@@ -109,7 +104,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         }
       }
 
-      return { ok: false, role: null, error: true }
+      return { ok: false, role: null, hasOrganization: false, error: true }
     }
 
     const markAccessGranted = (userId: string) => {
@@ -137,33 +132,9 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       }
     }
 
-    const hasAuthCookie = () => {
-      if (typeof document === 'undefined') return false
-      return document.cookie
-        .split(';')
-        .map((c) => c.trim().split('=')[0])
-        .some((n) => n.startsWith('sb-') && n.includes('auth-token'))
-    }
-    const readHeaderCache = () => {
-      if (typeof window === 'undefined') return null
-      try {
-        const raw = window.sessionStorage.getItem(HEADER_CACHE_KEY)
-        if (!raw) return null
-        const parsed = JSON.parse(raw) as {
-          userId?: string
-          orgRole?: string | null
-          userRole?: string | null
-        }
-        if (!parsed || typeof parsed.userId !== 'string') return null
-        return parsed
-      } catch {
-        return null
-      }
-    }
-
-    const handleSession = async (session: any | null) => {
+    const handleSession = async (session: Session | null) => {
       if (!session?.user) {
-        const hasCookie = hasAuthCookie()
+        const hasCookie = hasSupabaseAuthCookie()
         if (!hasCookie) {
           clearAccessGranted()
           redirectTo('/')
@@ -174,8 +145,10 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       clearFallback()
       const cached = readHeaderCache()
       if (cached && cached.userId === session.user.id) {
-        const isAllowed =
-          cached.userRole === 'admin' || cached.orgRole === 'admin' || cached.orgRole === 'champion'
+        const isAllowed = isRouteAllowed({
+          org_role: cached.orgRole ?? null,
+          global_role: cached.userRole ?? null,
+        })
         if (!isAllowed) {
           clearAccessGranted()
           setHardBlock(true)
@@ -187,8 +160,10 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       if (warmAccessUserId && warmAccessUserId !== session.user.id) {
         clearAccessGranted()
       }
-      const canUseWarm = warmAccess && warmAccessUserId === session.user.id
-      // Only show settings optimistically when access was verified recently for this user.
+      const canUseWarm =
+        warmAccess &&
+        warmAccessUserId === session.user.id &&
+        (!isAdminOnlyRoute || (cached && cached.userId === session.user.id && cached.userRole === 'admin'))
       if (canUseWarm) {
         setOptimisticRender(true)
         setChecking(false)
@@ -199,7 +174,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         setErrorMsg(null)
       }
 
-      const roleRes = await checkRole(session.user.id)
+      const roleRes = await checkRole()
       if (!alive || !roleRes) return
 
       if (roleRes.error) {
@@ -207,7 +182,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           retries += 1
           clearFallback()
           fallbackId = setTimeout(() => {
-            void resolveBySession('role-error-retry')
+            void resolveBySession()
           }, AUTH_UNKNOWN_RETRY_MS)
           return
         }
@@ -219,7 +194,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       if (!roleRes.ok) {
         clearAccessGranted()
         setHardBlock(true)
-        if (!roleRes.role) {
+        if (!roleRes.hasOrganization && !isAdminOnlyRoute) {
           redirectTo('/waiting-for-invite')
         } else {
           redirectTo('/')
@@ -233,7 +208,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       setChecking(false)
     }
 
-    const resolveBySession = async (source: string) => {
+    const resolveBySession = async () => {
       if (!alive) return
       const { data } = await supabase.auth.getSession()
       if (!alive) return
@@ -242,7 +217,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         return
       }
 
-      const hasCookie = hasAuthCookie()
+      const hasCookie = hasSupabaseAuthCookie()
       if (!hasCookie) {
         clearAccessGranted()
         redirectTo('/')
@@ -253,7 +228,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         retries += 1
         clearFallback()
         fallbackId = setTimeout(() => {
-          void resolveBySession('retry')
+          void resolveBySession()
         }, AUTH_UNKNOWN_RETRY_MS)
         return
       }
@@ -272,7 +247,12 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       redirectTo('/')
     }
 
-    if (warmAccess) {
+    const cached = readHeaderCache()
+    const canWarmRender =
+      warmAccess &&
+      (!isAdminOnlyRoute || (cached && cached.userId === warmAccessUserId && cached.userRole === 'admin'))
+
+    if (canWarmRender) {
       setChecking(false)
       setErrorMsg(null)
       setOptimisticRender(true)
@@ -284,10 +264,12 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     }
 
     fallbackId = setTimeout(() => {
-      void resolveBySession('timeout')
+      void resolveBySession()
     }, AUTH_UNKNOWN_TIMEOUT_MS)
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!alive) return
 
       if (event === 'SIGNED_OUT') {
@@ -300,10 +282,10 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       if (event === 'INITIAL_SESSION') {
         if (session?.user) {
           await handleSession(session)
-        } else if (hasAuthCookie()) {
+        } else if (hasSupabaseAuthCookie()) {
           clearFallback()
           fallbackId = setTimeout(() => {
-            void resolveBySession('initial-empty-cookie')
+            void resolveBySession()
           }, 200)
         } else {
           clearAccessGranted()
@@ -321,11 +303,10 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       alive = false
       clearFallback()
       try {
-        // @ts-ignore
-        sub?.subscription?.unsubscribe?.()
+        subscription.unsubscribe()
       } catch {}
     }
-  }, [pathname, attempt])
+  }, [attempt, isAdminOnlyRoute, isRouteAllowed, pathname])
 
   if (hardBlock) {
     return null

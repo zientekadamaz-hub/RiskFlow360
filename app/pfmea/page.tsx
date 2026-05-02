@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
 import { colorToBg as RISK_MATRIX_COLOR_HEX, type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/matrixColors'
+import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 
 /* ===================== TYPES ===================== */
 
@@ -102,7 +103,8 @@ type Mode = 'manual' | 'rpn'
 type RiskColor = RiskMatrixColor
 
 type DbCell = {
-  project_id: string
+  organization_id?: string | null
+  project_id?: string | null
   severity: number
   do_value: number
   color: RiskColor
@@ -151,7 +153,6 @@ type PfmeaEditSession = {
 type PfdDiagramRow = {
   nodes?: Array<{ id?: string | null; data?: { kind?: string | null } | null }> | null
 }
-type ExcelScalar = string | number | null | undefined
 type PfmeaColumnId =
   | 'id'
   | 'station'
@@ -188,7 +189,6 @@ const SURFACE_RADIUS = 8
 const SURFACE_BG = 'rgba(255,255,255,0.08)'
 const SURFACE_BG_STRONG = 'rgba(255,255,255,0.12)'
 const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
-const SURFACE_BORDER_STRONG = 'rgba(255,255,255,0.22)'
 const SURFACE_PANEL_BG = 'rgb(40, 39, 47)'
 const SURFACE_TEXT = '#f8fafc'
 const SURFACE_MUTED = 'rgba(255,255,255,0.72)'
@@ -394,13 +394,6 @@ function colorFill(c: RiskColor) {
   if (c === 'orange') return 'rgba(251,146,60,0.18)'
   if (c === 'yellow') return 'rgba(250,204,21,0.22)'
   return 'rgba(34,197,94,0.18)'
-}
-
-function colorText(c: RiskColor) {
-  if (c === 'red') return 'rgb(239,68,68)'
-  if (c === 'orange') return 'rgb(251,146,60)'
-  if (c === 'yellow') return 'rgb(250,204,21)'
-  return 'rgb(34,197,94)'
 }
 
 function colorBorder(c: RiskColor) {
@@ -868,19 +861,6 @@ function toFiniteNumber(value: unknown): number | null {
   return null
 }
 
-function pickHistoryAuthor(row: Record<string, unknown>): string {
-  return (
-    normalizeHistoryText(row.author_name) ||
-    normalizeHistoryText(row.updated_by_name) ||
-    normalizeHistoryText(row.created_by_name) ||
-    normalizeHistoryText(row.user_name) ||
-    normalizeHistoryText(row.updated_by) ||
-    normalizeHistoryText(row.created_by) ||
-    normalizeHistoryText(row.user_id) ||
-    'Unknown user'
-  )
-}
-
 function normalizeClassValue(raw: string | null | undefined): string | null {
   if (raw == null) return null
   const source = String(raw).trim()
@@ -926,114 +906,6 @@ function opQualityScore(op: Operation, rowHits: number): number {
   const hasOperation = (op.operation ?? '').trim() !== '' ? 1 : 0
   const hasRows = rowHits > 0 ? 1 : 0
   return hasRows * 1000 + hasName * 100 + hasStation * 10 + hasOperation * 5 + Math.min(rowHits, 99)
-}
-
-function excelXmlEscape(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-function sanitizeFileNamePart(value: string): string {
-  const clean = value.replace(/[\\/:*?"<>|]+/g, '_').trim()
-  return clean || 'PFMEA'
-}
-
-function buildExcelReportXml(params: {
-  sheetName: string
-  title: string
-  generatedAtIso: string
-  summaryRows: Array<[string, ExcelScalar]>
-  headers: string[]
-  dataRows: ExcelScalar[][]
-}): string {
-  const toCell = (raw: ExcelScalar, styleId: string) => {
-    const v = raw ?? ''
-    const isNum = typeof v === 'number' && Number.isFinite(v)
-    const type = isNum ? 'Number' : 'String'
-    const text = isNum ? String(v) : excelXmlEscape(String(v))
-    return `<Cell ss:StyleID="${styleId}"><Data ss:Type="${type}">${text}</Data></Cell>`
-  }
-
-  const maxCols = Math.max(
-    2,
-    params.headers.length,
-    ...params.dataRows.map((r) => r.length)
-  )
-
-  const titleRow = `<Row><Cell ss:StyleID="title" ss:MergeAcross="${Math.max(0, maxCols - 1)}"><Data ss:Type="String">${excelXmlEscape(params.title)}</Data></Cell></Row>`
-  const generatedRow = `<Row><Cell ss:StyleID="metaLabel"><Data ss:Type="String">Generated at</Data></Cell><Cell ss:StyleID="metaValue"><Data ss:Type="String">${excelXmlEscape(params.generatedAtIso)}</Data></Cell></Row>`
-  const blankRow = '<Row/>'
-
-  const summaryXml = params.summaryRows
-    .map(
-      ([k, v]) =>
-        `<Row>${toCell(k, 'metaLabel')}${toCell(v, 'metaValue')}</Row>`
-    )
-    .join('')
-
-  const headerXml = `<Row>${params.headers.map((h) => toCell(h, 'header')).join('')}</Row>`
-  const rowsXml = params.dataRows
-    .map((row) => `<Row>${row.map((c) => toCell(c, 'cell')).join('')}</Row>`)
-    .join('')
-
-  const sheetName = excelXmlEscape(params.sheetName.slice(0, 31))
-
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  <Styles>
-    <Style ss:ID="Default" ss:Name="Normal">
-      <Alignment ss:Vertical="Center"/>
-      <Font ss:FontName="Calibri" ss:Size="11"/>
-    </Style>
-    <Style ss:ID="title">
-      <Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1"/>
-    </Style>
-    <Style ss:ID="header">
-      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
-      <Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/>
-      <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
-      </Borders>
-    </Style>
-    <Style ss:ID="metaLabel">
-      <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>
-    </Style>
-    <Style ss:ID="metaValue">
-      <Font ss:FontName="Calibri" ss:Size="11"/>
-    </Style>
-    <Style ss:ID="cell">
-      <Font ss:FontName="Calibri" ss:Size="11"/>
-      <Borders>
-        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
-        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
-        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
-        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
-      </Borders>
-    </Style>
-  </Styles>
-  <Worksheet ss:Name="${sheetName}">
-    <Table>
-      ${titleRow}
-      ${generatedRow}
-      ${blankRow}
-      ${summaryXml}
-      ${blankRow}
-      ${headerXml}
-      ${rowsXml}
-    </Table>
-  </Worksheet>
-</Workbook>`
 }
 
 function makeEmptyPfmeaPayload(
@@ -1166,6 +1038,73 @@ function buildPfmeaRowMatchKey(row: PfmeaRow) {
   ])
 }
 
+function buildPfmeaRowContentKey(row: PfmeaRow) {
+  return JSON.stringify([
+    row.operation_id || row.operations?.id || '',
+    row.failure_mode ?? '',
+    row.effect ?? '',
+    asInt1to10(row.severity) ?? '',
+    row.characteristic ?? '',
+    normalizeClassValue(row.class) ?? '',
+    row.cause ?? '',
+    asInt1to10(row.occurrence) ?? '',
+    row.current_prevention ?? '',
+    row.current_detection ?? '',
+    asInt1to10(row.detection) ?? '',
+    row.recommended_action ?? '',
+    row.responsible ?? '',
+    row.target_date ?? '',
+    row.action_status ?? '',
+    asInt1to10(row.occurrence2) ?? '',
+    asInt1to10(row.detection2) ?? '',
+  ])
+}
+
+function findEquivalentPublishedPfmeaRow(rows: PfmeaRow[], sourceRow: PfmeaRow) {
+  const operationId = sourceRow.operation_id || sourceRow.operations?.id || null
+  const sameOperationRows = rows.filter((row) => (row.operation_id || row.operations?.id || null) === operationId)
+  if (sameOperationRows.length === 0) return null
+
+  const sourceRowNo = normalizePfmeaRowNo(sourceRow.row_no)
+  if (sourceRowNo) {
+    const byRowNo = sameOperationRows.filter((row) => normalizePfmeaRowNo(row.row_no) === sourceRowNo)
+    if (byRowNo.length === 1) return byRowNo[0]
+  }
+
+  const sourceGroupKey = JSON.stringify([
+    normalizePfmeaGroupId(sourceRow.failure_mode_group_id) ?? '',
+    normalizePfmeaGroupId(sourceRow.failure_block_group_id) ?? '',
+    normalizePfmeaGroupId(sourceRow.action_plan_group_id) ?? '',
+  ])
+  if (sourceGroupKey !== JSON.stringify(['', '', ''])) {
+    const byGroupIds = sameOperationRows.filter(
+      (row) =>
+        JSON.stringify([
+          normalizePfmeaGroupId(row.failure_mode_group_id) ?? '',
+          normalizePfmeaGroupId(row.failure_block_group_id) ?? '',
+          normalizePfmeaGroupId(row.action_plan_group_id) ?? '',
+        ]) === sourceGroupKey
+    )
+    if (byGroupIds.length === 1) return byGroupIds[0]
+  }
+
+  const sourceContentKey = buildPfmeaRowContentKey(sourceRow)
+  const byContent = sameOperationRows.filter((row) => buildPfmeaRowContentKey(row) === sourceContentKey)
+  if (byContent.length === 1) return byContent[0]
+
+  const sourceCreatedAt = (sourceRow.created_at ?? '').trim()
+  if (sourceCreatedAt) {
+    const byCreatedAt = sameOperationRows.filter((row) => (row.created_at ?? '').trim() === sourceCreatedAt)
+    if (byCreatedAt.length === 1) return byCreatedAt[0]
+  }
+
+  const sourceKey = buildPfmeaRowMatchKey(sourceRow)
+  const byFullSignature = sameOperationRows.filter((row) => buildPfmeaRowMatchKey(row) === sourceKey)
+  if (byFullSignature.length === 1) return byFullSignature[0]
+
+  return null
+}
+
 function findEquivalentPfmeaRow(rows: PfmeaRow[], sourceRow: PfmeaRow) {
   const operationId = sourceRow.operation_id || sourceRow.operations?.id || null
   const sameOperationRows = rows.filter((row) => (row.operation_id || row.operations?.id || null) === operationId)
@@ -1233,6 +1172,29 @@ function buildPfmeaCreatedAtOrder(rows: PfmeaRow[]) {
   }))
 }
 
+function buildPfmeaRowsWithOrderMetadata(rows: PfmeaRow[]) {
+  const orderedRows = sortPfmeaRows(rows).filter((row) => !isPlaceholderRowId(row.id))
+  const updates = buildPfmeaCreatedAtOrder(orderedRows)
+  const updateById = new Map(updates.map((item) => [item.id, item] as const))
+
+  return {
+    orderedRows: orderedRows.map((row, index) => {
+      const meta = updateById.get(row.id)
+      if (!meta) return { ...row, __sortIndex: index }
+      return {
+        ...row,
+        created_at: meta.created_at,
+        row_no: meta.row_no,
+        failure_mode_group_id: meta.failure_mode_group_id,
+        failure_block_group_id: meta.failure_block_group_id,
+        action_plan_group_id: meta.action_plan_group_id,
+        __sortIndex: index,
+      } as PfmeaRow
+    }),
+    updates,
+  }
+}
+
 function buildPfmeaPublishedSyncPatch(row: PfmeaRow) {
   return {
     row_no: normalizePfmeaRowNo(row.row_no),
@@ -1277,14 +1239,6 @@ function buildPfmeaInsertPayloadForRevision(row: PfmeaRow, revisionId: string) {
   }
 }
 
-function buildPfmeaBackupRowSnapshot(row: PfmeaRow) {
-  return {
-    source_row_id: row.id,
-    operation_id: getPfmeaRowOperationId(row),
-    ...buildPfmeaPublishedSyncPatch(row),
-  }
-}
-
 function buildPfmeaPublishedMetadataPatch(meta: {
   created_at: string
   row_no: string | null
@@ -1299,27 +1253,6 @@ function buildPfmeaPublishedMetadataPatch(meta: {
     failure_block_group_id: meta.failure_block_group_id,
     action_plan_group_id: meta.action_plan_group_id,
   }
-}
-
-function hasFailureBlockContext(row: PfmeaRow) {
-  return hasFailureModeContext(row) && !!(row.effect ?? '').trim() && asInt1to10(row.severity) != null
-}
-
-function hasCurrentRiskBlockContext(row: PfmeaRow) {
-  return (
-    hasFailureBlockContext(row) &&
-    !!(row.cause ?? '').trim() &&
-    asInt1to10(row.occurrence) != null &&
-    !!(row.current_prevention ?? '').trim() &&
-    !!(row.current_detection ?? '').trim() &&
-    asInt1to10(row.detection) != null
-  )
-}
-
-function isMissingPfmeaBackupStorageError(error: unknown) {
-  const message = (error as { message?: string } | null)?.message ?? String(error ?? '')
-  const normalized = message.toLowerCase()
-  return normalized.includes('pfmea_row_backups') && (normalized.includes('does not exist') || normalized.includes('schema cache'))
 }
 
 function summarizePfmeaRowsForError(rows: PfmeaRow[], limit = 3) {
@@ -1481,10 +1414,10 @@ function PfmeaFullPageContent() {
   const projectId = sp.get('project') ?? ''
   const opFromUrl = sp.get('op') ?? ''
 
-  const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
   const [userId, setUserId] = useState<string | null>(null)
+  const [moduleAccessState, setModuleAccessState] = useState<'checking' | 'allowed' | 'denied'>('checking')
 
   const [project, setProject] = useState<ProjectView | null>(null)
   const [draftRevisionIdOverride, setDraftRevisionIdOverride] = useState<string | null>(null)
@@ -1521,7 +1454,6 @@ function PfmeaFullPageContent() {
     onConfirm: () => Promise<boolean | void> | boolean | void
   }>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
-  const [organizationName, setOrganizationName] = useState('Unknown organization')
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyEntries, setHistoryEntries] = useState<PfmeaHistoryEntry[]>([])
@@ -1529,8 +1461,6 @@ function PfmeaFullPageContent() {
   const [isChampion, setIsChampion] = useState(false)
   const [editSession, setEditSession] = useState<PfmeaEditSession | null>(null)
   const [sessionBusy, setSessionBusy] = useState(false)
-  const [sessionMsg, setSessionMsg] = useState('')
-  const [sessionNow, setSessionNow] = useState(() => Date.now())
   const [expandedOperationId, setExpandedOperationId] = useState<string | null>(null)
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null)
   const [highlightedMissingCells, setHighlightedMissingCells] = useState<string[] | null>(null)
@@ -1596,8 +1526,12 @@ function PfmeaFullPageContent() {
   }, [])
 
   const stripPfmeaGroupIdsFromPayload = useCallback((payload: Record<string, unknown>) => {
-    const { row_no, failure_mode_group_id, failure_block_group_id, action_plan_group_id, ...rest } = payload
-    return rest
+    const next = { ...payload }
+    delete next.row_no
+    delete next.failure_mode_group_id
+    delete next.failure_block_group_id
+    delete next.action_plan_group_id
+    return next
   }, [])
 
   const scheduleTransientRowDeletion = useCallback((rowId: string) => {
@@ -1713,9 +1647,6 @@ function PfmeaFullPageContent() {
     markDirtyDraftPersisted()
   }, [markDirtyDraftPersisted])
 
-  const canWork = !!projectId
-  const canAdd = useMemo(() => canWork && !!draft.operation_id && ops.length > 0, [canWork, draft.operation_id, ops.length])
-
   const isObsolete = (project?.status ?? 'DRAFT') === 'OBSOLETE'
   const sessionExpired = useMemo(() => {
     if (!editSession) return false
@@ -1725,14 +1656,6 @@ function PfmeaFullPageContent() {
   }, [editSession])
   const isEditOwner = !!userId && !!editSession && editSession.lockedBy === userId && !sessionExpired
   const isLockedByOther = !!editSession && !isEditOwner && !sessionExpired
-  const lockRemainingText = useMemo(() => {
-    if (!editSession || !isLockedByOther) return ''
-    const last = new Date(editSession.lastActivityAt).getTime()
-    const left = Math.max(0, EDIT_LOCK_MS - (sessionNow - last))
-    const h = Math.floor(left / 3_600_000)
-    const m = Math.floor((left % 3_600_000) / 60_000)
-    return `${h}h ${m}m`
-  }, [editSession, isLockedByOther, sessionNow])
   const readOnly = isObsolete || !isEditOwner
   const activeDraftRevisionId = draftRevisionIdOverride ?? project?.current_draft_revision_id ?? null
   const workingRevisionId = isEditOwner
@@ -1750,7 +1673,7 @@ function PfmeaFullPageContent() {
   }, [highlightedMissingCells])
 
   /* ---------- auth user ---------- */
-  useEffect(() => {
+useEffect(() => {
   let alive = true
 
   ;(async () => {
@@ -1774,6 +1697,45 @@ function PfmeaFullPageContent() {
     alive = false
   }
 }, [])
+
+  useEffect(() => {
+    let alive = true
+
+    void (async () => {
+      if (!projectId || !userId) return
+
+      const headerRes = await supabase.rpc('get_my_header').maybeSingle()
+      const header = (headerRes.data as { org_role?: string | null } | null) ?? null
+      const role = (header?.org_role ?? '').toLowerCase()
+
+      if (role !== 'customer') {
+        if (alive) setModuleAccessState('allowed')
+        return
+      }
+
+      try {
+        const accessMap = await loadOwnCustomerAccessMap(userId, [projectId])
+        const canReadPfmea = hasCustomerModuleAccess(accessMap, projectId, 'PFMEA')
+        if (!alive) return
+
+        if (!canReadPfmea) {
+          setModuleAccessState('denied')
+          window.location.assign('/projects')
+          return
+        }
+
+        setModuleAccessState('allowed')
+      } catch {
+        if (!alive) return
+        setModuleAccessState('denied')
+        window.location.assign('/projects')
+      }
+    })()
+
+    return () => {
+      alive = false
+    }
+  }, [projectId, userId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1876,7 +1838,7 @@ function PfmeaFullPageContent() {
         .eq('user_id', userId)
         .maybeSingle()
       const role = ((memberRes.data as { role?: string | null } | null)?.role ?? '').toLowerCase()
-      setIsChampion(role === 'champion' || role === 'admin')
+      setIsChampion(role === 'champion')
     } catch {
       setIsChampion(false)
     }
@@ -1914,11 +1876,10 @@ function PfmeaFullPageContent() {
     }
   }, [projectId])
 
-  const startEditSession = useCallback(async () => {
+  async function startEditSession() {
     if (!projectId || !userId || isObsolete) return
     setSessionBusy(true)
     setErr('')
-    setSessionMsg('')
     resetPfmeaEditRuntimeState()
     try {
       const nowIso = new Date().toISOString()
@@ -1957,8 +1918,6 @@ function PfmeaFullPageContent() {
           clearDirtyDraftPersisted()
         }
         forceRefreshExistingDraftFromOpenRef.current = false
-        const reason = Date.now() - last >= EDIT_LOCK_MS ? '48h inactivity timeout' : 'session takeover by Champion'
-        setSessionMsg(`Previous PFMEA draft was discarded (${reason}).`)
       }
 
       if (!hasActiveOther && !hasActiveOwnedSession && hasExistingDraftRevision) {
@@ -1975,7 +1934,6 @@ function PfmeaFullPageContent() {
           setDirtyPfmeaIds([])
           setDeletedPfmeaIds([])
           clearDirtyDraftPersisted()
-          setSessionMsg('Previous PFMEA draft was refreshed from the latest OPEN revision.')
         }
       }
 
@@ -2078,9 +2036,9 @@ function PfmeaFullPageContent() {
     } finally {
       setSessionBusy(false)
     }
-  }, [projectId, userId, isObsolete, isChampion, loadEditSession, draftRevisionIdOverride, project?.current_draft_revision_id, clearDirtyDraftPersisted, resetPfmeaEditRuntimeState])
+  }
 
-  const discardDraftAndCloseSession = useCallback(async () => {
+  async function discardDraftAndCloseSession() {
     if (!projectId || !userId || !isEditOwner) return
     setSessionBusy(true)
     setErr('')
@@ -2100,13 +2058,12 @@ function PfmeaFullPageContent() {
       clearDirtyDraftPersisted()
       await loadEditSession()
       await loadAll()
-      setSessionMsg('Draft discarded. Session closed without publishing.')
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     } finally {
       setSessionBusy(false)
     }
-  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, loadEditSession, resetPfmeaEditRuntimeState])
+  }
 
   const isColumnVisible = useCallback((id: PfmeaColumnId) => {
     // Keep the delete column width reserved in both modes so row wrapping/height
@@ -2133,22 +2090,42 @@ function PfmeaFullPageContent() {
     })
   }, [])
 
-  /* ---------- load risk matrix (global) ---------- */
+  /* ---------- load risk matrix (organization fallback to global) ---------- */
   const loadRiskMatrix = useCallback(async () => {
-    const cfg = await supabase
-      .from('risk_matrix_config')
-      .select('id,mode,rpn_green_max,rpn_yellow_max,rpn_orange_max')
-      .eq('id', 1)
-      .maybeSingle()
+    const normalizeId = (value: unknown) => (value ?? '').toString().trim()
+    let organizationId = ''
 
-    if (!cfg.error && cfg.data) {
-      const c = cfg.data as DbConfig
+    if (projectId) {
+      const projectRes = await supabase
+        .from('projects')
+        .select('organization_id')
+        .eq('id', projectId)
+        .maybeSingle()
+
+      if (!projectRes.error) {
+        organizationId = normalizeId((projectRes.data as { organization_id?: string | null } | null)?.organization_id)
+      }
+    }
+
+    const cfg = organizationId
+      ? await supabase
+          .from('risk_matrix_config')
+          .select('id,mode,rpn_green_max,rpn_yellow_max,rpn_orange_max,organization_id')
+          .eq('organization_id', organizationId)
+          .maybeSingle()
+      : { data: null, error: null }
+
+    const fallbackCfg = cfg.error || !cfg.data
+      ? await supabase
+          .from('risk_matrix_config')
+          .select('id,mode,rpn_green_max,rpn_yellow_max,rpn_orange_max')
+          .eq('id', 1)
+          .maybeSingle()
+      : cfg
+
+    if (!fallbackCfg.error && fallbackCfg.data) {
+      const c = fallbackCfg.data as DbConfig
       setRmMode(c.mode)
-      setRmRpn({
-        greenMax: clampInt(c.rpn_green_max, 1, 1000),
-        yellowMax: clampInt(c.rpn_yellow_max, 1, 1000),
-        orangeMax: clampInt(c.rpn_yellow_max, 1, 1000),
-      })
       setRmRpn({
         greenMax: clampInt(c.rpn_green_max, 1, 1000),
         yellowMax: clampInt(c.rpn_yellow_max, 1, 1000),
@@ -2156,26 +2133,37 @@ function PfmeaFullPageContent() {
       })
     }
 
-    const cellsRes = await supabase
-      .from('risk_matrix_cells')
-      .select('project_id,severity,do_value,color')
-      .eq('project_id', GLOBAL_PROJECT_ID)
+    let cellsRes: {
+      data: unknown[] | null
+      error: unknown
+    } = organizationId
+      ? await supabase
+          .from('risk_matrix_cells')
+          .select('organization_id,severity,do_value,color')
+          .eq('organization_id', organizationId)
+      : { data: null, error: null }
+
+    if (cellsRes.error || !cellsRes.data?.length) {
+      cellsRes = await supabase
+        .from('risk_matrix_cells')
+        .select('project_id,severity,do_value,color')
+        .eq('project_id', GLOBAL_PROJECT_ID)
+    }
 
     if (!cellsRes.error) {
       const map: Record<string, RiskColor> = {}
-      for (const row of (cellsRes.data ?? []) as DbCell[]) {
+      for (const row of (cellsRes.data ?? []) as unknown as DbCell[]) {
         map[cellKey(row.severity, row.do_value)] = row.color
       }
       setRmCells(map)
     }
-  }, [])
+  }, [projectId])
 
   const loadScaleOptions = useCallback(async () => {
     if (!projectId) {
       setSeverityOptions([])
       setOccurrenceOptions([])
       setDetectionOptions([])
-      setOrganizationName('Unknown organization')
       return
     }
 
@@ -2192,13 +2180,8 @@ function PfmeaFullPageContent() {
       setSeverityOptions([])
       setOccurrenceOptions([])
       setDetectionOptions([])
-      setOrganizationName('Unknown organization')
       return
     }
-
-    const orgNameRes = await supabase.from('organizations').select('name').eq('id', orgId).maybeSingle()
-    const orgName = ((orgNameRes.data as { name?: string | null } | null)?.name ?? '').trim()
-    setOrganizationName(orgName || 'Unknown organization')
 
     const [sevRes, occRes, detRes] = await Promise.all([
       supabase.rpc('get_severity_effective', { p_org: orgId }),
@@ -2239,13 +2222,13 @@ function PfmeaFullPageContent() {
     return colorFromRpn(s, d, rmRpn)
   }
 
-  function getRiskColorForAverageRpn(value: number | null): RiskColor | null {
+  const getRiskColorForAverageRpn = useCallback((value: number | null): RiskColor | null => {
     if (value == null || !Number.isFinite(value)) return null
     if (value <= rmRpn.greenMax) return 'green'
     if (value <= rmRpn.yellowMax) return 'yellow'
     if (value <= rmRpn.orangeMax) return 'orange'
     return 'red'
-  }
+  }, [rmRpn])
 
   /* ---------- helper: reload only project view ---------- */
   const loadProjectView = useCallback(async (options?: { syncDraftOverride?: boolean }) => {
@@ -2299,6 +2282,7 @@ function PfmeaFullPageContent() {
         .order('created_at', { ascending: true })
         .order('id', { ascending: true })
 
+      let sourceRows: Array<Partial<PfmeaRow>> = []
       if (openRowsRes.error && isMissingPfmeaGroupIdColumnError(openRowsRes.error)) {
         pfmeaGroupIdsSupportedRef.current = false
         const legacyOpenRowsRes = await supabase
@@ -2308,11 +2292,11 @@ function PfmeaFullPageContent() {
           .order('created_at', { ascending: true })
           .order('id', { ascending: true })
         if (legacyOpenRowsRes.error) throw legacyOpenRowsRes.error
-        var sourceRows = (legacyOpenRowsRes.data ?? []) as Array<Partial<PfmeaRow>>
+        sourceRows = (legacyOpenRowsRes.data ?? []) as Array<Partial<PfmeaRow>>
       } else {
         if (openRowsRes.error) throw openRowsRes.error
         pfmeaGroupIdsSupportedRef.current = true
-        var sourceRows = (openRowsRes.data ?? []) as Array<Partial<PfmeaRow>>
+        sourceRows = (openRowsRes.data ?? []) as Array<Partial<PfmeaRow>>
       }
       if (sourceRows.length === 0) {
         sourceRows = rowsRef.current.map((row) => {
@@ -2389,12 +2373,11 @@ function PfmeaFullPageContent() {
     forceRefreshExistingDraftFromOpenRef.current = false
     if (ensured) setDraftRevisionIdOverride(ensured)
     return ensured
-  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, project?.current_draft_revision_id, project?.status, loadProjectView, workingRevisionId, project?.current_open_revision_id, persistedDirtyDraft])
+  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, project?.current_draft_revision_id, project?.status, loadProjectView, workingRevisionId, project?.current_open_revision_id, persistedDirtyDraft, isMissingPfmeaGroupIdColumnError, stripPfmeaGroupIdsFromPayload])
 
   /* ---------- load project / operations / rows ---------- */
-  async function loadAll(forceRevisionId?: string | null) {
+  const loadAll = useCallback(async (forceRevisionId?: string | null) => {
     if (!projectId) return
-    setLoading(true)
     setErr('')
 
     try {
@@ -2465,7 +2448,6 @@ function PfmeaFullPageContent() {
         clearPfmeaTransientTracking()
         rowsRef.current = []
         setRows([])
-        setLoading(false)
         return
       }
 
@@ -2532,7 +2514,6 @@ function PfmeaFullPageContent() {
         const exists = operations.some((o) => o.id === opFromUrl)
         if (exists) {
           setDraft({ operation_id: opFromUrl })
-          setLoading(false)
           return
         }
       }
@@ -2540,19 +2521,15 @@ function PfmeaFullPageContent() {
       if (!draft.operation_id && operations.length > 0) {
         setDraft({ operation_id: operations[0].id })
       }
-
-      setLoading(false)
     } catch (e: any) {
       setErr(e?.message ?? String(e))
-      setLoading(false)
     }
-  }
+  }, [projectId, isEditOwner, draftRevisionIdOverride, loadProjectView, loadRiskMatrix, loadScaleOptions, clearPfmeaTransientTracking, isMissingPfmeaGroupIdColumnError, opFromUrl, draft.operation_id])
 
   useEffect(() => {
-    if (!projectId) return
-    loadAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, isEditOwner, draftRevisionIdOverride])
+    if (moduleAccessState !== 'allowed') return
+    void loadAll()
+  }, [loadAll, moduleAccessState])
 
   useEffect(() => {
     if (!opFromUrl) return
@@ -2562,25 +2539,25 @@ function PfmeaFullPageContent() {
   useEffect(() => {
     setDraftRevisionIdOverride(null)
     setEditSession(null)
-    setSessionMsg('')
     setExpandedOperationId(null)
     forceRefreshExistingDraftFromOpenRef.current = false
   }, [projectId])
 
   useEffect(() => {
     if (!projectId) return
+    if (moduleAccessState !== 'allowed') return
     void loadUserContext()
     void loadEditSession()
-  }, [projectId, loadUserContext, loadEditSession])
+  }, [projectId, loadUserContext, loadEditSession, moduleAccessState])
 
   useEffect(() => {
     if (!projectId) return
+    if (moduleAccessState !== 'allowed') return
     const timer = setInterval(() => {
       void loadEditSession()
-      setSessionNow(Date.now())
     }, 30_000)
     return () => clearInterval(timer)
-  }, [projectId, loadEditSession])
+  }, [projectId, loadEditSession, moduleAccessState])
 
   useEffect(() => {
     if (!projectId || !userId || !isEditOwner) return
@@ -2717,32 +2694,6 @@ function PfmeaFullPageContent() {
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [expandedOperationId])
-
-  async function addRow() {
-    if (!canAdd || readOnly) return
-    setErr('')
-
-    try {
-      // ensure we have a draft to work on (if currently on OPEN)
-      const revId = await ensureDraftIfNeeded()
-      const finalRev = revId ?? workingRevisionId
-      if (!finalRev) throw new Error('No working revision found.')
-
-      const payload = makeEmptyPfmeaPayload(draft.operation_id, finalRev)
-
-      const res = await supabase
-        .from('pfmea_rows')
-        .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
-        .select('id')
-        .single()
-      if (res.error) throw res.error
-
-      if (res.data?.id) markPfmeaDirty(res.data.id)
-      await loadAll()
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    }
-  }
 
   async function deleteRow(id: string) {
     if (readOnly) return
@@ -3038,48 +2989,6 @@ function PfmeaFullPageContent() {
         break
       }
       if ((candidate.effect ?? '').trim() && asInt1to10(candidate.severity) != null) return candidate
-    }
-
-    return effectiveRow
-  }
-
-  function getActionPlanBlockSourceRowAtIndex(rowIndex: number) {
-    const effectiveRow = tableRows[rowIndex] ?? ({} as PfmeaRow)
-    const hasCurrentRiskBlock =
-      !!(effectiveRow.effect ?? '').trim() &&
-      asInt1to10(effectiveRow.severity) != null &&
-      !!(effectiveRow.cause ?? '').trim() &&
-      asInt1to10(effectiveRow.occurrence) != null &&
-      !!(effectiveRow.current_prevention ?? '').trim() &&
-      !!(effectiveRow.current_detection ?? '').trim() &&
-      asInt1to10(effectiveRow.detection) != null
-
-    if (hasCurrentRiskBlock) return effectiveRow
-
-    const opId = effectiveRow.operation_id || effectiveRow.operations?.id || null
-    const failureMode = (effectiveRow.failure_mode ?? '').trim()
-    const failureModeGroupId = normalizePfmeaGroupId(effectiveRow.failure_mode_group_id)
-    const failureBlockGroupId = normalizePfmeaGroupId(effectiveRow.failure_block_group_id)
-    for (let i = rowIndex - 1; i >= 0; i -= 1) {
-      const candidate = tableRows[i]
-      if ((candidate.operation_id || candidate.operations?.id || null) !== opId) break
-      if (failureModeGroupId) {
-        if (!samePfmeaGroupValue(candidate.failure_mode_group_id, failureModeGroupId)) break
-      } else if ((candidate.failure_mode ?? '').trim() !== failureMode) {
-        break
-      }
-      if (failureBlockGroupId && !samePfmeaGroupValue(candidate.failure_block_group_id, failureBlockGroupId)) break
-
-      const candidateHasCurrentRiskBlock =
-        !!(candidate.effect ?? '').trim() &&
-        asInt1to10(candidate.severity) != null &&
-        !!(candidate.cause ?? '').trim() &&
-        asInt1to10(candidate.occurrence) != null &&
-        !!(candidate.current_prevention ?? '').trim() &&
-        !!(candidate.current_detection ?? '').trim() &&
-        asInt1to10(candidate.detection) != null
-
-      if (candidateHasCurrentRiskBlock) return candidate
     }
 
     return effectiveRow
@@ -3480,7 +3389,7 @@ function PfmeaFullPageContent() {
     }
   }
 
-  async function fetchPfmeaRowsForRevisionScope(revisionId: string, operationIds?: string[]) {
+  const fetchPfmeaRowsForRevisionScope = useCallback(async (revisionId: string, operationIds?: string[]) => {
     if (!revisionId) return []
 
     const scopedOperationIds = Array.from(new Set((operationIds ?? []).map((id) => String(id || '').trim()).filter(Boolean)))
@@ -3512,7 +3421,7 @@ function PfmeaFullPageContent() {
 
     if (response.error) throw response.error
     return hydratePfmeaGroupIds((response.data ?? []) as unknown as PfmeaRow[])
-  }
+  }, [isMissingPfmeaGroupIdColumnError])
 
   async function remapPfmeaSnapshotRowsToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
     const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
@@ -3570,58 +3479,6 @@ function PfmeaFullPageContent() {
     }
 
     return mappedRows
-  }
-
-  async function createPfmeaSafetyBackup(sourceRevisionId: string, description: string, userId: string, sourceRows: PfmeaRow[]) {
-    const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
-    if (!projectId || snapshotRows.length === 0) return null
-
-    try {
-      const res = await supabase
-        .from('pfmea_row_backups')
-        .insert([
-          {
-            project_id: projectId,
-            source_revision_id: sourceRevisionId,
-            published_revision_id: null,
-            revision_label: project?.draft_revision_label ?? project?.open_revision_label ?? null,
-            change_description: description,
-            row_count: snapshotRows.length,
-            snapshot: snapshotRows.map((row) => buildPfmeaBackupRowSnapshot(row)),
-            created_by: userId,
-            created_at: new Date().toISOString(),
-          },
-        ])
-        .select('id')
-        .single()
-
-      if (res.error) throw res.error
-      return res.data?.id ?? null
-    } catch (backupError: any) {
-      if (!isMissingPfmeaBackupStorageError(backupError)) {
-        console.warn('PFMEA safety backup skipped:', backupError?.message ?? String(backupError))
-      }
-      return null
-    }
-  }
-
-  async function linkPfmeaSafetyBackupToPublishedRevision(backupId: string | null, publishedRevisionId: string | null, revisionLabel: string | null) {
-    if (!backupId) return
-
-    try {
-      const res = await supabase
-        .from('pfmea_row_backups')
-        .update({
-          published_revision_id: publishedRevisionId,
-          revision_label: revisionLabel ?? null,
-        })
-        .eq('id', backupId)
-      if (res.error) throw res.error
-    } catch (backupError: any) {
-      if (!isMissingPfmeaBackupStorageError(backupError)) {
-        console.warn('PFMEA safety backup link skipped:', backupError?.message ?? String(backupError))
-      }
-    }
   }
 
   async function restorePfmeaSnapshotToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
@@ -3775,8 +3632,10 @@ function PfmeaFullPageContent() {
       await flushPendingTransientDeletes()
       const cleanedRows = await cleanupEmptyTransientRows()
       const persistedRows = await persistPfmeaDraftSnapshot(draftRevisionId, cleanedRows)
-      await persistPfmeaRowOrder(draftRevisionId, persistedRows)
-      const backupId = await createPfmeaSafetyBackup(draftRevisionId, desc, uid, persistedRows)
+      const { orderedRows: orderedPersistedRows, updates: orderedPersistedUpdates } = buildPfmeaRowsWithOrderMetadata(
+        persistedRows.filter((row) => !row.revision_id || row.revision_id === draftRevisionId)
+      )
+      await persistPfmeaRowOrder(draftRevisionId, orderedPersistedRows, orderedPersistedUpdates)
 
       const { data, error } = await supabase.rpc('publish_process_module_revision', {
         p_project_id: projectId,
@@ -3794,76 +3653,62 @@ function PfmeaFullPageContent() {
             ? ((data as Record<string, unknown>).id as string)
             : null
       let publishedOpenRevisionLabel: string | null = null
-
-      if (!publishedRevisionId) {
-        try {
-          const publishedView = await loadProjectView({ syncDraftOverride: false })
-          publishedRevisionId = publishedView.current_open_revision_id ?? null
-          publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
-        } catch {}
-      } else {
-        try {
-          const publishedView = await loadProjectView({ syncDraftOverride: false })
-          publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
-        } catch {}
-      }
-
-      if (publishedRevisionId) {
-        try {
-          await syncPublishedPfmeaRowMetadata(publishedRevisionId, persistedRows)
-        } catch (syncError: any) {
-          console.warn('PFMEA published row metadata sync skipped:', syncError?.message ?? String(syncError))
-        }
-      }
-
-      await linkPfmeaSafetyBackupToPublishedRevision(backupId, publishedRevisionId, publishedOpenRevisionLabel)
-
       let integrityWarning: string | null = null
-      if (publishedRevisionId && persistedRows.length > 0) {
-        integrityWarning = await ensurePublishedPfmeaIntegrity(publishedRevisionId, persistedRows)
-      }
-
       let revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
+      let postPublishWarning: string | null = null
       try {
-        if (!normalizeHistoryText(revisionLabel) || revisionLabel === '0.0.0') {
-          const revRes = await supabase
-            .from('process_module_revisions')
-            .select('revision_label')
-            .eq('project_id', projectId)
-            .eq('module', 'PFMEA')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          if (!revRes.error) {
-            const row = (revRes.data ?? null) as { revision_label?: string | null } | null
-            revisionLabel = (row?.revision_label ?? '0.0.0').toString()
+        if (!publishedRevisionId) {
+          try {
+            const publishedView = await loadProjectView({ syncDraftOverride: false })
+            publishedRevisionId = publishedView.current_open_revision_id ?? null
+            publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
+          } catch {}
+        } else {
+          try {
+            const publishedView = await loadProjectView({ syncDraftOverride: false })
+            publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
+          } catch {}
+        }
+
+        if (publishedRevisionId) {
+          try {
+            await syncPublishedPfmeaRowMetadata(publishedRevisionId, orderedPersistedRows)
+          } catch (syncError: any) {
+            console.warn('PFMEA published row metadata sync skipped:', syncError?.message ?? String(syncError))
           }
         }
-      } catch {}
 
-      await linkPfmeaSafetyBackupToPublishedRevision(backupId, publishedRevisionId, revisionLabel)
+        if (publishedRevisionId && orderedPersistedRows.length > 0) {
+          integrityWarning = await ensurePublishedPfmeaIntegrity(publishedRevisionId, orderedPersistedRows)
+        }
 
-      let historyAuthor = 'Unknown user'
-      try {
-        historyAuthor = currentAuthorName || 'Unknown user'
-      } catch {}
+        revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
 
-      const avgRpnValue = avgRpnSummary.avg == null ? null : Math.round(avgRpnSummary.avg * 100) / 100
-      const historyInsert = await supabase.from('pfmea_change_history').insert([
-        {
-          project_id: projectId,
-          revision_label: revisionLabel || '0.0.0',
-          change_description: desc,
-          author_id: uid,
-          author_name: historyAuthor,
-          risk_count: rowsSorted.length,
-          avg_rpn: avgRpnValue,
-          created_at: new Date().toISOString(),
-        },
-      ])
-      if (historyInsert.error) {
-        // Optional table; keep publish successful even if custom history insert is unavailable.
-        console.warn('PFMEA history insert skipped:', historyInsert.error.message)
+        let historyAuthor = 'Unknown user'
+        try {
+          historyAuthor = currentAuthorName || 'Unknown user'
+        } catch {}
+
+        const avgRpnValue = avgRpnSummary.avg == null ? null : Math.round(avgRpnSummary.avg * 100) / 100
+        const historyInsert = await supabase.from('pfmea_change_history').insert([
+          {
+            project_id: projectId,
+            revision_label: revisionLabel || '0.0.0',
+            change_description: desc,
+            author_id: uid,
+            author_name: historyAuthor,
+            risk_count: rowsSorted.length,
+            avg_rpn: avgRpnValue,
+            created_at: new Date().toISOString(),
+          },
+        ])
+        if (historyInsert.error) {
+          // Optional table; keep publish successful even if custom history insert is unavailable.
+          console.warn('PFMEA history insert skipped:', historyInsert.error.message)
+        }
+      } catch (postPublishError: any) {
+        postPublishWarning = `PFMEA was published, but post-save verification did not finish cleanly. ${postPublishError?.message ?? String(postPublishError)}`
+        console.warn('PFMEA post-publish warning:', postPublishError?.message ?? String(postPublishError))
       }
 
       setShowSave(false)
@@ -3894,6 +3739,8 @@ function PfmeaFullPageContent() {
       await loadRevisionHistory()
       if (integrityWarning) {
         setErr(integrityWarning)
+      } else if (postPublishWarning) {
+        setErr(postPublishWarning)
       }
     } catch (e: any) {
       setErr(e?.message ?? String(e))
@@ -3909,16 +3756,7 @@ function PfmeaFullPageContent() {
       )
       if (!revisionId || orderedSourceRows.length === 0) return
 
-      const publishedRes = await supabase
-        .from('pfmea_rows')
-        .select('id,operation_id,created_at')
-        .eq('revision_id', revisionId)
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true })
-
-      if (publishedRes.error) throw publishedRes.error
-
-      const publishedRows = (publishedRes.data ?? []) as Array<{ id: string; operation_id: string; created_at?: string | null }>
+      const publishedRows = await fetchPfmeaRowsForRevisionScope(revisionId, getPfmeaRowOperationIds(orderedSourceRows))
       if (publishedRows.length === 0) return
 
       const sourceMeta = buildPfmeaCreatedAtOrder(orderedSourceRows)
@@ -3928,31 +3766,40 @@ function PfmeaFullPageContent() {
         patch: ReturnType<typeof buildPfmeaPublishedMetadataPatch>
       }> = []
 
-      if (
-        publishedRows.length === orderedSourceRows.length &&
-        publishedRows.every((row, index) => row.operation_id === orderedSourceRows[index]?.operation_id)
-      ) {
-        for (let index = 0; index < publishedRows.length; index += 1) {
-          const publishedRow = publishedRows[index]
-          const sourceRow = orderedSourceRows[index]
-          const meta = metadataBySourceId.get(sourceRow.id)
-          if (!meta) continue
-          updates.push({
-            id: publishedRow.id,
-            patch: buildPfmeaPublishedMetadataPatch(meta),
-          })
-        }
-      } else {
-        const publishedByOperation = new Map<string, Array<{ id: string; operation_id: string }>>()
+      const unmatchedPublishedRows = [...publishedRows]
+      const matchedSourceIds = new Set<string>()
+
+      for (const sourceRow of orderedSourceRows) {
+        const matchedPublishedRow = findEquivalentPublishedPfmeaRow(unmatchedPublishedRows, sourceRow)
+        const meta = metadataBySourceId.get(sourceRow.id)
+        if (!matchedPublishedRow || !meta) continue
+
+        matchedSourceIds.add(sourceRow.id)
+        const matchedIndex = unmatchedPublishedRows.findIndex((row) => row.id === matchedPublishedRow.id)
+        if (matchedIndex >= 0) unmatchedPublishedRows.splice(matchedIndex, 1)
+
+        updates.push({
+          id: matchedPublishedRow.id,
+          patch: buildPfmeaPublishedMetadataPatch(meta),
+        })
+      }
+
+      const remainingSourceRows = orderedSourceRows.filter((row) => !matchedSourceIds.has(row.id))
+      if (remainingSourceRows.length > 0 && unmatchedPublishedRows.length > 0) {
+        const publishedByOperation = new Map<string, PfmeaRow[]>()
         const sourceByOperation = new Map<string, PfmeaRow[]>()
 
-        for (const row of publishedRows) {
-          if (!publishedByOperation.has(row.operation_id)) publishedByOperation.set(row.operation_id, [])
-          publishedByOperation.get(row.operation_id)!.push(row)
+        for (const row of unmatchedPublishedRows) {
+          const operationId = getPfmeaRowOperationId(row)
+          if (!operationId) continue
+          if (!publishedByOperation.has(operationId)) publishedByOperation.set(operationId, [])
+          publishedByOperation.get(operationId)!.push(row)
         }
-        for (const row of orderedSourceRows) {
-          if (!sourceByOperation.has(row.operation_id)) sourceByOperation.set(row.operation_id, [])
-          sourceByOperation.get(row.operation_id)!.push(row)
+        for (const row of remainingSourceRows) {
+          const operationId = getPfmeaRowOperationId(row)
+          if (!operationId) continue
+          if (!sourceByOperation.has(operationId)) sourceByOperation.set(operationId, [])
+          sourceByOperation.get(operationId)!.push(row)
         }
 
         for (const [operationId, publishedGroup] of publishedByOperation.entries()) {
@@ -3995,7 +3842,7 @@ function PfmeaFullPageContent() {
         }
       }
     },
-    [draftRevisionIdOverride, workingRevisionId, stripPfmeaGroupIdsFromPayload]
+    [draftRevisionIdOverride, workingRevisionId, fetchPfmeaRowsForRevisionScope, stripPfmeaGroupIdsFromPayload]
   )
 
   const ensureRowForEditing = useCallback(
@@ -4073,7 +3920,7 @@ function PfmeaFullPageContent() {
         delete placeholderMaterializeRef.current[row.id]
       }
     },
-    [applyPendingCellValues, ensureDraftIfNeeded, refreshPendingCellRender, workingRevisionId, markPfmeaDirty]
+    [applyPendingCellValues, ensureDraftIfNeeded, refreshPendingCellRender, workingRevisionId, markPfmeaDirty, stripPfmeaGroupIdsFromPayload]
   )
 
   const startEditCell = useCallback(
@@ -4165,28 +4012,7 @@ function PfmeaFullPageContent() {
         )
         return
       }
-
-      const fallbackRes = await supabase
-        .from('process_module_revisions')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('module', 'PFMEA')
-        .order('created_at', { ascending: false })
-        .limit(200)
-      if (fallbackRes.error) throw fallbackRes.error
-
-      const rowsRaw = (fallbackRes.data ?? []) as Array<Record<string, unknown>>
-      setHistoryEntries(
-        rowsRaw.map((x, idx) => ({
-          id: normalizeHistoryText(x.id) || `pfmea-h-fb-${idx}`,
-          at: normalizeHistoryText(x.created_at) || new Date(0).toISOString(),
-          revisionLabel: normalizeHistoryText(x.revision_label) || '0.0.0',
-          author: pickHistoryAuthor(x),
-          riskCount: toFiniteNumber(x.risk_count),
-          avgRpn: toFiniteNumber(x.avg_rpn),
-          description: normalizeHistoryText(x.change_description),
-        }))
-      )
+      setHistoryEntries([])
     } catch (e: any) {
       setErr(e?.message ?? String(e))
       setHistoryEntries([])
@@ -4205,13 +4031,24 @@ function PfmeaFullPageContent() {
   }, [rows])
 
   const persistPfmeaRowOrder = useCallback(
-    async (revisionId: string, sourceRows?: PfmeaRow[]) => {
-      const orderedRows = sortPfmeaRows(sourceRows ?? rowsRef.current).filter(
+    async (
+      revisionId: string,
+      sourceRows?: PfmeaRow[],
+      preparedUpdates?: Array<{
+        id: string
+        created_at: string
+        row_no: string | null
+        failure_mode_group_id: string | null
+        failure_block_group_id: string | null
+        action_plan_group_id: string | null
+      }>
+    ) => {
+      const baseRows = sortPfmeaRows(sourceRows ?? rowsRef.current).filter(
         (row) => !isPlaceholderRowId(row.id) && (!row.revision_id || row.revision_id === revisionId)
       )
-      if (orderedRows.length === 0) return
+      if (baseRows.length === 0) return
 
-      const updates = buildPfmeaCreatedAtOrder(orderedRows)
+      const updates = preparedUpdates ?? buildPfmeaCreatedAtOrder(baseRows)
       const batchSize = 25
 
       for (let index = 0; index < updates.length; index += batchSize) {
@@ -4253,8 +4090,8 @@ function PfmeaFullPageContent() {
           },
         ])
       )
-      setRows((prev) =>
-        prev.map((row) => {
+      setRows((prev) => {
+        const nextRows = prev.map((row) => {
           const createdAt = createdAtById.get(row.id)
           const rowNo = rowNoById.get(row.id)
           const groupIds = groupIdsById.get(row.id)
@@ -4270,7 +4107,9 @@ function PfmeaFullPageContent() {
           }
           return { ...row, created_at: createdAt, row_no: rowNo, ...groupIds }
         })
-      )
+        rowsRef.current = nextRows
+        return nextRows
+      })
     },
     []
   )
@@ -4386,7 +4225,7 @@ function PfmeaFullPageContent() {
     }
 
     return out
-  }, [displayOps, rowsSorted, workingRevisionId, expandedOperationId])
+  }, [displayOps, rowsSorted, workingRevisionId])
 
   const avgRpnSummary = useMemo(() => {
     const buckets: Record<RiskColor, number> = { green: 0, yellow: 0, orange: 0, red: 0 }
@@ -4423,114 +4262,8 @@ function PfmeaFullPageContent() {
     const color = getRiskColorForAverageRpn(avg) ?? 'red'
 
     return { avg, color, count: values.length, buckets }
-  }, [rowsSorted, tableRows, rmMode, rmCells, rmRpn])
-
-  const exportExcelReport = useCallback(() => {
-    try {
-      const summaryRows: Array<[string, ExcelScalar]> = [
-        ['Organization', organizationName || '-'],
-        ['Process', project?.name ?? '-'],
-        ['Status', project?.status ?? '-'],
-        ['Working revision', workingRevisionLabel ?? '-'],
-        ['Operations', ops.length],
-        ['PFMEA rows', rowsSorted.length],
-        ['Avarage RPN', avgRpnSummary.avg == null ? '-' : Math.round(avgRpnSummary.avg)],
-        ['Actions must be defined', avgRpnSummary.buckets.red],
-        ['Action plan required', avgRpnSummary.buckets.orange],
-        ['Actions recommended', avgRpnSummary.buckets.yellow],
-        ['Acceptable risk', avgRpnSummary.buckets.green],
-      ]
-
-      const headers = [
-        'ID#',
-        'STATION',
-        'OPERATION',
-        'PROCESS STEP',
-        'FAILURE MODE',
-        'CHARACTERISTIC',
-        'CLASS',
-        'EFFECT',
-        'SEV',
-        'CAUSE',
-        'OCC',
-        'CURRENT CONTROLS (PREV)',
-        'CURRENT CONTROLS (DET)',
-        'DET',
-        'RPN',
-        'PCP',
-        'RECOMMENDED ACTION',
-        'RESPONSIBLE',
-        'TARGET DATE',
-        'ACTION STATUS',
-        'OCC (AFTER)',
-        'DET (AFTER)',
-        'RPN (AFTER)',
-      ]
-
-      const dataRows = rowsSorted.map((r) => {
-        const { currentRisk, residualRisk } = computePfmeaDerivedFromContext(r)
-        const pcpSelected = isPfmeaSelectedForPcp(
-          {
-            pcp: r.pcp,
-            class: r.class,
-            severity: r.severity,
-          },
-          getRiskColorFor(currentRisk.sev, currentRisk.doVal)
-        )
-        return [
-          r.operations?.operation_number ?? '',
-          r.operations?.machine ?? '',
-          r.operations?.operation ?? '',
-          r.operations?.name ?? '',
-          r.failure_mode ?? '',
-          r.characteristic ?? '',
-          normalizeClassValue(r.class) ?? '',
-          r.effect ?? '',
-          asInt1to10(r.severity) ?? '',
-          r.cause ?? '',
-          asInt1to10(r.occurrence) ?? '',
-          r.current_prevention ?? '',
-          r.current_detection ?? '',
-          asInt1to10(r.detection) ?? '',
-          currentRisk.rpn ?? '',
-          pcpSelected ? 'YES' : '',
-          r.recommended_action ?? '',
-          r.responsible ?? '',
-          r.target_date ?? '',
-          r.action_status ?? '',
-          asInt1to10(r.occurrence2) ?? '',
-          asInt1to10(r.detection2) ?? '',
-          residualRisk.rpn ?? '',
-        ] as ExcelScalar[]
-      })
-
-      const nowIso = new Date().toISOString()
-      const xml = buildExcelReportXml({
-        sheetName: 'PFMEA',
-        title: `PFMEA report - ${project?.name ?? 'Process'}`,
-        generatedAtIso: nowIso,
-        summaryRows,
-        headers,
-        dataRows,
-      })
-
-      const stamp = nowIso.slice(0, 19).replace(/[:T]/g, '-')
-      const processPart = sanitizeFileNamePart(project?.name ?? 'PFMEA')
-      const fileName = `${processPart}_PFMEA_Report_${stamp}.xls`
-
-      const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = fileName
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    }
-  }, [organizationName, project?.name, project?.status, workingRevisionLabel, ops.length, rowsSorted, tableRows, avgRpnSummary])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsSorted, rmMode, rmCells, rmRpn, getRiskColorForAverageRpn])
 
   const tableRowsMemo = useRef<PfmeaRow[]>([])
   useEffect(() => {
@@ -4574,7 +4307,7 @@ function PfmeaFullPageContent() {
     return order.filter((key) => isColumnVisible(PFMEA_EDITABLE_COLUMN_VISIBILITY[key])) as (keyof PfmeaRow)[]
   }, [isColumnVisible])
 
-  function nextCell(rowIndex: number, colIdx: number) {
+  const nextCell = useCallback((rowIndex: number, colIdx: number) => {
     if (colOrder.length === 0) return { r: rowIndex, c: 0 }
     let c = colIdx + 1
     let r = rowIndex
@@ -4583,8 +4316,8 @@ function PfmeaFullPageContent() {
       r = Math.min(rowIndex + 1, tableRowsMemo.current.length - 1)
     }
     return { r, c }
-  }
-  function prevCell(rowIndex: number, colIdx: number) {
+  }, [colOrder])
+  const prevCell = useCallback((rowIndex: number, colIdx: number) => {
     if (colOrder.length === 0) return { r: rowIndex, c: 0 }
     let c = colIdx - 1
     let r = rowIndex
@@ -4593,7 +4326,7 @@ function PfmeaFullPageContent() {
       r = Math.max(rowIndex - 1, 0)
     }
     return { r, c }
-  }
+  }, [colOrder])
 
   const handleCellKeyDown = useCallback(
     (e: React.KeyboardEvent<any>, rowIndex: number, colIdx: number, allowEnterNewline: boolean) => {
@@ -4618,7 +4351,7 @@ function PfmeaFullPageContent() {
         return
       }
     },
-    [colOrder, startEditCell, edit, clearPendingCellValue]
+    [colOrder, startEditCell, edit, clearPendingCellValue, nextCell, prevCell]
   )
 
   // ROWSPAN MAP: scalanie dla 4 pierwszych kolumn
@@ -4715,6 +4448,12 @@ function PfmeaFullPageContent() {
     fontWeight: 800,
     lineHeight: 1,
   }
+  const processNameLength = (project?.name ?? '').length
+  const processSummaryFontSize = processNameLength > 42 ? 13 : processNameLength > 28 ? 15 : processNameLength > 18 ? 18 : 24
+
+  if (moduleAccessState !== 'allowed') {
+    return null
+  }
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 18, position: 'relative', overflow: 'hidden', background: '#171f33' }}>
@@ -4734,7 +4473,7 @@ function PfmeaFullPageContent() {
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'linear-gradient(180deg, rgba(101, 69, 46, 0.58), rgba(23, 31, 51, 0.86))',
+          background: 'linear-gradient(180deg, rgba(88, 58, 39, 0.58), rgba(23, 31, 51, 0.86))',
         }}
       />
       <div style={{ position: 'relative', zIndex: 1 }}>
@@ -5036,10 +4775,17 @@ function PfmeaFullPageContent() {
                 style={{
                   ...summaryValue,
                   color: '#f8fafc',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  alignItems: 'center',
+                  display: 'flex',
+                  fontSize: processSummaryFontSize,
+                  justifyContent: 'center',
+                  lineHeight: 1.12,
+                  minHeight: 36,
+                  overflowWrap: 'anywhere',
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
                 }}
+                title={project?.name ?? '-'}
               >
                 {project?.name ?? '-'}
               </div>
@@ -5138,6 +4884,21 @@ function PfmeaFullPageContent() {
           </div>
         </div>
       </div>
+      {err ? (
+        <div
+          style={{
+            ...frame,
+            marginTop: 10,
+            background: 'rgba(239,68,68,0.12)',
+            borderColor: 'rgba(239,68,68,0.28)',
+            padding: '8px 10px',
+            color: '#fecaca',
+            fontWeight: 700,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
       {/* Save Revision Modal */}
       {showSave && (
         <div
@@ -5213,6 +4974,23 @@ function PfmeaFullPageContent() {
                 {saveBusy ? 'Saving...' : 'Save'}
               </button>
             </div>
+            {err ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  borderRadius: SURFACE_RADIUS,
+                  border: '1px solid rgba(239,68,68,0.28)',
+                  background: 'rgba(239,68,68,0.12)',
+                  padding: '8px 10px',
+                  color: '#fecaca',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  lineHeight: 1.45,
+                }}
+              >
+                {err}
+              </div>
+            ) : null}
           </div>
         </div>
       )}
@@ -5430,7 +5208,10 @@ function PfmeaFullPageContent() {
             {isEditOwner ? (
               <button
                 className="rf-button"
-                onClick={() => setShowSave(true)}
+                onClick={() => {
+                  setErr('')
+                  setShowSave(true)
+                }}
                 disabled={!isDirty || readOnly}
                 style={{
                   ...actionBtn,
@@ -7237,82 +7018,6 @@ function TdPcpToggle(props: {
   )
 }
 
-function TdNum(props: {
-  value: number | null
-  editing: boolean
-  onStart: () => void
-  onCommit: (n: number | null) => void
-  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
-  editorRef: PfmeaEditorRef
-  stopEdit: () => void
-  disabled?: boolean
-}) {
-  const [val, setVal] = useState(props.value == null ? '' : String(props.value))
-  const { editorRef } = props
-  const setInputRef = useCallback((el: HTMLInputElement | null) => {
-    editorRef.current = el
-  }, [editorRef])
-  useEffect(() => setVal(props.value == null ? '' : String(props.value)), [props.value])
-
-  const onChangeStrict = (s: string) => {
-    if (s === '') {
-      setVal('')
-      return
-    }
-    if (!/^\d{1,2}$/.test(s)) return
-    const n = Number(s)
-    if (!Number.isFinite(n)) return
-    if (n < 1 || n > 10) return
-    setVal(String(n))
-  }
-
-  const onKeyDownStrict = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const allowed = ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Escape', 'Enter']
-    if (allowed.includes(e.key)) return
-    if (/^\d$/.test(e.key)) return
-    e.preventDefault()
-  }
-
-  if (props.disabled) {
-    return <td className="pfmeaTd center singleLine">{val || ''}</td>
-  }
-
-  if (!props.editing) {
-    return (
-      <td className="pfmeaTd editable center singleLine" onClick={props.onStart}>
-        {val || ''}
-      </td>
-    )
-  }
-
-  return (
-    <td className="pfmeaTd editable center singleLine">
-      <input
-        className="pfmeaEditor"
-        ref={setInputRef}
-        value={val}
-        inputMode="numeric"
-        onKeyDown={(e) => {
-          onKeyDownStrict(e)
-          props.onKeyDown(e)
-        }}
-        onPaste={(e) => {
-          const text = e.clipboardData.getData('text')
-          const t = text.trim()
-          const n = asInt1to10(t)
-          if (!(t === '' || n != null)) e.preventDefault()
-        }}
-        onChange={(e) => onChangeStrict(e.target.value)}
-        onBlur={() => {
-          props.stopEdit()
-          props.onCommit(asInt1to10(val))
-        }}
-        style={{ ...editorBase, textAlign: 'center' as const }}
-      />
-    </td>
-  )
-}
-
 function TdDate(props: {
   value: string | null
   editing: boolean
@@ -7743,21 +7448,6 @@ function TdSelect(props: {
 
 /* ===================== STYLES ===================== */
 
-const lbl: React.CSSProperties = { fontSize: 11, color: SURFACE_MUTED, marginBottom: 6, fontWeight: 700 }
-
-const input: React.CSSProperties = {
-  width: '100%',
-  height: 40,
-  padding: '8px 10px',
-  borderRadius: SURFACE_RADIUS,
-  border: `1px solid ${SURFACE_BORDER}`,
-  outline: 'none',
-  fontWeight: 700,
-  background: SURFACE_BG,
-  color: SURFACE_TEXT,
-  fontSize: 12,
-}
-
 const actionBtn: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: SURFACE_RADIUS,
@@ -7771,28 +7461,6 @@ const actionBtn: React.CSSProperties = {
   justifyContent: 'center',
   fontFamily: 'inherit',
   background: SURFACE_BG,
-}
-
-const pillBtn: React.CSSProperties = {
-  height: 28,
-  padding: '0 12px',
-  borderRadius: SURFACE_RADIUS,
-  border: `1px solid ${SURFACE_BORDER}`,
-  background: SURFACE_BG,
-  cursor: 'pointer',
-  fontWeight: 800,
-  boxShadow: '0 10px 24px rgba(0,0,0,0.18)',
-  fontSize: 12,
-  whiteSpace: 'nowrap',
-  color: SURFACE_TEXT,
-}
-
-const pillLink: React.CSSProperties = {
-  ...pillBtn,
-  textDecoration: 'none',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
 }
 
 const editorBase: React.CSSProperties = {

@@ -1,5 +1,11 @@
--- PFMEA revision history support
--- Run in Supabase SQL editor.
+-- PFMEA revision history and edit session bootstrap
+-- This file defines structural objects only.
+-- It intentionally does not create permissive RLS policies.
+-- After running this bootstrap on a fresh environment, apply:
+--   - 2026-04-22_supabase_critical_auth_hardening.sql
+--   - 2026-04-22_supabase_session_history_hardening.sql
+--   - 2026-04-22_supabase_invites_projects_hardening.sql
+--   - 2026-04-22_supabase_anon_surface_reduction.sql
 
 create extension if not exists pgcrypto;
 
@@ -46,55 +52,3 @@ create index if not exists idx_pfmea_change_history_project_created
 
 alter table public.pfmea_change_history enable row level security;
 alter table public.pfmea_edit_sessions enable row level security;
-
-drop policy if exists "pfmea_change_history_all_auth" on public.pfmea_change_history;
-create policy "pfmea_change_history_all_auth"
-  on public.pfmea_change_history
-  for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
-
-drop policy if exists "pfmea_edit_sessions_all_auth" on public.pfmea_edit_sessions;
-create policy "pfmea_edit_sessions_all_auth"
-  on public.pfmea_edit_sessions
-  for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
-
--- Optional one-time backfill from module revision log.
-do $$
-begin
-  if to_regclass('public.process_module_revisions') is not null then
-    insert into public.pfmea_change_history (
-      project_id,
-      revision_label,
-      change_description,
-      author_id,
-      author_name,
-      risk_count,
-      avg_rpn,
-      created_at
-    )
-    select
-      pmr.project_id,
-      coalesce(pmr.revision_label, '0.0.0'),
-      coalesce(pmr.change_description, ''),
-      pmr.user_id,
-      coalesce(nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), ''), 'Unknown user'),
-      0,
-      null,
-      coalesce(pmr.created_at, now())
-    from public.process_module_revisions pmr
-    left join public.profiles p on p.id = pmr.user_id
-    where pmr.module = 'PFMEA'
-      and not exists (
-        select 1
-        from public.pfmea_change_history h
-        where h.project_id = pmr.project_id
-          and h.revision_label = coalesce(pmr.revision_label, '0.0.0')
-          and h.change_description = coalesce(pmr.change_description, '')
-          and h.created_at = coalesce(pmr.created_at, now())
-      );
-  end if;
-end
-$$;

@@ -1,5 +1,11 @@
--- PCP revision history and edit session support
--- Run in Supabase SQL editor.
+-- PCP revision history and edit session bootstrap
+-- This file defines structural objects only.
+-- It intentionally does not create permissive RLS policies.
+-- After running this bootstrap on a fresh environment, apply:
+--   - 2026-04-22_supabase_critical_auth_hardening.sql
+--   - 2026-04-22_supabase_session_history_hardening.sql
+--   - 2026-04-22_supabase_invites_projects_hardening.sql
+--   - 2026-04-22_supabase_anon_surface_reduction.sql
 
 create extension if not exists pgcrypto;
 
@@ -45,17 +51,3 @@ create index if not exists idx_pcp_change_history_project_created
 
 alter table public.pcp_change_history enable row level security;
 alter table public.pcp_edit_sessions enable row level security;
-
-drop policy if exists "pcp_change_history_all_auth" on public.pcp_change_history;
-create policy "pcp_change_history_all_auth"
-  on public.pcp_change_history
-  for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);
-
-drop policy if exists "pcp_edit_sessions_all_auth" on public.pcp_edit_sessions;
-create policy "pcp_edit_sessions_all_auth"
-  on public.pcp_edit_sessions
-  for all
-  using (auth.uid() is not null)
-  with check (auth.uid() is not null);

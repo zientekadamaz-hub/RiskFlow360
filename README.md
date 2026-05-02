@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PFMEA App
 
-## Getting Started
+Next.js application for managing process projects, PFD, PFMEA and PCP data in a shared workflow.
 
-First, run the development server:
+## Tech Stack
+
+- Next.js App Router
+- React 19
+- TypeScript
+- Supabase
+- Tailwind CSS v4
+
+## Local Development
+
+1. Install dependencies:
+
+```bash
+npm ci
+```
+
+2. Configure environment variables in `.env.local`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_BASE_PATH=
+```
+
+3. Start the app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Quality Gates
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `npm run lint` - ESLint across app, shared source and regression helpers.
+- `npm run typecheck` - TypeScript validation without emitting files.
+- `npm run build` - production build validation.
+- `npm run check` - full local quality gate (`lint + typecheck + build`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Regression Scripts
 
-## Learn More
+Browser regressions require valid Supabase credentials plus dedicated regression users and project ids.
 
-To learn more about Next.js, take a look at the following resources:
+- `npm run regression:all`
+- `npm run regression:pfmea:merge`
+- `npm run regression:pfmea:order`
+- `npm run regression:pfmea:save`
+- `npm run regression:pcp:smoke`
+- `npm run regression:pcp:save`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Architecture Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Public entry points (`/`, `/login`, `/request-access`, `/waiting-for-invite`) now use a shared public shell.
+- Authenticated pages use a shared application header with safer login redirects.
+- Severity, occurrence and detection settings share one configurable implementation instead of three separate copies.
+- The public request-access form writes through `app/api/request-access/route.ts` with server-side validation.
 
-## Deploy on Vercel
+## Known Legacy Areas
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The largest remaining technical debt is still concentrated in the monolithic PFMEA, PFD and PCP pages. ESLint now passes without blocking errors, but those legacy modules still emit warnings and need a dedicated cleanup pass.

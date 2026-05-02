@@ -1,22 +1,23 @@
 'use client'
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@app/lib/supabaseBrowser'
+import { IDLE_MS, LAST_ACTIVITY_KEY, readIdleTimestamp } from '@/lib/auth/idle-session'
 
-type MenuKey = null | 'reports' | 'settings'
-type HoverKey = null | 'projects' | 'reports' | 'tasks' | 'settings'
+type MenuKey = null | 'reports' | 'settings' | 'admin'
+type HoverKey = null | 'projects' | 'reports' | 'tasks' | 'settings' | 'admin'
 type AppRole = 'admin' | 'champion' | 'engineer' | 'viewer' | 'customer' | string
 
-const IDLE_MS = 10 * 60 * 1000
 const AUTH_UNKNOWN_TIMEOUT_MS = 4000
 const AUTH_UNKNOWN_RETRY_MS = 1000
 const AUTH_UNKNOWN_MAX_RETRIES = 5
 const HEADER_CACHE_KEY = '__APP_HEADER_CACHE__'
 const HEADER_CACHE_TTL_MS = 30 * 60 * 1000
 
-// RPC result type (adjust if needed)
 type MyHeaderRpcRow = {
   first_name?: string | null
   last_name?: string | null
@@ -39,17 +40,14 @@ export default function AppHeader() {
   const pathname = usePathname()
   const router = useRouter()
 
-  // ✅ assets (/public) that work also with Next.js basePath deployments
   const BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH ?? '').trim()
   const asset = (p: string) => {
-    // p must start with '/'
     if (!p.startsWith('/')) p = `/${p}`
     if (!BASE_PATH) return p
     const bp = BASE_PATH.startsWith('/') ? BASE_PATH : `/${BASE_PATH}`
     return `${bp.replace(/\/+$/, '')}${p}`
   }
 
-  // UI state
   const [hoverNav, setHoverNav] = useState<HoverKey>(null)
   const [openMenu, setOpenMenu] = useState<MenuKey>(null)
   const [hoverDrop, setHoverDrop] = useState<string | null>(null)
@@ -57,9 +55,9 @@ export default function AppHeader() {
 
   const reportsRef = useRef<HTMLSpanElement | null>(null)
   const settingsRef = useRef<HTMLSpanElement | null>(null)
+  const adminRef = useRef<HTMLSpanElement | null>(null)
   const [submenuPosition, setSubmenuPosition] = useState<{ left: number; top: number }>({ left: 0, top: 0 })
 
-  // Auth / user display (NO skeleton state)
   const [authState, setAuthState] = useState<'unknown' | 'authed' | 'unauthed'>('unknown')
   const [mounted, setMounted] = useState(false)
   const [idleLeftSec, setIdleLeftSec] = useState<number | null>(null)
@@ -67,15 +65,15 @@ export default function AppHeader() {
   const [orgName, setOrgName] = useState<string | null>(null)
   const [firstName, setFirstName] = useState<string | null>(null)
   const [lastName, setLastName] = useState<string | null>(null)
-  const [userRole, setUserRole] = useState<AppRole | null>(null) // global role
-  const [orgRole, setOrgRole] = useState<string | null>(null) // org role
+  const [userRole, setUserRole] = useState<AppRole | null>(null)
+  const [orgRole, setOrgRole] = useState<string | null>(null)
 
   const isAuthed = authState === 'authed'
   const showAuthed = mounted && isAuthed
 
-  // ✅ fix: settings visible for GLOBAL admin OR org champion/admin
   const canSeeSettings =
-    isAuthed && (userRole === 'admin' || orgRole === 'admin' || orgRole === 'champion')
+    isAuthed && (userRole === 'admin' || orgRole === 'champion')
+  const canSeeAdmin = isAuthed && userRole === 'admin'
 
   const navHeight = 56
   const frameStyle: React.CSSProperties = { width: '80%', marginLeft: 'auto', marginRight: 'auto' }
@@ -138,36 +136,39 @@ export default function AppHeader() {
     } catch {}
   }
 
-  const clearCloseTimer = () => {
+  const clearCloseTimer = useCallback(() => {
     if (closeTimer.current) {
       clearTimeout(closeTimer.current)
       closeTimer.current = null
     }
-  }
+  }, [])
 
-  const closeAll = () => {
+  const closeAll = useCallback(() => {
     clearCloseTimer()
     setOpenMenu(null)
     setHoverDrop(null)
-  }
+  }, [clearCloseTimer])
 
-  const scheduleCloseMenu = () => {
+  const scheduleCloseMenu = useCallback(() => {
     clearCloseTimer()
     closeTimer.current = setTimeout(() => {
       setOpenMenu(null)
       setHoverDrop(null)
     }, 130)
-  }
+  }, [clearCloseTimer])
 
-  const openMenuNow = (m: Exclude<MenuKey, null>) => {
+  const openMenuNow = useCallback((m: Exclude<MenuKey, null>) => {
     clearCloseTimer()
     setOpenMenu(m)
-  }
+  }, [clearCloseTimer])
 
-  const displayRole = useMemo(
-    () => (orgRole ?? userRole ?? '').toString().toUpperCase(),
-    [orgRole, userRole]
-  )
+  const displayRole = useMemo(() => {
+    const normalizedUserRole = (userRole ?? '').trim().toLowerCase()
+    const normalizedOrgRole = (orgRole ?? '').trim().toLowerCase()
+    const preferredRole = normalizedUserRole === 'admin' ? normalizedUserRole : normalizedOrgRole || normalizedUserRole
+    if (!preferredRole) return ''
+    return preferredRole.charAt(0).toUpperCase() + preferredRole.slice(1)
+  }, [orgRole, userRole])
 
   const displayFullName = useMemo(() => {
     const fn = (firstName ?? '').trim()
@@ -175,6 +176,12 @@ export default function AppHeader() {
     const full = `${fn} ${ln}`.trim()
     return full || null
   }, [firstName, lastName])
+
+  const displayOrgName = useMemo(() => {
+    if ((userRole ?? '').toString().trim().toLowerCase() === 'admin') return null
+    const value = (orgName ?? '').trim()
+    return value || null
+  }, [orgName, userRole])
 
   const withTimeout = async <T,>(p: Promise<T>, ms: number, fallback: T): Promise<T> => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null
@@ -190,18 +197,15 @@ export default function AppHeader() {
     }
   }
 
-  // --- FAST HEADER LOAD (1 call) ---
   async function loadHeaderViaRpc(): Promise<{
     status: 'ok' | 'no-org' | 'error'
     row: MyHeaderRpcRow | null
   }> {
     const { data, error } = await supabase.rpc('get_my_header').maybeSingle()
     if (error) {
-      // keep previous header data on transient errors
       return { status: 'error', row: null }
     }
     if (!data) {
-      // no active organization / no membership
       setOrgName(null)
       setOrgRole(null)
       return { status: 'no-org', row: null }
@@ -214,10 +218,14 @@ export default function AppHeader() {
     setOrgRole(row.org_role ?? null)
     if (row.global_role !== undefined) setUserRole(row.global_role ?? null)
 
+    if ((row.global_role ?? '').toString().toLowerCase() === 'admin') {
+      return { status: 'ok', row }
+    }
+
     return { status: row.org_name && row.org_role ? 'ok' : 'no-org', row }
   }
 
-  async function syncHeaderForSession(session: any): Promise<boolean> {
+  async function syncHeaderForSession(session: Session | null): Promise<boolean> {
     const u = session?.user ?? null
     if (!u) {
       setOrgName(null)
@@ -247,7 +255,6 @@ export default function AppHeader() {
       })
     }
 
-    // If user has no active organization, keep them on the waiting screen
     const currentPath =
       typeof window !== 'undefined' ? window.location.pathname : pathname
     const allowNoOrg =
@@ -256,7 +263,9 @@ export default function AppHeader() {
       currentPath === '/request-access' ||
       currentPath.startsWith('/request-access/') ||
       currentPath === '/login' ||
-      currentPath.startsWith('/login/')
+      currentPath.startsWith('/login/') ||
+      currentPath === '/signup' ||
+      currentPath.startsWith('/signup/')
 
     if (headerStatus === 'no-org' && !allowNoOrg) {
       router.replace('/waiting-for-invite')
@@ -273,7 +282,6 @@ export default function AppHeader() {
     return true
   }
 
-  // Mount + auth changes
   useEffect(() => {
     let alive = true
     let initialResolved = false
@@ -288,7 +296,7 @@ export default function AppHeader() {
       }
     }
 
-    const setAuthed = (_reason: string) => {
+    const setAuthed = () => {
       if (!alive) return
       initialResolved = true
       resolvedState = 'authed'
@@ -296,9 +304,8 @@ export default function AppHeader() {
       setAuthState('authed')
     }
 
-    const setUnAuthed = (_reason: string, force = false) => {
+    const setUnAuthed = (force = false) => {
       if (!alive) return
-      // Do not downgrade from authed on transient auth reads.
       if (!force && resolvedState === 'authed') {
         return
       }
@@ -322,20 +329,19 @@ export default function AppHeader() {
       if (!alive || initialResolved) return
       if (data.session?.user) {
         hydrateHeaderFromCache(data.session.user.id)
-        setAuthed('fallback-session')
+        setAuthed()
         void syncHeaderForSession(data.session)
         return
       }
       const hasCookie = hasAuthCookie()
       if (!hasCookie) {
-        setUnAuthed('no-cookie')
+        setUnAuthed()
         return
       }
       if (retries < AUTH_UNKNOWN_MAX_RETRIES) {
         retries += 1
         fallbackId = setTimeout(tryResolveFromSession, AUTH_UNKNOWN_RETRY_MS)
       } else {
-        // Last chance: force refresh from auth before declaring unauth.
         try {
           await supabase.auth.refreshSession()
         } catch {}
@@ -344,17 +350,19 @@ export default function AppHeader() {
         if (!alive || initialResolved) return
         if (afterRefresh.session?.user) {
           hydrateHeaderFromCache(afterRefresh.session.user.id)
-          setAuthed('fallback-refresh-session')
+          setAuthed()
           void syncHeaderForSession(afterRefresh.session)
           return
         }
-        setUnAuthed('cookie-no-session')
+        setUnAuthed()
       }
     }
 
     fallbackId = setTimeout(tryResolveFromSession, AUTH_UNKNOWN_TIMEOUT_MS)
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!alive) return
 
       if (event === 'SIGNED_OUT') {
@@ -365,7 +373,7 @@ export default function AppHeader() {
         setOrgRole(null)
         clearHeaderCache()
         closeAll()
-        setUnAuthed('signed-out', true)
+        setUnAuthed(true)
         window.location.assign('/')
         return
       }
@@ -373,11 +381,11 @@ export default function AppHeader() {
       if (event === 'INITIAL_SESSION') {
         if (session?.user) {
           hydrateHeaderFromCache(session.user.id)
-          setAuthed('initial-session')
+          setAuthed()
           void syncHeaderForSession(session)
         } else {
           if (!hasAuthCookie()) {
-            setUnAuthed('initial-session-no-user')
+            setUnAuthed()
           } else {
             clearFallback()
             fallbackId = setTimeout(tryResolveFromSession, 200)
@@ -388,7 +396,7 @@ export default function AppHeader() {
 
       if (session?.user) {
         hydrateHeaderFromCache(session.user.id)
-        setAuthed('event-session')
+        setAuthed()
         void syncHeaderForSession(session)
       }
     })
@@ -397,8 +405,7 @@ export default function AppHeader() {
       alive = false
       if (fallbackId) clearTimeout(fallbackId)
       try {
-        // @ts-ignore
-        sub?.subscription?.unsubscribe?.()
+        subscription.unsubscribe()
       } catch {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -406,8 +413,7 @@ export default function AppHeader() {
 
   useEffect(() => {
     if (!isAuthed) closeAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthed])
+  }, [closeAll, isAuthed])
 
   useEffect(() => {
     setMounted(true)
@@ -420,15 +426,23 @@ export default function AppHeader() {
     }
 
     let mounted = true
-    let lastActivity = Date.now()
+    let lastActivity = readIdleTimestamp(LAST_ACTIVITY_KEY) ?? Date.now()
 
     const update = () => {
       const leftMs = Math.max(0, IDLE_MS - (Date.now() - lastActivity))
       setIdleLeftSec(Math.ceil(leftMs / 1000))
     }
 
-    const onActivity = () => {
+    const onActivity: EventListener = () => {
       lastActivity = Date.now()
+      update()
+    }
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== LAST_ACTIVITY_KEY || !event.newValue) return
+      const timestamp = Number(event.newValue)
+      if (!Number.isFinite(timestamp)) return
+      lastActivity = timestamp
       update()
     }
 
@@ -443,6 +457,7 @@ export default function AppHeader() {
     ]
 
     events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }))
+    window.addEventListener('storage', onStorage)
     update()
 
     const id = setInterval(() => {
@@ -453,7 +468,8 @@ export default function AppHeader() {
     return () => {
       mounted = false
       clearInterval(id)
-      events.forEach((e) => window.removeEventListener(e, onActivity as any))
+      events.forEach((e) => window.removeEventListener(e, onActivity))
+      window.removeEventListener('storage', onStorage)
     }
   }, [isAuthed])
 
@@ -466,7 +482,12 @@ export default function AppHeader() {
 
   const recomputeSubmenuPosition = useCallback(() => {
     if (!openMenu) return
-    const targetEl = openMenu === 'reports' ? reportsRef.current : settingsRef.current
+    const targetEl =
+      openMenu === 'reports'
+        ? reportsRef.current
+        : openMenu === 'admin'
+          ? adminRef.current
+          : settingsRef.current
     if (!targetEl) return
     const targetRect = targetEl.getBoundingClientRect()
     setSubmenuPosition({
@@ -475,20 +496,20 @@ export default function AppHeader() {
     })
   }, [openMenu])
 
-  useEffect(() => () => clearCloseTimer(), [])
+  useEffect(() => () => clearCloseTimer(), [clearCloseTimer])
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeAll()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [closeAll])
 
   useLayoutEffect(() => {
     if (!openMenu) return
     const id = requestAnimationFrame(() => recomputeSubmenuPosition())
     return () => cancelAnimationFrame(id)
-  }, [openMenu])
+  }, [openMenu, recomputeSubmenuPosition])
 
   useEffect(() => {
     if (!openMenu) return
@@ -500,7 +521,7 @@ export default function AppHeader() {
       window.removeEventListener('resize', onResize)
       window.removeEventListener('scroll', onScroll, true)
     }
-  }, [openMenu])
+  }, [openMenu, recomputeSubmenuPosition])
 
   const navLinkStyle = (key: Exclude<HoverKey, null>): React.CSSProperties => ({
     color: '#111',
@@ -524,28 +545,14 @@ export default function AppHeader() {
     background: 'transparent',
   })
 
-async function handleLogout() {
-  closeAll()
-  await supabase.auth.signOut()
-  window.location.assign('/')
-}
-
+  async function handleLogout() {
+    closeAll()
+    await supabase.auth.signOut()
+    window.location.assign('/')
+  }
 
   return (
     <>
-      {showAuthed && openMenu && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 40,
-            background: 'rgba(4, 8, 20, 0.52)',
-          }}
-          onClick={closeAll}
-        />
-      )}
-
       <header
         style={{
           background: '#fff',
@@ -557,7 +564,9 @@ async function handleLogout() {
           zIndex: 60,
           borderBottom: '1px solid rgba(0,0,0,0.08)',
         }}
-        onMouseLeave={showAuthed ? scheduleCloseMenu : undefined}
+        onMouseLeave={() => {
+          if (showAuthed) scheduleCloseMenu()
+        }}
       >
         <div
           style={{
@@ -568,34 +577,28 @@ async function handleLogout() {
             gap: 12,
           }}
         >
-          {/* LEFT */}
-          <div>
-            {/* ✅ LOGO instead of text.
-               Put file in: /public/logo-riskflow-360.png
-               If your logo is white and header is white, use a dark logo variant or change header background. */}
-            <Link
-              href="/"
-              onClick={closeAll}
-              style={{ display: 'inline-flex', alignItems: 'center', height: 60, textDecoration: 'none' }}
-              aria-label="RiskFlow 360"
-              title="RiskFlow 360"
-            >
-              <img
-                src={asset('/logo-riskflow-360.png')}
-                alt="RiskFlow 360"
-                style={{
-                  height: 50,
-                  width: 'auto',
-                  maxWidth: 220,
-                  display: 'block',
-                  objectFit: 'contain',
-                }}
-              />
-            </Link>
+          <Link
+            href="/"
+            onClick={closeAll}
+            style={{ display: 'inline-flex', alignItems: 'center', height: navHeight, textDecoration: 'none' }}
+            aria-label="RiskFlow 360"
+            title="RiskFlow 360"
+          >
+            <Image
+              src={asset('/logo-riskflow-360.png')}
+              alt="RiskFlow 360"
+              width={250}
+              height={56}
+              style={{
+                height: 56,
+                width: 'auto',
+                maxWidth: 250,
+                display: 'block',
+                objectFit: 'contain',
+              }}
+            />
+          </Link>
 
-          </div>
-
-          {/* CENTER */}
           {showAuthed ? (
             <nav
               aria-label="Primary"
@@ -670,6 +673,25 @@ async function handleLogout() {
                   Settings
                 </span>
               ) : null}
+
+              {canSeeAdmin ? (
+                <span
+                  ref={adminRef}
+                  role="button"
+                  tabIndex={0}
+                  aria-haspopup="menu"
+                  aria-expanded={openMenu === 'admin'}
+                  style={navLinkStyle('admin')}
+                  onMouseEnter={() => {
+                    setHoverNav('admin')
+                    openMenuNow('admin')
+                  }}
+                  onMouseLeave={() => setHoverNav(null)}
+                  onClick={() => (openMenu === 'admin' ? closeAll() : openMenuNow('admin'))}
+                >
+                  Admin
+                </span>
+              ) : null}
             </nav>
           ) : (
             <div
@@ -690,27 +712,28 @@ async function handleLogout() {
             </div>
           )}
 
-          {/* RIGHT */}
           {showAuthed ? (
             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.05 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 400,
-                      color: 'rgba(0,0,0,0.55)',
-                      letterSpacing: 0.6,
-                      textTransform: 'uppercase',
-                      maxWidth: 240,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={orgName ?? ''}
-                  >
-                    {orgName ?? '—'}
-                  </span>
+                  {displayOrgName ? (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 400,
+                        color: 'rgba(0,0,0,0.55)',
+                        letterSpacing: 0.6,
+                        textTransform: 'uppercase',
+                        maxWidth: 240,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={displayOrgName}
+                    >
+                      {displayOrgName}
+                    </span>
+                  ) : null}
 
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#111' }}>{displayFullName ?? '—'}</span>
 
@@ -754,7 +777,7 @@ async function handleLogout() {
               ) : null}
 
               <button
-                onClick={handleLogout}
+                onClick={() => void handleLogout()}
                 className="rf-button"
                 style={{
                   fontSize: 13,
@@ -786,24 +809,44 @@ async function handleLogout() {
                 <div style={{ width: 54, height: 20, borderRadius: 999 }} />
               </div>
               {authState === 'unauthed' ? (
-                <Link
-                  href="/login"
-                  className="rf-button"
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 650,
-                    padding: '6px 10px',
-                    borderRadius: 10,
-                    border: '1px solid #ddd',
-                    background: '#fff',
-                    color: '#111',
-                    textDecoration: 'none',
-                    textAlign: 'center',
-                  }}
-                  onClick={closeAll}
-                >
-                  Log in
-                </Link>
+                <>
+                  <Link
+                    href="/signup"
+                    className="rf-button"
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 650,
+                      padding: '6px 10px',
+                      borderRadius: 10,
+                      border: '1px solid #ddd',
+                      background: '#fff',
+                      color: '#111',
+                      textDecoration: 'none',
+                      textAlign: 'center',
+                    }}
+                    onClick={closeAll}
+                  >
+                    Create account
+                  </Link>
+                  <Link
+                    href="/login"
+                    className="rf-button"
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 650,
+                      padding: '6px 10px',
+                      borderRadius: 10,
+                      border: '1px solid #ddd',
+                      background: '#fff',
+                      color: '#111',
+                      textDecoration: 'none',
+                      textAlign: 'center',
+                    }}
+                    onClick={closeAll}
+                  >
+                    Log in
+                  </Link>
+                </>
               ) : (
                 <div style={{ width: 86, height: 34 }} />
               )}
@@ -812,11 +855,10 @@ async function handleLogout() {
         </div>
       </header>
 
-      {/* DROPDOWN */}
       {showAuthed && openMenu && (
         <div
           role="menu"
-          aria-label={openMenu === 'reports' ? 'Reports menu' : 'Settings menu'}
+          aria-label={openMenu === 'reports' ? 'Reports menu' : openMenu === 'admin' ? 'Admin menu' : 'Settings menu'}
           style={{
             position: 'fixed',
             left: submenuPosition.left,
@@ -837,7 +879,7 @@ async function handleLogout() {
             {openMenu === 'reports' && (
               <>
                 <Link
-                  href="/settings/risk-matrix"
+                  href="/reports/rpn-matrix"
                   style={dropLinkStyle('rpn')}
                   onMouseEnter={() => setHoverDrop('rpn')}
                   onMouseLeave={() => setHoverDrop(null)}
@@ -847,7 +889,7 @@ async function handleLogout() {
                 </Link>
 
                 <Link
-                  href="/reports/progress"
+                  href="/reports/progress-chart"
                   style={dropLinkStyle('progress')}
                   onMouseEnter={() => setHoverDrop('progress')}
                   onMouseLeave={() => setHoverDrop(null)}
@@ -868,16 +910,6 @@ async function handleLogout() {
                   onClick={closeAll}
                 >
                   Risk Matrix
-                </Link>
-
-                <Link
-                  href="/settings/sites-departments"
-                  style={dropLinkStyle('sites-departments')}
-                  onMouseEnter={() => setHoverDrop('sites-departments')}
-                  onMouseLeave={() => setHoverDrop(null)}
-                  onClick={closeAll}
-                >
-                  Sites & Departments
                 </Link>
 
                 <Link
@@ -909,6 +941,16 @@ async function handleLogout() {
                 </Link>
 
                 <Link
+                  href="/settings/sites-departments"
+                  style={dropLinkStyle('sites-departments')}
+                  onMouseEnter={() => setHoverDrop('sites-departments')}
+                  onMouseLeave={() => setHoverDrop(null)}
+                  onClick={closeAll}
+                >
+                  Sites & Departments
+                </Link>
+
+                <Link
                   href="/settings/invitations"
                   style={dropLinkStyle('invitations')}
                   onMouseEnter={() => setHoverDrop('invitations')}
@@ -916,6 +958,40 @@ async function handleLogout() {
                   onClick={closeAll}
                 >
                   Invitations
+                </Link>
+
+                <Link
+                  href="/settings/customer-access"
+                  style={dropLinkStyle('customer-access')}
+                  onMouseEnter={() => setHoverDrop('customer-access')}
+                  onMouseLeave={() => setHoverDrop(null)}
+                  onClick={closeAll}
+                >
+                  Customer Access
+                </Link>
+              </>
+            )}
+
+            {openMenu === 'admin' && canSeeAdmin && (
+              <>
+                <Link
+                  href="/settings/organizations"
+                  style={dropLinkStyle('organizations')}
+                  onMouseEnter={() => setHoverDrop('organizations')}
+                  onMouseLeave={() => setHoverDrop(null)}
+                  onClick={closeAll}
+                >
+                  Organizations
+                </Link>
+
+                <Link
+                  href="/settings/ui-preview"
+                  style={dropLinkStyle('ui-preview')}
+                  onMouseEnter={() => setHoverDrop('ui-preview')}
+                  onMouseLeave={() => setHoverDrop(null)}
+                  onClick={closeAll}
+                >
+                  UI Preview
                 </Link>
               </>
             )}
@@ -944,6 +1020,3 @@ async function handleLogout() {
     </>
   )
 }
-
-
-

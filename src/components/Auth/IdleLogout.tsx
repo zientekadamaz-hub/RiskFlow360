@@ -2,13 +2,17 @@
 
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
+import type { AuthChangeEvent } from '@supabase/supabase-js'
 import { supabase } from '@app/lib/supabaseBrowser'
-
-const IDLE_MINUTES = 10
-const IDLE_MS = IDLE_MINUTES * 60 * 1000
-const ACTIVITY_WRITE_THROTTLE_MS = 5000
-const LAST_ACTIVITY_KEY = '__APP_LAST_ACTIVITY_AT__'
-const IDLE_LOGOUT_BROADCAST_KEY = '__APP_IDLE_LOGOUT_AT__'
+import {
+  ACTIVITY_WRITE_THROTTLE_MS,
+  clearIdleTimestamp,
+  IDLE_LOGOUT_BROADCAST_KEY,
+  IDLE_MS,
+  LAST_ACTIVITY_KEY,
+  readIdleTimestamp,
+  writeIdleTimestamp,
+} from '@/lib/auth/idle-session'
 
 function isPublicPath(pathname: string) {
   return (
@@ -16,30 +20,6 @@ function isPublicPath(pathname: string) {
     pathname.startsWith('/request-access') ||
     pathname.startsWith('/waiting-for-invite')
   )
-}
-
-function readTimestamp(key: string) {
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) return null
-
-    const parsed = Number(raw)
-    return Number.isFinite(parsed) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function writeTimestamp(key: string, value: number) {
-  try {
-    window.localStorage.setItem(key, String(value))
-  } catch {}
-}
-
-function clearTimestamp(key: string) {
-  try {
-    window.localStorage.removeItem(key)
-  } catch {}
 }
 
 export default function IdleLogout() {
@@ -63,7 +43,7 @@ export default function IdleLogout() {
 
     const clearIdleState = () => {
       clearIdleTimer()
-      clearTimestamp(LAST_ACTIVITY_KEY)
+      clearIdleTimestamp(LAST_ACTIVITY_KEY)
     }
 
     const redirectToLogin = () => {
@@ -77,7 +57,7 @@ export default function IdleLogout() {
       clearIdleState()
 
       if (broadcast) {
-        writeTimestamp(IDLE_LOGOUT_BROADCAST_KEY, Date.now())
+        writeIdleTimestamp(IDLE_LOGOUT_BROADCAST_KEY, Date.now())
       }
 
       try {
@@ -103,13 +83,13 @@ export default function IdleLogout() {
 
       if (force || timestamp - lastPersistedRef.current >= ACTIVITY_WRITE_THROTTLE_MS) {
         lastPersistedRef.current = timestamp
-        writeTimestamp(LAST_ACTIVITY_KEY, timestamp)
+        writeIdleTimestamp(LAST_ACTIVITY_KEY, timestamp)
       }
     }
 
     const checkIdleDeadline = async () => {
       const now = Date.now()
-      const storedActivity = readTimestamp(LAST_ACTIVITY_KEY)
+      const storedActivity = readIdleTimestamp(LAST_ACTIVITY_KEY)
       const effectiveActivity = storedActivity ?? lastActivityRef.current
 
       if (storedActivity) {
@@ -163,16 +143,23 @@ export default function IdleLogout() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session) => {
       if (!session) {
         signingOutRef.current = false
         clearIdleState()
         return
       }
 
-      const now = Date.now()
-      persistActivity(now, true)
-      scheduleIdleTimer()
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        const now = Date.now()
+        persistActivity(now, true)
+        scheduleIdleTimer()
+        return
+      }
+
+      if (!timerRef.current) {
+        void checkIdleDeadline()
+      }
     })
 
     activityEvents.forEach((eventName) => {
@@ -188,7 +175,7 @@ export default function IdleLogout() {
       if (!data.session) return
 
       const now = Date.now()
-      const storedActivity = readTimestamp(LAST_ACTIVITY_KEY)
+      const storedActivity = readIdleTimestamp(LAST_ACTIVITY_KEY)
       const initialActivity = storedActivity ?? now
 
       lastActivityRef.current = initialActivity
