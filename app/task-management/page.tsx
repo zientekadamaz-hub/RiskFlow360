@@ -23,7 +23,7 @@ import {
   settingsProcessAccent,
   settingsRiskSummaryTileStyle,
   settingsTableWrapStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import {
   PROJECTS_PROCESS_ACCENT,
   projectsAvgRpnStyle,

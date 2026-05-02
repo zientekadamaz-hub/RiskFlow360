@@ -15,7 +15,7 @@ import {
   settingsFilterGroupStyle,
   settingsFilterPanelStyle,
   settingsProcessAccent,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 
 type CheckboxFilter = {
   label: string

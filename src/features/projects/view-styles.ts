@@ -10,7 +10,7 @@ import {
   settingsTableCellStyle,
   settingsTableHeaderStyle,
   settingsTableStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import type { RpnThresholds } from './types'
 
 export const PROJECTS_PROCESS_ACCENT = settingsProcessAccent

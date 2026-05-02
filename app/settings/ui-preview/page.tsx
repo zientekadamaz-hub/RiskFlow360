@@ -51,7 +51,7 @@ import {
   settingsTableWrapStyle,
   settingsTextareaStyle,
   settingsToolbarRowStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { StandardSelect } from '@/features/settings/StandardSelect'
 
 const mutedText = 'rgba(255,255,255,0.72)'

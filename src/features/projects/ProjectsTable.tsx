@@ -7,7 +7,7 @@ import {
   settingsCompactActionButtonStyle,
   SettingsTrashButton,
   settingsTableWrapStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { StandardSelect } from '@/features/settings/StandardSelect'
 import { ProjectsEmptyState } from './ProjectsEmptyState'
 import { ProjectsTableHeader } from './ProjectsTableHeader'

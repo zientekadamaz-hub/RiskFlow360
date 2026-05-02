@@ -6,7 +6,7 @@ import {
   SettingsSummaryTile,
   settingsRiskSummaryTileStyle,
   settingsSummaryTileStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import type { RpnThresholds } from './types'
 import { projectsSummaryValueStyle } from './view-styles'
 

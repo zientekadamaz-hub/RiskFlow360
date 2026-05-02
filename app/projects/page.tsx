@@ -15,7 +15,7 @@ import {
   SettingsConfirmDialog,
   SettingsPageShell,
   settingsFrameStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import type { UiProjectRow } from '@/features/projects/types'
 import {
   formatAvgRpnInt,

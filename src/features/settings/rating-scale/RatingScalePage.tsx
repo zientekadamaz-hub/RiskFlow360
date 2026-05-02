@@ -16,7 +16,7 @@ import {
   SettingsPageShell,
   SettingsSection,
   settingsProcessAccent,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { RatingScaleTable } from './RatingScaleTable'
 import type {
   EffectiveRatingScaleRow,

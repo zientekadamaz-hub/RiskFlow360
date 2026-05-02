@@ -830,3 +830,36 @@ Creating turbopack project { dir: 'C:\\Users\\zieada\\pfmea-app', testMode: true
  GET / 200 in 860ms (compile: 237ms, proxy.ts: 11ms, render: 612ms)
  GET / 200 in 407ms (compile: 276ms, proxy.ts: 10ms, render: 121ms)
  GET /login?reason=idle 200 in 370ms (compile: 98ms, proxy.ts: 9ms, render: 262ms)
+ GET / 200 in 1332ms (compile: 36ms, proxy.ts: 186ms, render: 1111ms)
+ GET / 200 in 892ms (compile: 39ms, proxy.ts: 46ms, render: 806ms)
+▲ Next.js 16.1.1 (Turbopack)
+- Local:         http://127.0.0.1:3000
+- Network:       http://127.0.0.1:3000
+- Environments: .env.local
+
+✓ Starting...
+Creating turbopack project { dir: 'C:\\Users\\zieada\\pfmea-app', testMode: true }
+✓ Ready in 3.8s
+ GET / 200 in 2.8s (compile: 1712ms, proxy.ts: 286ms, render: 830ms)
+ GET / 200 in 274ms (compile: 11ms, proxy.ts: 14ms, render: 249ms)
+ GET /login 200 in 140ms (compile: 86ms, proxy.ts: 10ms, render: 45ms)
+ GET /projects 200 in 169ms (compile: 39ms, proxy.ts: 11ms, render: 120ms)
+ GET /reports/progress-chart 200 in 133ms (compile: 81ms, proxy.ts: 10ms, render: 42ms)
+✓ Compiled in 147ms
+✓ Compiled in 718ms
+✓ Compiled in 398ms
+ GET /reports/progress-chart 200 in 759ms (compile: 465ms, proxy.ts: 35ms, render: 260ms)
+ GET /reports/progress-chart 200 in 356ms (compile: 112ms, proxy.ts: 21ms, render: 224ms)
+ GET /reports/progress-chart 200 in 314ms (compile: 17ms, proxy.ts: 95ms, render: 202ms)
+ GET /reports/progress-chart 200 in 157ms (compile: 10ms, proxy.ts: 96ms, render: 51ms)
+ GET / 200 in 1126ms (compile: 216ms, proxy.ts: 28ms, render: 882ms)
+ GET / 200 in 561ms (compile: 30ms, proxy.ts: 20ms, render: 511ms)
+ GET / 200 in 385ms (compile: 15ms, proxy.ts: 20ms, render: 350ms)
+ GET / 200 in 269ms (compile: 15ms, proxy.ts: 61ms, render: 193ms)
+ GET /login?reason=idle 200 in 357ms (compile: 211ms, proxy.ts: 35ms, render: 112ms)
+ GET / 200 in 769ms (compile: 20ms, proxy.ts: 418ms, render: 331ms)
+ GET /login 200 in 36ms (compile: 6ms, proxy.ts: 7ms, render: 23ms)
+ GET /projects 200 in 428ms (compile: 161ms, proxy.ts: 16ms, render: 251ms)
+ GET /pfmea?project=eaa4df02-cc02-4e0a-8544-206ae6244df2 200 in 533ms (compile: 495ms, proxy.ts: 7ms, render: 31ms)
+ GET /projects 200 in 26ms (compile: 5ms, proxy.ts: 5ms, render: 15ms)
+ GET /pfd?project=eaa4df02-cc02-4e0a-8544-206ae6244df2 200 in 271ms (compile: 241ms, proxy.ts: 5ms, render: 25ms)

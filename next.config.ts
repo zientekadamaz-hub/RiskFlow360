@@ -41,13 +41,8 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
-        source: '/reports',
-        destination: '/projects',
-        permanent: false,
-      },
-      {
         source: '/reports/progress',
-        destination: '/projects',
+        destination: '/reports/progress-chart',
         permanent: false,
       },
     ]

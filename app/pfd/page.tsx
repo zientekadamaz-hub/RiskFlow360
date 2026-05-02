@@ -337,6 +337,7 @@ function PfdPageContent() {
   const [moduleAccessState, setModuleAccessState] = useState<'checking' | 'allowed' | 'denied'>('checking')
   const [canOpenPfmeaPanel, setCanOpenPfmeaPanel] = useState(true)
   const [editSession, setEditSession] = useState<PfdEditSession | null>(null)
+  const [sessionNow, setSessionNow] = useState(() => Date.now())
   const [sessionMsg, setSessionMsg] = useState('')
   const [sessionBusy, setSessionBusy] = useState(false)
   const draftLoadedFor = useRef<string>('')
@@ -358,8 +359,8 @@ function PfdPageContent() {
     if (!editSession) return false
     const last = new Date(editSession.lastActivityAt).getTime()
     if (!Number.isFinite(last)) return true
-    return Date.now() - last >= EDIT_LOCK_MS
-  }, [editSession])
+    return sessionNow - last >= EDIT_LOCK_MS
+  }, [editSession, sessionNow])
   const isEditOwner = !!currentUserId && !!editSession && editSession.lockedBy === currentUserId && !sessionExpired
   const isLockedByOther = !!editSession && !isEditOwner && !sessionExpired
   const isReadOnly = !isEditOwner
@@ -605,6 +606,7 @@ function PfdPageContent() {
     if (moduleAccessState !== 'allowed') return
     const timer = setInterval(() => {
       void loadEditSession()
+      setSessionNow(Date.now())
     }, 30_000)
     return () => clearInterval(timer)
   }, [projectId, loadEditSession, moduleAccessState])

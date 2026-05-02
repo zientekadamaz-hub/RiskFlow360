@@ -5,7 +5,7 @@ import {
   settingsPopoverPanelStyle,
   settingsPopoverTitleStyle,
   settingsProcessAccent,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 
 export function PasswordRulesHelp({ rules }: { rules: string[] }) {
   const [open, setOpen] = useState(false)

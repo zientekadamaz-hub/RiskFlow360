@@ -22,7 +22,7 @@ import {
   settingsTableStyle,
   settingsTableWrapStyle,
   settingsToolbarRowStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import {
   SettingsFilterColumnHeader,
   SettingsHiddenColumnHeader,

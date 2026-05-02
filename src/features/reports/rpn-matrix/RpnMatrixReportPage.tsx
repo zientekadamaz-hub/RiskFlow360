@@ -22,7 +22,7 @@ import {
   settingsTableHeaderStyle,
   settingsTableScrollerStyle,
   settingsTableWrapStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { StandardSelect } from '@/features/settings/StandardSelect'
 import { projectsProcessCellStyle, projectsSummaryValueStyle } from '@/features/projects/view-styles'
 import { fetchRpnMatrixReportData } from './rpn-matrix-service'

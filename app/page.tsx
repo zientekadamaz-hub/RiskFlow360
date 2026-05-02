@@ -1,5 +1,5 @@
 import Image from 'next/image'
-import { SettingsBackdropTone } from '@/features/settings/invitation-shell'
+import { SettingsBackdropTone } from '@/components/rf-ui'
 import chartImage from '../main/chart.png'
 import matrixImage from '../main/matrix.png'
 import pfmeaImage from '../main/pfmea.png'

@@ -386,8 +386,8 @@ function PcpPageContent() {
     if (!editSession) return false
     const last = new Date(editSession.lastActivityAt).getTime()
     if (!Number.isFinite(last)) return true
-    return Date.now() - last >= EDIT_LOCK_MS
-  }, [editSession])
+    return sessionNow - last >= EDIT_LOCK_MS
+  }, [editSession, sessionNow])
 
   const isEditOwner = !!userId && !!editSession && editSession.lockedBy === userId && !sessionExpired
   const isLockedByOther = !!editSession && !isEditOwner && !sessionExpired
@@ -876,7 +876,7 @@ function PcpPageContent() {
       const row = (res.data ?? null) as { locked_by?: string | null; last_activity_at?: string | null } | null
       const otherOwner = row?.locked_by ?? null
       const last = row?.last_activity_at ? new Date(row.last_activity_at).getTime() : 0
-      const hasActiveOther = !!otherOwner && otherOwner !== userId && Date.now() - last < EDIT_LOCK_MS
+      const hasActiveOther = !!otherOwner && otherOwner !== userId && sessionNow - last < EDIT_LOCK_MS
       if (hasActiveOther && !isChampion) {
         setErr('This PCP is currently locked by another user.')
         return
@@ -891,7 +891,7 @@ function PcpPageContent() {
           setDirtyIds([])
           setDeletedIds([])
         }
-        const reason = Date.now() - last >= EDIT_LOCK_MS ? '48h inactivity timeout' : 'session takeover by Champion'
+        const reason = sessionNow - last >= EDIT_LOCK_MS ? '48h inactivity timeout' : 'session takeover by Champion'
         setSessionMsg(`Previous PCP draft was discarded (${reason}).`)
       }
 
@@ -904,7 +904,7 @@ function PcpPageContent() {
     } finally {
       setSessionBusy(false)
     }
-  }, [projectId, userId, isObsolete, isChampion, loadEditSession, draftRevisionIdOverride, loadAll])
+  }, [projectId, userId, isObsolete, isChampion, sessionNow, loadEditSession, draftRevisionIdOverride, loadAll])
 
   const discardDraftAndCloseSession = useCallback(async () => {
     if (!projectId || !userId || !isEditOwner) return

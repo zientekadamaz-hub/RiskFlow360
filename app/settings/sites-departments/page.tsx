@@ -24,7 +24,7 @@ import {
   settingsInlineStatusStyle,
   settingsTableCellStyle,
   settingsTableWrapStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import {
   projectsActionsStyle,
   projectsCompactInputStyle,

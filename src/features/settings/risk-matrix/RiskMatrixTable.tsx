@@ -9,7 +9,7 @@ import {
   settingsTableHeaderStyle,
   settingsTableScrollerStyle,
   settingsTableWrapStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { DO_VALUES, SEVERITIES, cellKey, defaultColor } from './matrix-config'
 import type { RiskColor } from './matrix-colors'
 import { colorFromRpn } from './risk-matrix-utils'

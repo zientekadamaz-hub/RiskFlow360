@@ -13,7 +13,7 @@ import {
   settingsPageStyle,
   settingsProcessAccent,
   settingsTableWrapStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { PasswordRulesHelp } from '@/features/auth/PasswordRulesHelp'
 import { StandardSelect } from '@/features/settings/StandardSelect'
 

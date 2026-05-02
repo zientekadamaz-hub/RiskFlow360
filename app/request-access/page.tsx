@@ -7,7 +7,7 @@ import {
   settingsCardStyle,
   settingsInputStyle,
   settingsPageStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 
 type RequestAccessResponse = {
   error?: string

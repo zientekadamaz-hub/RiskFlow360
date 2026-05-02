@@ -15,7 +15,7 @@ import {
   settingsProcessAccent,
   settingsRiskSummaryTileStyle,
   settingsSummaryTileStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { StandardSelect } from '@/features/settings/StandardSelect'
 import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
 import { fetchProgressChartData } from './progress-chart-service'

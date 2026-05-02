@@ -25,12 +25,19 @@ type QueryResult<T> = {
   statusText?: string
 }
 
-const timeoutError = {
+const timeoutError: Error & {
+  code: string
+  details: string
+  hint: string
+} = Object.assign(new Error('timeout'), {
   code: 'RISK_MATRIX_TIMEOUT',
   details: 'Risk Matrix query timed out.',
   hint: '',
-  message: 'timeout',
   name: 'RiskMatrixTimeout',
+})
+
+function timeoutResult<T>(): QueryResult<T> {
+  return { data: null, error: timeoutError, status: 408, statusText: 'timeout' }
 }
 
 function hasAuthCookie() {
@@ -79,14 +86,14 @@ export async function loadRiskMatrixContext(): Promise<{
     return { context: null, error: 'Cannot read user: Not authenticated.', globalRole: null, organizationId: null, timeout: false, userId: null }
   }
 
-  const result = await withTimeout(
+  const result = await withTimeout<QueryResult<{ active_organization_id?: string | null; global_role?: string | null }>>(
     supabase
       .from('profiles')
       .select('active_organization_id,global_role')
       .eq('id', user.id)
-      .maybeSingle(),
+      .maybeSingle() as PromiseLike<QueryResult<{ active_organization_id?: string | null; global_role?: string | null }>>,
     QUERY_TIMEOUT_MS,
-    { count: null, data: null, error: timeoutError, status: 408, statusText: 'timeout' }
+    timeoutResult<{ active_organization_id?: string | null; global_role?: string | null }>()
   ) as QueryResult<{ active_organization_id?: string | null; global_role?: string | null }>
 
   if (result.error) {
@@ -148,10 +155,10 @@ export async function loadRiskMatrixConfig(context: RiskMatrixContext): Promise<
     return { config: { mode: 'manual', rpn: DEFAULT_RPN }, error: null }
   }
 
-  const result = await withTimeout(
-    query,
+  const result = await withTimeout<QueryResult<RiskMatrixDbConfig>>(
+    query as PromiseLike<QueryResult<RiskMatrixDbConfig>>,
     QUERY_TIMEOUT_MS,
-    { count: null, data: null, error: timeoutError, status: 408, statusText: 'timeout' }
+    timeoutResult<RiskMatrixDbConfig>()
   ) as QueryResult<RiskMatrixDbConfig>
 
   if (result.error) {
@@ -211,13 +218,13 @@ export async function loadRiskMatrixCells(context: RiskMatrixContext): Promise<{
   const base = buildDefaultCells()
 
   if (context.kind === 'organization') {
-    const result = await withTimeout(
+    const result = await withTimeout<QueryResult<RiskMatrixDbCell[]>>(
       supabase
         .from('risk_matrix_cells')
         .select('organization_id,severity,do_value,color')
-        .eq('organization_id', context.id),
+        .eq('organization_id', context.id) as PromiseLike<QueryResult<RiskMatrixDbCell[]>>,
       QUERY_TIMEOUT_MS,
-      { count: null, data: null, error: timeoutError, status: 408, statusText: 'timeout' }
+      timeoutResult<RiskMatrixDbCell[]>()
     ) as QueryResult<RiskMatrixDbCell[]>
 
     if (result.error) {
@@ -234,13 +241,13 @@ export async function loadRiskMatrixCells(context: RiskMatrixContext): Promise<{
     return { cells: next, error: null }
   }
 
-  const result = await withTimeout(
+  const result = await withTimeout<QueryResult<RiskMatrixDbCell[]>>(
     supabase
       .from('risk_matrix_cells')
       .select('organization_id,project_id,severity,do_value,color')
-      .eq('project_id', GLOBAL_PROJECT_ID),
+      .eq('project_id', GLOBAL_PROJECT_ID) as PromiseLike<QueryResult<RiskMatrixDbCell[]>>,
     QUERY_TIMEOUT_MS,
-    { count: null, data: null, error: timeoutError, status: 408, statusText: 'timeout' }
+    timeoutResult<RiskMatrixDbCell[]>()
   ) as QueryResult<RiskMatrixDbCell[]>
 
   if (result.error) {

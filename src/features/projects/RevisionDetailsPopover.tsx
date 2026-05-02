@@ -7,7 +7,7 @@ import {
   settingsPopoverPanelStyle,
   settingsPopoverTitleStyle,
   settingsSurfaceRadius,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import type { RevisionPopupData } from './types'
 import { ProjectsRevisionHintIcon } from './icons'
 

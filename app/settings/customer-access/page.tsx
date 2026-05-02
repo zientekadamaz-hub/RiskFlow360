@@ -10,7 +10,7 @@ import {
   SettingsSummaryTile,
   getSettingsSummaryGridMaxWidth,
   settingsProcessAccent,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
 
 type ProfileRow = {

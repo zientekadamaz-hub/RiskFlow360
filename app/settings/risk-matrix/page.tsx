@@ -8,7 +8,7 @@ import {
   settingsFrameStyle,
   settingsProcessAccent,
   settingsSegmentButtonStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import type { RiskColor } from '@/features/settings/risk-matrix/matrix-colors'
 import { RiskMatrixColorPicker } from '@/features/settings/risk-matrix/RiskMatrixColorPicker'
 import { RiskMatrixSummaryTiles } from '@/features/settings/risk-matrix/RiskMatrixSummaryTiles'

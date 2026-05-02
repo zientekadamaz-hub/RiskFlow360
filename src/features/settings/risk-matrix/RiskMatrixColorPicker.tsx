@@ -5,7 +5,7 @@ import {
   settingsPopoverPanelStyle,
   settingsRiskMatrixSwatchButtonStyle,
   settingsRiskMatrixSwatchStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { COLOR_ORDER, type RiskColor } from './matrix-colors'
 import { legendRows } from './risk-matrix-utils'
 import type { RiskMatrixColorPickerState } from './types'

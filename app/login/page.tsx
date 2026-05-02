@@ -17,7 +17,7 @@ import {
   settingsPageStyle,
   settingsProcessAccent,
   settingsTableWrapStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 
 type Mode = 'login' | 'activate' | 'forgot' | 'reset'
 

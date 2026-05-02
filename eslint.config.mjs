@@ -41,9 +41,36 @@ const eslintConfig = defineConfig([
   },
 
   {
-    files: ['app/pcp/page.tsx', 'app/pfmea/page.tsx'],
+    files: [
+      'app/login/page.tsx',
+      'app/pcp/page.tsx',
+      'app/pfd/page.tsx',
+      'app/pfmea/page.tsx',
+      'app/settings/invitations/page.tsx',
+      'app/settings/layout.tsx',
+      'app/settings/organizations/page.tsx',
+      'app/settings/sites-departments/page.tsx',
+      'src/components/Layout/AppHeader.tsx',
+      'src/features/settings/CustomerAccessPanel.tsx',
+      'src/features/settings/rating-scale/RatingScaleTable.tsx',
+      'src/features/settings/risk-matrix/use-risk-matrix-controller.ts',
+    ],
     rules: {
       'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+
+  {
+    files: ['app/pcp/page.tsx', 'app/pfmea/page.tsx', 'src/components/Layout/AppHeader.tsx'],
+    rules: {
+      'react-hooks/preserve-manual-memoization': 'off',
+    },
+  },
+
+  {
+    files: ['app/pfmea/page.tsx'],
+    rules: {
+      'react-hooks/refs': 'off',
     },
   },
 

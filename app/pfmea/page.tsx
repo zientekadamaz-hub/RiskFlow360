@@ -1460,6 +1460,7 @@ function PfmeaFullPageContent() {
   const [currentAuthorName, setCurrentAuthorName] = useState('Unknown user')
   const [isChampion, setIsChampion] = useState(false)
   const [editSession, setEditSession] = useState<PfmeaEditSession | null>(null)
+  const [sessionNow, setSessionNow] = useState(() => Date.now())
   const [sessionBusy, setSessionBusy] = useState(false)
   const [expandedOperationId, setExpandedOperationId] = useState<string | null>(null)
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null)
@@ -1652,8 +1653,8 @@ function PfmeaFullPageContent() {
     if (!editSession) return false
     const last = new Date(editSession.lastActivityAt).getTime()
     if (!Number.isFinite(last)) return true
-    return Date.now() - last >= EDIT_LOCK_MS
-  }, [editSession])
+    return sessionNow - last >= EDIT_LOCK_MS
+  }, [editSession, sessionNow])
   const isEditOwner = !!userId && !!editSession && editSession.lockedBy === userId && !sessionExpired
   const isLockedByOther = !!editSession && !isEditOwner && !sessionExpired
   const readOnly = isObsolete || !isEditOwner
@@ -1892,8 +1893,8 @@ useEffect(() => {
       const otherOwner = row?.locked_by ?? null
       const last = row?.last_activity_at ? new Date(row.last_activity_at).getTime() : 0
       const hasExistingDraftRevision = !!(project?.current_draft_revision_id ?? draftRevisionIdOverride)
-      const hasActiveOwnedSession = !!otherOwner && otherOwner === userId && Date.now() - last < EDIT_LOCK_MS
-      const hasActiveOther = !!otherOwner && otherOwner !== userId && Date.now() - last < EDIT_LOCK_MS
+      const hasActiveOwnedSession = !!otherOwner && otherOwner === userId && sessionNow - last < EDIT_LOCK_MS
+      const hasActiveOther = !!otherOwner && otherOwner !== userId && sessionNow - last < EDIT_LOCK_MS
 
       forceRefreshExistingDraftFromOpenRef.current = hasExistingDraftRevision && !hasActiveOwnedSession
 
@@ -2555,6 +2556,7 @@ useEffect(() => {
     if (moduleAccessState !== 'allowed') return
     const timer = setInterval(() => {
       void loadEditSession()
+      setSessionNow(Date.now())
     }, 30_000)
     return () => clearInterval(timer)
   }, [projectId, loadEditSession, moduleAccessState])

@@ -23,7 +23,7 @@ import {
   settingsTableScrollerStyle,
   settingsTableSecondaryTextStyle,
   settingsTableStyle,
-} from '@/features/settings/invitation-shell'
+} from '@/components/rf-ui'
 import { StandardSelect } from '@/features/settings/StandardSelect'
 import { projectsProcessCellStyle } from '@/features/projects/view-styles'
 import type {

@@ -11,6 +11,41 @@ const supabaseAdminless = createClient(env.supabaseUrl, env.supabaseAnonKey, {
   },
 })
 
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
+const RATE_LIMIT_MAX_PER_EMAIL_AND_IP = 5
+const RATE_LIMIT_MAX_PER_IP = 20
+
+type RateLimitBucket = {
+  count: number
+  resetAt: number
+}
+
+const rateLimitBuckets = new Map<string, RateLimitBucket>()
+
+function clientIp(request: Request) {
+  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  return forwarded || request.headers.get('x-real-ip')?.trim() || 'unknown'
+}
+
+function checkRateLimit(key: string, max: number, now = Date.now()) {
+  if (rateLimitBuckets.size > 1000) {
+    for (const [bucketKey, bucket] of rateLimitBuckets) {
+      if (bucket.resetAt <= now) rateLimitBuckets.delete(bucketKey)
+    }
+  }
+
+  const current = rateLimitBuckets.get(key)
+  if (!current || current.resetAt <= now) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return true
+  }
+
+  if (current.count >= max) return false
+
+  current.count += 1
+  return true
+}
+
 export async function POST(request: Request) {
   const contentType = request.headers.get('content-type') ?? ''
   if (!contentType.includes('application/json')) {
@@ -22,6 +57,18 @@ export async function POST(request: Request) {
 
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 })
+  }
+
+  const ip = clientIp(request)
+  const emailKey = parsed.data.requesterEmail.toLowerCase()
+  const allowedByIp = checkRateLimit(`ip:${ip}`, RATE_LIMIT_MAX_PER_IP)
+  const allowedByEmailAndIp = checkRateLimit(`email-ip:${emailKey}:${ip}`, RATE_LIMIT_MAX_PER_EMAIL_AND_IP)
+
+  if (!allowedByIp || !allowedByEmailAndIp) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please try again later.' },
+      { status: 429 }
+    )
   }
 
   if (parsed.data.companyWebsite) {

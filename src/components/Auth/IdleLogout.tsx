@@ -25,7 +25,7 @@ function isPublicPath(pathname: string) {
 export default function IdleLogout() {
   const pathname = usePathname()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastActivityRef = useRef<number>(Date.now())
+  const lastActivityRef = useRef<number>(0)
   const lastPersistedRef = useRef<number>(0)
   const signingOutRef = useRef(false)
 

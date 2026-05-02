@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { settingsCompactPrimaryButtonStyle, settingsToolbarRowStyle } from '@/features/settings/invitation-shell'
+import { settingsCompactPrimaryButtonStyle, settingsToolbarRowStyle } from '@/components/rf-ui'
 
 export function ProjectsToolbar({
   canManageProjects,
