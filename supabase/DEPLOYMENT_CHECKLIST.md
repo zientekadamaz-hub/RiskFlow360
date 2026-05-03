@@ -20,8 +20,10 @@ Katalog `db/` traktuj jako archiwum/manual SQL, dopoki starsze pliki nie zostana
    - Alternatywa CLI, gdy Docker Desktop dziala:
      ```powershell
      npx supabase db dump --linked --schema public --file PFMEA/supabase-live-public-schema-dump-YYYY-MM-DD.sql
+     npx supabase db dump --linked --schema public --data-only --file PFMEA/supabase-live-public-data-dump-YYYY-MM-DD.sql
      ```
    - Alternatywa bez Dockera: lokalny `pg_dump` z PostgreSQL client tools.
+   - Awaryjna alternatywa, gdy Docker/WSL i `pg_dump` sa zablokowane: logiczny snapshot read-only przez Supabase Management API, zapisany jako JSON z manifestem i checksumami. Taki snapshot pomaga odzyskac dane, ale nie zastepuje kanonicznego `pg_dump`.
    - Jezeli CLI zwroci blad Docker daemon / missing `pg_dump`, nie traktuj pustego pliku dump jako backupu.
 3. Sprawdz lokalny stan repo:
    - `git status --short`

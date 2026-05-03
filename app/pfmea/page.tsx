@@ -86,6 +86,18 @@ import {
   stripPfmeaGroupIdsFromPayload,
   summarizePfmeaRowsForError,
 } from '@/features/pfmea/pfmea-payload-utils'
+import {
+  SettingsSummaryGrid,
+  SettingsSummaryTile,
+  SettingsBackdrop,
+  SettingsBanner,
+  SettingsPageShell,
+  getSettingsSummaryGridMaxWidth,
+  settingsCardStyle,
+  settingsFrameStyle,
+  settingsProcessAccent,
+  settingsRiskSummaryTileStyle,
+} from '@/components/rf-ui'
 
 /* ===================== TYPES ===================== */
 
@@ -3525,66 +3537,75 @@ useEffect(() => {
     )
   }
 
-  const frame: React.CSSProperties = { width: '96%', marginLeft: 'auto', marginRight: 'auto' }
-  const card: React.CSSProperties = {
-    background: SURFACE_BG,
-    borderStyle: 'solid',
-    borderWidth: 1,
-    borderColor: SURFACE_BORDER,
-    borderRadius: SURFACE_RADIUS,
-    boxShadow: '0 18px 40px rgba(0,0,0,0.18)',
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
-    color: SURFACE_TEXT,
-  }
-  const heroCard: React.CSSProperties = {
-    ...card,
-  }
-  const titleStyle: React.CSSProperties = { fontSize: 28, fontWeight: 600, letterSpacing: -0.3, color: SURFACE_TEXT }
-  const subtitleStyle: React.CSSProperties = { marginTop: 4, fontSize: 13.5, color: 'rgba(255,255,255,0.78)' }
-  const summaryTile: React.CSSProperties = {
-    minHeight: 82,
-    padding: '10px 12px',
-    borderRadius: SURFACE_RADIUS,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    textAlign: 'center',
-  }
-  const summaryValue: React.CSSProperties = {
-    fontSize: 24,
-    fontWeight: 800,
-    lineHeight: 1,
-  }
+  const frame = settingsFrameStyle
+  const card: React.CSSProperties = { ...settingsCardStyle, color: SURFACE_TEXT }
   const processNameLength = (project?.name ?? '').length
   const processSummaryFontSize = processNameLength > 42 ? 13 : processNameLength > 28 ? 15 : processNameLength > 18 ? 18 : 24
+  const processSummaryValueStyle: React.CSSProperties = {
+    alignItems: 'center',
+    display: 'flex',
+    fontSize: processSummaryFontSize,
+    justifyContent: 'center',
+    lineHeight: 1.12,
+    minHeight: 36,
+    overflowWrap: 'anywhere',
+    whiteSpace: 'normal',
+    wordBreak: 'break-word',
+  }
+
+  const pfmeaSummary = (
+    <div style={{ width: '100%', maxWidth: getSettingsSummaryGridMaxWidth(10), marginLeft: 'auto', alignSelf: 'flex-start' }}>
+      <SettingsSummaryGrid columns={10} maxWidth={getSettingsSummaryGridMaxWidth(10)}>
+        <SettingsSummaryTile
+          label="Process"
+          style={{ gridColumn: 'span 2' }}
+          value={project?.name ?? '-'}
+          valueStyle={processSummaryValueStyle}
+        />
+        <SettingsSummaryTile label="Revision" value={pfmeaRevisionNumberFromLabel(workingRevisionLabel)} />
+        <SettingsSummaryTile label="Operations" value={ops.length} />
+        <SettingsSummaryTile label="PFMEA rows" value={rowsSorted.length} />
+        <SettingsSummaryTile
+          label="Average RPN"
+          style={avgRpnSummary.color ? settingsRiskSummaryTileStyle(avgRpnSummary.color) : undefined}
+          value={avgRpnSummary.avg == null ? '-' : Math.round(avgRpnSummary.avg)}
+        />
+        <SettingsSummaryTile
+          label="Actions must be defined"
+          style={settingsRiskSummaryTileStyle('red')}
+          value={avgRpnSummary.buckets.red}
+        />
+        <SettingsSummaryTile
+          label="Action plan required"
+          style={settingsRiskSummaryTileStyle('orange')}
+          value={avgRpnSummary.buckets.orange}
+        />
+        <SettingsSummaryTile
+          label="Actions recommended"
+          style={settingsRiskSummaryTileStyle('yellow')}
+          value={avgRpnSummary.buckets.yellow}
+        />
+        <SettingsSummaryTile
+          label="Acceptable risk"
+          style={settingsRiskSummaryTileStyle('green')}
+          value={avgRpnSummary.buckets.green}
+        />
+      </SettingsSummaryGrid>
+    </div>
+  )
 
   if (moduleAccessState !== 'allowed') {
     return null
   }
 
   return (
-    <div style={{ minHeight: '100vh', paddingBottom: 18, position: 'relative', overflow: 'hidden', background: '#171f33' }}>
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: "url('/home-hero-bg.svg')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-        }}
-      />
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'linear-gradient(180deg, rgba(88, 58, 39, 0.58), rgba(23, 31, 51, 0.86))',
-        }}
-      />
-      <div style={{ position: 'relative', zIndex: 1 }}>
+    <SettingsPageShell
+      title="PFMEA"
+      titleStyle={{ color: settingsProcessAccent, fontWeight: 600 }}
+      subtitle="Analyze process risks and manage the PFMEA revision for the selected process."
+      summary={pfmeaSummary}
+      backdrop={<SettingsBackdrop />}
+    >
       <style jsx global>{`
         .pfmeaTable ::selection,
         .pfmeaTable .pfmeaEditor::selection {
@@ -3844,169 +3865,7 @@ useEffect(() => {
         }
       `}</style>
 
-      {/* Summary */}
-      <div style={{ ...frame, marginTop: 20 }}>
-        <div style={{ ...heroCard, padding: 14 }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              gap: 20,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ flex: '1 1 360px', maxWidth: 520 }}>
-              <div style={titleStyle}>PFMEA</div>
-              <div style={subtitleStyle}>Analyze process risks and manage the PFMEA revision for the selected process.</div>
-            </div>
-            <div
-              style={{
-                width: '100%',
-                maxWidth: 1180,
-                marginLeft: 'auto',
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1.5fr) repeat(8, minmax(0, 1fr))',
-                gap: 10,
-                alignSelf: 'flex-start',
-              }}
-            >
-            <div
-              style={{
-                ...summaryTile,
-                background: 'rgba(255,255,255,0.12)',
-                border: '1px solid rgba(255,255,255,0.22)',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>Process</div>
-              <div
-                style={{
-                  ...summaryValue,
-                  color: '#f8fafc',
-                  alignItems: 'center',
-                  display: 'flex',
-                  fontSize: processSummaryFontSize,
-                  justifyContent: 'center',
-                  lineHeight: 1.12,
-                  minHeight: 36,
-                  overflowWrap: 'anywhere',
-                  whiteSpace: 'normal',
-                  wordBreak: 'break-word',
-                }}
-                title={project?.name ?? '-'}
-              >
-                {project?.name ?? '-'}
-              </div>
-            </div>
-            <div
-              style={{
-                ...summaryTile,
-                background: 'rgba(255,255,255,0.12)',
-                border: '1px solid rgba(255,255,255,0.22)',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>Revision</div>
-              <div style={{ ...summaryValue, color: '#f8fafc' }}>{pfmeaRevisionNumberFromLabel(workingRevisionLabel)}</div>
-            </div>
-            <div
-              style={{
-                ...summaryTile,
-                background: 'rgba(255,255,255,0.12)',
-                border: '1px solid rgba(255,255,255,0.22)',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>Operations</div>
-              <div style={{ ...summaryValue, color: '#f8fafc' }}>{ops.length}</div>
-            </div>
-            <div
-              style={{
-                ...summaryTile,
-                background: 'rgba(255,255,255,0.12)',
-                border: '1px solid rgba(255,255,255,0.22)',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>PFMEA rows</div>
-              <div style={{ ...summaryValue, color: '#f8fafc' }}>{rowsSorted.length}</div>
-            </div>
-            <div
-              style={{
-                ...summaryTile,
-                background: avgRpnSummary.color ? colorFill(avgRpnSummary.color) : 'rgba(255,255,255,0.12)',
-                border: `1px solid ${avgRpnSummary.color ? colorBorder(avgRpnSummary.color) : 'rgba(255,255,255,0.22)'}`,
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>Avarage RPN</div>
-              <div style={{ ...summaryValue, color: '#f8fafc' }}>
-                {avgRpnSummary.avg == null ? '-' : Math.round(avgRpnSummary.avg)}
-              </div>
-            </div>
-
-            <div
-              style={{
-                ...summaryTile,
-                background: 'rgba(239,68,68,0.12)',
-                border: '1px solid rgba(239,68,68,0.35)',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>Actions must be defined</div>
-              <div style={{ ...summaryValue, color: '#f8fafc' }}>{avgRpnSummary.buckets.red}</div>
-            </div>
-
-            <div
-              style={{
-                ...summaryTile,
-                background: 'rgba(251,146,60,0.18)',
-                border: '1px solid rgba(251,146,60,0.45)',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>
-                Action plan required
-              </div>
-              <div style={{ ...summaryValue, color: '#f8fafc' }}>{avgRpnSummary.buckets.orange}</div>
-            </div>
-
-            <div
-              style={{
-                ...summaryTile,
-                background: 'rgba(250,204,21,0.22)',
-                border: '1px solid rgba(250,204,21,0.55)',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>
-                Actions recommended
-              </div>
-              <div style={{ ...summaryValue, color: '#f8fafc' }}>{avgRpnSummary.buckets.yellow}</div>
-            </div>
-
-            <div
-              style={{
-                ...summaryTile,
-                background: 'rgba(34,197,94,0.18)',
-                border: '1px solid rgba(34,197,94,0.45)',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#f8fafc' }}>Acceptable risk</div>
-              <div style={{ ...summaryValue, color: '#f8fafc' }}>{avgRpnSummary.buckets.green}</div>
-            </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      {err ? (
-        <div
-          style={{
-            ...frame,
-            marginTop: 10,
-            background: 'rgba(239,68,68,0.12)',
-            borderColor: 'rgba(239,68,68,0.28)',
-            padding: '8px 10px',
-            color: '#fecaca',
-            fontWeight: 700,
-          }}
-        >
-          {err}
-        </div>
-      ) : null}
+      {err ? <SettingsBanner tone="error">{err}</SettingsBanner> : null}
       {/* Save Revision Modal */}
       {showSave && (
         <div
@@ -5069,10 +4928,8 @@ useEffect(() => {
             </table>
           </div>
         </div>
-
       </div>
-      </div>
-    </div>
+    </SettingsPageShell>
   )
 }
 

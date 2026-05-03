@@ -139,6 +139,14 @@ Wdrozone zostaly tylko rekomendacje bezpieczne: poprawki stabilnosciowe, walidac
    Pliki: `PFMEA/supabase-operational-check-2026-05-02.md`, `supabase/DEPLOYMENT_CHECKLIST.md`.  
    Zweryfikowano `supabase db lint --linked` - PASS. Proba `supabase db dump --linked --schema public` zostala zablokowana przez brak Docker Desktop / lokalnego `pg_dump`; pusty artefakt dumpu usunieto i opisano bezpieczne opcje backupu.
 
+28. Supabase backup snapshot and Docker/WSL remediation attempt  
+   Pliki: `PFMEA/supabase-backup-2026-05-02/*`, `PFMEA/supabase-operational-check-2026-05-02.md`, `supabase/DEPLOYMENT_CHECKLIST.md`.  
+   Zainstalowano PostgreSQL 17 client tools i potwierdzono dostepnosc `pg_dump`. Windows nadal blokuje WSL/Docker przez blad komponentu `14098`, mimo poprawnego `DISM /RestoreHealth` i `sfc /scannow`. Utworzono awaryjny logiczny snapshot read-only public schema + public table data przez Supabase Management API, z manifestem i checksumami.
+
+29. Docker Desktop restored and Supabase CLI dump completed  
+   Pliki: `PFMEA/supabase-live-public-schema-dump-2026-05-03.sql`, `PFMEA/supabase-live-public-data-dump-2026-05-03.sql`, `PFMEA/supabase-live-public-pgdump-checksums-2026-05-03.json`, `.gitignore`, `PFMEA/supabase-operational-check-2026-05-02.md`.  
+   Po naprawie/aktualizacji Windows wlaczono WSL2 i uruchomiono Docker Desktop 4.71.0. Wykonano Supabase CLI dump schematu public i danych public. Pliki backupu zostaly dodane do `.gitignore`, bo zawieraja realne dane.
+
 ## Czesciowo wdrozone rekomendacje
 
 - React Compiler cleanup: czesc realnych problemow usunieta, ale kilka zasad jest nadal wylaczonych dla legacy modulow.
@@ -163,6 +171,7 @@ Wdrozone zostaly tylko rekomendacje bezpieczne: poprawki stabilnosciowe, walidac
 - Accessibility/shared chrome: `src/components/Layout/HeaderNavigation.tsx`, `HeaderDropdownMenu.tsx`, `src/components/rf-ui/dialogs.tsx`
 - Risk Matrix service: `src/features/settings/risk-matrix/risk-matrix-service.ts`
 - Public access request API: `app/api/request-access/route.ts`
+- Supabase operations: `PFMEA/supabase-backup-2026-05-02/`, `PFMEA/supabase-operational-check-2026-05-02.md`, `supabase/DEPLOYMENT_CHECKLIST.md`
 
 Uwaga: `riskflow-current-dev.err.log` i `riskflow-current-dev.out.log` sa zmienione przez dzialajace srodowisko developerskie. Nie byly elementem refaktoru.
 
@@ -195,6 +204,12 @@ Uwaga: `riskflow-current-dev.err.log` i `riskflow-current-dev.out.log` sa zmieni
 | `npm run regression:pcp-utils` | PASS |
 | `npm run regression:report-revision` | PASS |
 | `supabase db lint --linked` | PASS |
+| PostgreSQL 17 client tools / `pg_dump --version` | PASS |
+| Logical Supabase public snapshot | PASS |
+| Docker/WSL enablement | BLOCKED - Windows component error `14098` |
+| Docker Desktop / WSL2 after Windows repair | PASS |
+| Supabase CLI public schema dump | PASS |
+| Supabase CLI public data dump | PASS with circular FK restore warning |
 | `npm run check` | PASS |
 | `npm run regression:all` | NOT RUN - brak dedykowanych env/data, testy moga mutowac drafty |
 
@@ -207,3 +222,4 @@ Build: Next.js 16.1.1, 33 strony wygenerowane, kompilacja zakonczona sukcesem.
 - `src/features/settings/invitation-shell.tsx` jest teraz adapterem kompatybilnosci, ale czesc legacy importow nadal uzywa tej sciezki zamiast bezposredniego `@/components/rf-ui`.
 - Rate limit request-access jest procesowy; w serverless/multi-instance nie jest wystarczajacy jako jedyna ochrona.
 - Rzeczywisty stan RLS/migracji Supabase wymaga porownania z live database.
+- Obecny logiczny snapshot JSON pozostaje dodatkowym zabezpieczeniem. Kanoniczne dumpy Supabase CLI z 2026-05-03 sa dostepne lokalnie, ale data-only restore wymaga uwagi ze wzgledu na cykliczne FK `projects` / `process_revisions`.

@@ -34,6 +34,11 @@ yarn-error.log*
 tmp-pfmea-*.js
 pcp-save-regression-failure.png
 
+# local Supabase backups / live data snapshots
+/PFMEA/supabase-backup-*/
+/PFMEA/supabase-live-public-*-dump-*.sql
+/PFMEA/supabase-live-public-pgdump-checksums-*.json
+
 # env files (can opt-in for committing if needed)
 .env*
 
