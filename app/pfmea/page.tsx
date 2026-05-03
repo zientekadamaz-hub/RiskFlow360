@@ -8,6 +8,8 @@ import { supabase } from '../lib/supabaseBrowser'
 import { type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/matrixColors'
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 import { isTimeoutError } from '@/lib/error-utils'
+import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
+import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
 import {
   clampRiskInt,
   riskCellKey,
@@ -69,7 +71,7 @@ import {
 } from '@/features/pfmea/pfmea-row-match-utils'
 import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
 import { hydratePfmeaGroupIds } from '@/features/pfmea/pfmea-row-normalization-utils'
-import { nextPfmeaRevisionLabel, pfmeaRevisionNumberFromLabel } from '@/features/pfmea/pfmea-revision-utils'
+import { pfmeaRevisionNumberFromLabel } from '@/features/pfmea/pfmea-revision-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
 import { createPfmeaSaveTimer, formatPfmeaSaveTimings } from '@/features/pfmea/pfmea-save-timing-utils'
 import { parsePfmeaPublishResult } from '@/features/pfmea/pfmea-publish-utils'
@@ -107,18 +109,13 @@ import {
   type PfmeaProjectView,
 } from '@/features/pfmea/pfmea-service'
 import {
-  SettingsSummaryGrid,
-  SettingsSummaryTile,
   SettingsBackdrop,
   SettingsBanner,
   SettingsPageShell,
-  getSettingsSummaryGridMaxWidth,
   settingsCardStyle,
   settingsFrameStyle,
   settingsProcessAccent,
-  settingsRiskSummaryTileStyle,
 } from '@/components/rf-ui'
-import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
 
 /* ===================== TYPES ===================== */
 
@@ -3250,67 +3247,15 @@ useEffect(() => {
 
   const frame = settingsFrameStyle
   const card: React.CSSProperties = { ...settingsCardStyle, color: SURFACE_TEXT }
-  const processNameLength = (project?.name ?? '').length
-  const processSummaryFontSize = processNameLength > 42 ? 13 : processNameLength > 28 ? 15 : processNameLength > 18 ? 18 : 24
-  const processSummaryValueStyle: React.CSSProperties = {
-    ...projectsSummaryValueStyle,
-    alignItems: 'center',
-    display: 'flex',
-    fontSize: processSummaryFontSize,
-    justifyContent: 'center',
-    lineHeight: 1.12,
-    minHeight: 36,
-    overflowWrap: 'anywhere',
-    whiteSpace: 'normal',
-    wordBreak: 'break-word',
-  }
-  const pfmeaSummaryMaxWidth = getSettingsSummaryGridMaxWidth(10)
-  const pfmeaSummaryValueStyle: React.CSSProperties = { ...projectsSummaryValueStyle, color: '#f8fafc' }
 
   const pfmeaSummary = (
-    <div style={{ width: '100%', maxWidth: pfmeaSummaryMaxWidth, marginLeft: 'auto', alignSelf: 'flex-start' }}>
-      <SettingsSummaryGrid columns={10} maxWidth={pfmeaSummaryMaxWidth}>
-        <SettingsSummaryTile
-          label="Process"
-          style={{ gridColumn: 'span 2' }}
-          value={project?.name ?? '-'}
-          valueStyle={processSummaryValueStyle}
-        />
-        <SettingsSummaryTile label="Revision" value={pfmeaRevisionNumberFromLabel(workingRevisionLabel)} valueStyle={pfmeaSummaryValueStyle} />
-        <SettingsSummaryTile label="Operations" value={ops.length} valueStyle={pfmeaSummaryValueStyle} />
-        <SettingsSummaryTile label="PFMEA rows" value={rowsSorted.length} valueStyle={pfmeaSummaryValueStyle} />
-        <SettingsSummaryTile
-          label="Average RPN"
-          style={avgRpnSummary.color ? settingsRiskSummaryTileStyle(avgRpnSummary.color) : undefined}
-          value={avgRpnSummary.avg == null ? '-' : Math.round(avgRpnSummary.avg)}
-          valueStyle={pfmeaSummaryValueStyle}
-        />
-        <SettingsSummaryTile
-          label="Actions must be defined"
-          style={settingsRiskSummaryTileStyle('red')}
-          value={avgRpnSummary.buckets.red}
-          valueStyle={pfmeaSummaryValueStyle}
-        />
-        <SettingsSummaryTile
-          label="Action plan required"
-          style={settingsRiskSummaryTileStyle('orange')}
-          value={avgRpnSummary.buckets.orange}
-          valueStyle={pfmeaSummaryValueStyle}
-        />
-        <SettingsSummaryTile
-          label="Actions recommended"
-          style={settingsRiskSummaryTileStyle('yellow')}
-          value={avgRpnSummary.buckets.yellow}
-          valueStyle={pfmeaSummaryValueStyle}
-        />
-        <SettingsSummaryTile
-          label="Acceptable risk"
-          style={settingsRiskSummaryTileStyle('green')}
-          value={avgRpnSummary.buckets.green}
-          valueStyle={pfmeaSummaryValueStyle}
-        />
-      </SettingsSummaryGrid>
-    </div>
+    <PfmeaTopSummary
+      averageRpn={avgRpnSummary}
+      operationsCount={ops.length}
+      processName={project?.name}
+      revisionLabel={workingRevisionLabel}
+      rowsCount={rowsSorted.length}
+    />
   )
 
   if (moduleAccessState !== 'allowed') {
@@ -3323,7 +3268,7 @@ useEffect(() => {
       titleStyle={{ color: settingsProcessAccent, fontWeight: 600 }}
       subtitle="Analyze process risks and manage the PFMEA revision for the selected process."
       summary={pfmeaSummary}
-      summaryMaxWidth={pfmeaSummaryMaxWidth}
+      summaryMaxWidth={PFMEA_TOP_SUMMARY_MAX_WIDTH}
       backdrop={<SettingsBackdrop />}
     >
       <style jsx global>{`
@@ -3588,98 +3533,20 @@ useEffect(() => {
       {err ? <SettingsBanner tone="error">{err}</SettingsBanner> : null}
       {/* Save Revision Modal */}
       {showSave && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 80,
-          }}
-          onClick={() => (saveBusy ? null : setShowSave(false))}
-        >
-          <div
-            style={{
-              width: 560,
-              maxWidth: '92vw',
-              background: SURFACE_PANEL_BG,
-              borderRadius: SURFACE_RADIUS,
-              border: `1px solid ${SURFACE_BORDER}`,
-              boxShadow: '0 16px 36px rgba(0,0,0,0.2)',
-              padding: 20,
-              color: SURFACE_TEXT,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 10 }}>Save PFMEA</div>
-            <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.5, marginBottom: 12 }}>
-              Describe what you changed.
-            </div>
-            <textarea
-              autoFocus
-              value={changeDesc}
-              onChange={(e) => setChangeDesc(e.target.value)}
-              placeholder="Describe changes (required)"
-              style={{
-                width: '100%',
-                minHeight: 90,
-                borderRadius: SURFACE_RADIUS,
-                border: `1px solid ${SURFACE_BORDER}`,
-                padding: '10px 12px',
-                fontSize: 14,
-                fontFamily: 'inherit',
-                resize: 'vertical',
-                marginBottom: 14,
-                background: SURFACE_BG,
-                color: SURFACE_TEXT,
-              }}
-            />
-            <div style={{ fontSize: 12, color: SURFACE_MUTED, marginBottom: 6 }}>
-              Next revision: <b>{nextPfmeaRevisionLabel(workingRevisionLabel)}</b>
-            </div>
-            <div style={{ fontSize: 12, color: SURFACE_MUTED, marginBottom: 6 }}>
-              Author: <b>{currentAuthorName}</b>
-            </div>
-            <div style={{ fontSize: 12, color: SURFACE_MUTED, marginBottom: 14 }}>
-              Current PFMEA: <b>{rowsSorted.length}</b> risks
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => (saveBusy ? null : setShowSave(false))}
-                disabled={saveBusy}
-                style={{ ...actionBtn, height: 28, padding: '0 12px' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveRevision}
-                disabled={saveBusy || !isDirty || !changeDesc.trim() || readOnly}
-                style={{ ...actionBtn, height: 28, padding: '0 12px' }}
-              >
-                {saveBusy ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-            {err ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  borderRadius: SURFACE_RADIUS,
-                  border: '1px solid rgba(239,68,68,0.28)',
-                  background: 'rgba(239,68,68,0.12)',
-                  padding: '8px 10px',
-                  color: '#fecaca',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  lineHeight: 1.45,
-                }}
-              >
-                {err}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <PfmeaSaveRevisionModal
+          actionButtonStyle={actionBtn}
+          authorName={currentAuthorName}
+          changeDescription={changeDesc}
+          currentRowsCount={rowsSorted.length}
+          error={err}
+          isDirty={isDirty}
+          onCancel={() => setShowSave(false)}
+          onChangeDescription={setChangeDesc}
+          onSave={handleSaveRevision}
+          readOnly={readOnly}
+          saveBusy={saveBusy}
+          workingRevisionLabel={workingRevisionLabel}
+        />
       )}
 
       {confirmDialog && (
