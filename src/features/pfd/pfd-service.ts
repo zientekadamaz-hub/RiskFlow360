@@ -1,8 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 import type {
   OperationRow,
   PfdEditSession,
   PfdHistoryEntry,
+  PfdModuleAccessResult,
   PersistedPfdDiagram,
   PfdUserContext,
   ProjectProcessOptionRow,
@@ -23,6 +25,10 @@ type PfdEditSessionRow = {
 type PfdSessionEventRow = {
   id: string
   message?: string | null
+}
+
+type HeaderRoleRow = {
+  org_role?: string | null
 }
 
 type ProjectRevisionRow = {
@@ -85,6 +91,48 @@ export async function fetchPfdUserContext(supabase: SupabaseClient): Promise<Pfd
     }
   } catch {
     return { currentUserId: null, historyAuthor: 'Unknown user' }
+  }
+}
+
+export async function fetchPfdModuleAccess(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<PfdModuleAccessResult> {
+  if (!projectId) {
+    return { canOpenPfmeaPanel: false, redirectToProjects: false, state: 'denied' }
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  const user = session?.user ?? null
+  if (!user) {
+    return { canOpenPfmeaPanel: false, redirectToProjects: false, state: 'checking' }
+  }
+
+  const headerRes = await supabase.rpc('get_my_header').maybeSingle()
+  const header = (headerRes.data as HeaderRoleRow | null) ?? null
+  const role = (header?.org_role ?? '').toLowerCase()
+
+  if (role !== 'customer') {
+    return { canOpenPfmeaPanel: true, redirectToProjects: false, state: 'allowed' }
+  }
+
+  try {
+    const accessMap = await loadOwnCustomerAccessMap(user.id, [projectId])
+    const canReadPfd = hasCustomerModuleAccess(accessMap, projectId, 'PFD')
+    if (!canReadPfd) {
+      return { canOpenPfmeaPanel: false, redirectToProjects: true, state: 'denied' }
+    }
+
+    return {
+      canOpenPfmeaPanel: hasCustomerModuleAccess(accessMap, projectId, 'PFMEA'),
+      redirectToProjects: false,
+      state: 'allowed',
+    }
+  } catch {
+    return { canOpenPfmeaPanel: false, redirectToProjects: true, state: 'denied' }
   }
 }
 
@@ -346,9 +394,12 @@ export async function startPfdEditSession(
     nodes: unknown[]
     edges: unknown[]
     editLockMs: number
+    nowIso?: string
+    nowMs?: number
   }
 ) {
-  const nowIso = new Date().toISOString()
+  const nowMs = params.nowMs ?? Date.now()
+  const nowIso = params.nowIso ?? new Date(nowMs).toISOString()
   const res = await supabase
     .from('pfd_edit_sessions')
     .select('project_id,locked_by,last_activity_at')
@@ -363,7 +414,7 @@ export async function startPfdEditSession(
   const hasActiveOther =
     !!otherOwner &&
     otherOwner !== params.currentUserId &&
-    Date.now() - last < params.editLockMs
+    nowMs - last < params.editLockMs
 
   if (hasActiveOther) {
     return { blocked: true as const, message: 'This PFD is currently locked by another user.' }
@@ -378,7 +429,7 @@ export async function startPfdEditSession(
 
     if (deleteDraftRes.error) throw new Error(deleteDraftRes.error.message)
 
-    const reason = Date.now() - last >= params.editLockMs ? '48h inactivity timeout' : 'session takeover'
+    const reason = nowMs - last >= params.editLockMs ? '48h inactivity timeout' : 'session takeover'
     const notifyRes = await supabase.from('pfd_session_events').insert([
       {
         project_id: params.projectId,

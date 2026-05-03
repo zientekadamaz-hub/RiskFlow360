@@ -50,8 +50,13 @@ export type PfdUserContext = {
   historyAuthor: string
 }
 
+export type PfdModuleAccessResult = {
+  canOpenPfmeaPanel: boolean
+  redirectToProjects: boolean
+  state: 'checking' | 'allowed' | 'denied'
+}
+
 export type PersistedPfdDiagram = {
   nodes: unknown[]
   edges: unknown[]
 }
-

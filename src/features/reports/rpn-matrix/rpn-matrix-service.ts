@@ -10,6 +10,7 @@ import {
   fetchRiskMatrixConfig,
 } from '@/features/projects/projects-service'
 import { clampInt, normalizeProjectText } from '@/features/projects/utils'
+import { PFMEA_REPORT_RISK_SELECT_WITH_REVISION } from '@/features/reports/pfmea-report-query'
 import { getPfmeaReportRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
 import { getReportRevisionId } from '@/features/reports/report-revision-utils'
 import type { RpnMatrixCellSummary, RpnMatrixFilters, RpnMatrixProject, RpnMatrixProjectColorCounts, RpnMatrixReportData } from './types'
@@ -109,9 +110,8 @@ export async function fetchRpnMatrixReportData(
   if (revisionIds.length) {
     const { data, error } = await supabase
       .from('pfmea_rows')
-      .select('revision_id,action_status,severity,occurrence,detection,occurrence2,detection2,oxd_current,rpn_current,rpn,operations!inner(active)')
+      .select(PFMEA_REPORT_RISK_SELECT_WITH_REVISION)
       .in('revision_id', revisionIds)
-      .eq('operations.active', true)
 
     if (error) throw error
 

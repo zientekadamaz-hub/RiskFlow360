@@ -18,7 +18,6 @@ import ReactFlow, {
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import { supabase } from '../lib/supabaseBrowser'
-import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 import {
   appendConnectionEdge,
   applySelectionToEdges,
@@ -65,6 +64,7 @@ import {
 } from '@/features/pfd/pfd-operations-service'
 import {
   discardPfdDraftAndCloseSession,
+  fetchPfdModuleAccess,
   fetchOwnPfdDraft,
   fetchPfdCanvasData,
   fetchPfdEditSession,
@@ -544,41 +544,11 @@ function PfdPageContent() {
         return
       }
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-
-      const user = session?.user ?? null
-      if (!user) return
-
-      const headerRes = await supabase.rpc('get_my_header').maybeSingle()
-      const header = (headerRes.data as { org_role?: string | null } | null) ?? null
-      const role = (header?.org_role ?? '').toLowerCase()
-
-      if (role !== 'customer') {
-        if (!alive) return
-        setCanOpenPfmeaPanel(true)
-        setModuleAccessState('allowed')
-        return
-      }
-
-      try {
-        const accessMap = await loadOwnCustomerAccessMap(user.id, [projectId])
-        const canReadPfd = hasCustomerModuleAccess(accessMap, projectId, 'PFD')
-        if (!alive) return
-
-        setCanOpenPfmeaPanel(hasCustomerModuleAccess(accessMap, projectId, 'PFMEA'))
-
-        if (!canReadPfd) {
-          setModuleAccessState('denied')
-          window.location.assign('/projects')
-          return
-        }
-
-        setModuleAccessState('allowed')
-      } catch {
-        if (!alive) return
-        setModuleAccessState('denied')
+      const access = await fetchPfdModuleAccess(supabase, projectId)
+      if (!alive) return
+      setCanOpenPfmeaPanel(access.canOpenPfmeaPanel)
+      setModuleAccessState(access.state)
+      if (access.redirectToProjects) {
         window.location.assign('/projects')
       }
     })()
