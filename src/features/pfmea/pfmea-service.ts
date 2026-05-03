@@ -16,6 +16,7 @@ import {
   sortPfmeaRows,
   type PfmeaOrderRow,
 } from './pfmea-row-order-utils'
+import { isMissingRpcFunctionError } from './pfmea-publish-utils'
 
 export type PfmeaProjectView = {
   id: string
@@ -48,6 +49,12 @@ export type PfmeaHistoryEntry = {
 export type PfmeaRevisionRowsResult<Row extends PfmeaPayloadRow = PfmeaPayloadRow> = {
   groupIdsSupported: boolean
   rows: Row[]
+}
+
+export type PfmeaRevisionPublishResult = {
+  data: unknown
+  historyAlreadyInserted: boolean
+  usedFallback: boolean
 }
 
 export type PfmeaRowOrderUpdate = {
@@ -373,6 +380,53 @@ export async function persistPfmeaRowOrderMetadata<Row extends PfmeaOrderRow & {
   }
 
   return updates
+}
+
+export async function publishPfmeaRevisionWithHistory(
+  supabase: SupabaseClient,
+  params: {
+    avgRpn: number | null
+    changeDescription: string
+    projectId: string
+    riskCount: number
+    userId: string
+    authorName: string
+  }
+): Promise<PfmeaRevisionPublishResult> {
+  const publishWithHistoryRes = await supabase.rpc('publish_pfmea_revision_with_history', {
+    p_project_id: params.projectId,
+    p_change_description: params.changeDescription,
+    p_user_id: params.userId,
+    p_author_name: params.authorName,
+    p_risk_count: params.riskCount,
+    p_avg_rpn: params.avgRpn,
+  })
+
+  if (!publishWithHistoryRes.error) {
+    return {
+      data: publishWithHistoryRes.data,
+      historyAlreadyInserted: true,
+      usedFallback: false,
+    }
+  }
+
+  if (!isMissingRpcFunctionError(publishWithHistoryRes.error, 'publish_pfmea_revision_with_history')) {
+    throw publishWithHistoryRes.error
+  }
+
+  const publishRes = await supabase.rpc('publish_process_module_revision', {
+    p_project_id: params.projectId,
+    p_module: 'PFMEA',
+    p_change_description: params.changeDescription,
+    p_user_id: params.userId,
+  })
+  if (publishRes.error) throw publishRes.error
+
+  return {
+    data: publishRes.data,
+    historyAlreadyInserted: false,
+    usedFallback: true,
+  }
 }
 
 export async function ensurePfmeaProcessDraft(

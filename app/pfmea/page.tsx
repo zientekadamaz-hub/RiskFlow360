@@ -72,7 +72,7 @@ import { hydratePfmeaGroupIds } from '@/features/pfmea/pfmea-row-normalization-u
 import { nextPfmeaRevisionLabel, pfmeaRevisionNumberFromLabel } from '@/features/pfmea/pfmea-revision-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
 import { createPfmeaSaveTimer, formatPfmeaSaveTimings } from '@/features/pfmea/pfmea-save-timing-utils'
-import { isMissingRpcFunctionError, parsePfmeaPublishResult } from '@/features/pfmea/pfmea-publish-utils'
+import { parsePfmeaPublishResult } from '@/features/pfmea/pfmea-publish-utils'
 import {
   PFMEA_CLONE_FIELDS,
   PFMEA_CLONE_FIELDS_LEGACY,
@@ -96,6 +96,7 @@ import {
   fetchPfmeaRevisionHistory,
   persistPfmeaDirtyRevisionRows,
   persistPfmeaRowOrderMetadata,
+  publishPfmeaRevisionWithHistory,
   restorePfmeaRowsSnapshotToRevision,
   startPfmeaEditSession,
   type PfmeaRowOrderUpdate,
@@ -2506,34 +2507,20 @@ useEffect(() => {
 
       const avgRpnValue = avgRpnSummary.avg == null ? null : Math.round(avgRpnSummary.avg * 100) / 100
       const historyAuthor = currentAuthorName || 'Unknown user'
-      let historyAlreadyInserted = false
-      let data: unknown = null
-
-      const publishWithHistoryRes = await supabase.rpc('publish_pfmea_revision_with_history', {
-        p_project_id: projectId,
-        p_change_description: desc,
-        p_user_id: uid,
-        p_author_name: historyAuthor,
-        p_risk_count: rowsSorted.length,
-        p_avg_rpn: avgRpnValue,
+      const publishResultWithHistory = await publishPfmeaRevisionWithHistory(supabase, {
+        authorName: historyAuthor,
+        avgRpn: avgRpnValue,
+        changeDescription: desc,
+        projectId,
+        riskCount: rowsSorted.length,
+        userId: uid,
       })
-
-      if (!publishWithHistoryRes.error) {
-        data = publishWithHistoryRes.data
-        historyAlreadyInserted = true
+      const historyAlreadyInserted = publishResultWithHistory.historyAlreadyInserted
+      const data: unknown = publishResultWithHistory.data
+      if (!publishResultWithHistory.usedFallback) {
         saveTimer.mark('publish revision and history rpc')
-      } else if (isMissingRpcFunctionError(publishWithHistoryRes.error, 'publish_pfmea_revision_with_history')) {
-        const publishRes = await supabase.rpc('publish_process_module_revision', {
-          p_project_id: projectId,
-          p_module: 'PFMEA',
-          p_change_description: desc,
-          p_user_id: uid,
-        })
-        if (publishRes.error) throw publishRes.error
-        data = publishRes.data
-        saveTimer.mark('publish revision rpc fallback')
       } else {
-        throw publishWithHistoryRes.error
+        saveTimer.mark('publish revision rpc fallback')
       }
 
       const publishResult = parsePfmeaPublishResult(data)

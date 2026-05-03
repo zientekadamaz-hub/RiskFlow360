@@ -115,6 +115,7 @@ function createSupabase(responder, options = {}) {
 }
 
 const displayUtils = loadTypeScriptModule(['src', 'features', 'pfmea', 'pfmea-display-utils.ts'])
+const publishUtils = loadTypeScriptModule(['src', 'features', 'pfmea', 'pfmea-publish-utils.ts'])
 const payloadUtils = {
   PFMEA_SELECT_FIELDS: 'modern-fields',
   PFMEA_SELECT_FIELDS_LEGACY: 'legacy-fields',
@@ -167,12 +168,14 @@ const {
   fetchPfmeaRevisionHistory,
   persistPfmeaDirtyRevisionRows,
   persistPfmeaRowOrderMetadata,
+  publishPfmeaRevisionWithHistory,
   restorePfmeaRowsSnapshotToRevision,
   startPfmeaEditSession,
 } = loadTypeScriptModule(['src', 'features', 'pfmea', 'pfmea-service.ts'], {
   './pfmea-display-utils': displayUtils,
   './pfmea-hierarchy-utils': hierarchyUtils,
   './pfmea-payload-utils': payloadUtils,
+  './pfmea-publish-utils': publishUtils,
   './pfmea-row-order-utils': rowOrderUtils,
 })
 
@@ -390,6 +393,56 @@ async function main() {
     assert.equal(history.length, 1)
     assert.equal(history[0].revisionLabel, '2.1.0')
     assert.equal(history[0].avgRpn, 144.4)
+  }
+
+  {
+    const supabase = createSupabase(() => ({ data: null, error: null }), {
+      rpc: {
+        publish_pfmea_revision_with_history: {
+          data: { revision_id: 'rev-published', revision_label: '2.0.0' },
+          error: null,
+        },
+      },
+    })
+    const result = await publishPfmeaRevisionWithHistory(supabase, {
+      authorName: 'Adam',
+      avgRpn: 144,
+      changeDescription: 'Publish',
+      projectId: 'project-1',
+      riskCount: 5,
+      userId: 'user-1',
+    })
+    assert.equal(result.historyAlreadyInserted, true)
+    assert.equal(result.usedFallback, false)
+    assert.equal(result.data.revision_id, 'rev-published')
+    assert.equal(supabase.calls.some((call) => call.rpc === 'publish_pfmea_revision_with_history'), true)
+  }
+
+  {
+    const supabase = createSupabase(() => ({ data: null, error: null }), {
+      rpc: {
+        publish_pfmea_revision_with_history: {
+          data: null,
+          error: { code: 'PGRST202', message: 'Function not found' },
+        },
+        publish_process_module_revision: {
+          data: 'fallback-rev',
+          error: null,
+        },
+      },
+    })
+    const result = await publishPfmeaRevisionWithHistory(supabase, {
+      authorName: 'Adam',
+      avgRpn: null,
+      changeDescription: 'Publish',
+      projectId: 'project-1',
+      riskCount: 5,
+      userId: 'user-1',
+    })
+    assert.equal(result.historyAlreadyInserted, false)
+    assert.equal(result.usedFallback, true)
+    assert.equal(result.data, 'fallback-rev')
+    assert.equal(supabase.calls.some((call) => call.rpc === 'publish_process_module_revision'), true)
   }
 
   {
