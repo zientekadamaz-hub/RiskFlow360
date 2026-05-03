@@ -2,7 +2,6 @@
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
 import { type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/matrixColors'
@@ -11,6 +10,7 @@ import { isTimeoutError } from '@/lib/error-utils'
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
 import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
 import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
+import { PfmeaToolbar } from '@/features/pfmea/pfmea-toolbar'
 import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
 import {
   clampRiskInt,
@@ -259,7 +259,6 @@ const EDIT_LOCK_HOURS = 48
 const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
 const SURFACE_RADIUS = 8
 const SURFACE_BG = 'rgba(255,255,255,0.08)'
-const SURFACE_BG_STRONG = 'rgba(255,255,255,0.12)'
 const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
 const SURFACE_TEXT = '#f8fafc'
 const SURFACE_MUTED = 'rgba(255,255,255,0.72)'
@@ -3230,6 +3229,19 @@ useEffect(() => {
     () => visibleColumnDefs.reduce((sum, col) => sum + col.width, 0),
     [visibleColumnDefs]
   )
+  const visibleColumnIds = useMemo(
+    () => new Set(PFMEA_COLUMNS.filter((col) => isColumnVisible(col.id)).map((col) => col.id)),
+    [isColumnVisible]
+  )
+  const editButtonLabel = sessionBusy
+    ? 'Please wait...'
+    : isEditOwner
+      ? 'Discard draft'
+      : isLockedByOther
+        ? isChampion
+          ? 'Take over PFMEA'
+          : 'PFMEA locked'
+        : 'Edit PFMEA'
 
   if (!projectId) {
     return (
@@ -3566,144 +3578,44 @@ useEffect(() => {
 
       {/* Table */}
       <div style={{ ...frame, marginTop: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Link href="/projects" className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }}>
-              Project
-            </Link>
-            <Link href={`/pfd?project=${projectId}`} className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }}>
-              PFD
-            </Link>
-            <Link href={`/pcp?project=${projectId}`} className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }}>
-              PCP
-            </Link>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button
-              className="rf-button"
-              onClick={() => {
-                if (isEditOwner) {
-                  setConfirmDialog({
-                    title: 'Discard draft and close session',
-                    body: 'Are you sure? All unsaved draft PFMEA changes will be permanently lost.',
-                    dangerNote: 'DATA WILL BE PERMANENTLY LOST',
-                    onConfirm: async () => {
-                      await discardDraftAndCloseSession()
-                      return true
-                    },
-                  })
-                  return
-                }
-                void startEditSession()
-              }}
-              disabled={sessionBusy || isObsolete || (!isEditOwner && isLockedByOther && !isChampion)}
-              style={{ ...actionBtn, padding: '8px 12px', height: 29, cursor: 'pointer' }}
-            >
-              {sessionBusy
-                ? 'Please wait...'
-                : isEditOwner
-                  ? 'Discard draft'
-                  : isLockedByOther
-                    ? isChampion
-                      ? 'Take over PFMEA'
-                      : 'PFMEA locked'
-                    : 'Edit PFMEA'}
-            </button>
-            {isEditOwner ? (
-              <button
-                className="rf-button"
-                onClick={() => {
-                  setErr('')
-                  setShowSave(true)
-                }}
-                disabled={!isDirty || readOnly}
-                style={{
-                  ...actionBtn,
-                  padding: '8px 12px',
-                  height: 29,
-                  cursor: !isDirty || readOnly ? 'not-allowed' : 'pointer',
-                  opacity: !isDirty || readOnly ? 0.45 : 1,
-                  borderColor: isDirty && !readOnly ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.18)',
-                }}
-              >
-                Save
-              </button>
-            ) : null}
-            <button className="rf-button" onClick={openRevisionHistory} style={{ ...actionBtn, padding: '8px 12px', height: 29, cursor: 'pointer' }}>
-              Revision History
-            </button>
-            <button
-              onClick={() => setColumnFiltersOpen((v) => !v)}
-              className="rf-button"
-              style={{ ...actionBtn, padding: '8px 12px', height: 29 }}
-            >
-              {columnFiltersOpen ? 'Hide columns' : 'Set columns'}
-            </button>
-          </div>
-        </div>
-
-        {columnFiltersOpen && (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {PFMEA_COLUMN_FILTER_GROUPS.map((group) => (
-                <div key={group.title} style={{ ...card, padding: '8px 12px', flex: 1, minWidth: 260 }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 8,
-                      marginBottom: 6,
-                    }}
-                  >
-                    <div style={{ fontSize: 12, fontWeight: 700, color: SURFACE_MUTED }}>{group.title}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <button
-                        onClick={() => uncheckColumnGroup(group.ids)}
-                        className="rf-button"
-                        style={{ padding: '2px 8px', borderRadius: 999, border: `1px solid ${SURFACE_BORDER}`, fontSize: 11 }}
-                      >
-                        Uncheck all
-                      </button>
-                      <button
-                        onClick={() => clearColumnGroup(group.ids)}
-                        className="rf-button"
-                        style={{ padding: '2px 8px', borderRadius: 999, border: `1px solid ${SURFACE_BORDER}`, fontSize: 11 }}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                    {group.ids.map((id) => {
-                      const col = PFMEA_COLUMNS_BY_ID[id]
-                      const checked = isColumnVisible(id)
-                      return (
-                        <label
-                          key={id}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            fontSize: 12,
-                            padding: '4px 8px',
-                            borderRadius: 999,
-                            border: `1px solid ${SURFACE_BORDER}`,
-                            background: checked ? SURFACE_BG_STRONG : SURFACE_BG,
-                            color: SURFACE_TEXT,
-                          }}
-                        >
-                          <input type="checkbox" checked={checked} onChange={(e) => toggleColumnVisibility(id, e.target.checked)} />
-                          {col.label}
-                        </label>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <PfmeaToolbar
+          actionButtonStyle={actionBtn}
+          cardStyle={card}
+          columnFiltersOpen={columnFiltersOpen}
+          columnGroups={PFMEA_COLUMN_FILTER_GROUPS}
+          columnsById={PFMEA_COLUMNS_BY_ID}
+          editButtonDisabled={sessionBusy || isObsolete || (!isEditOwner && isLockedByOther && !isChampion)}
+          editButtonLabel={editButtonLabel}
+          isEditOwner={isEditOwner}
+          isSaveDisabled={!isDirty || readOnly}
+          onClearColumnGroup={(ids) => clearColumnGroup(ids as PfmeaColumnId[])}
+          onEditClick={() => {
+            if (isEditOwner) {
+              setConfirmDialog({
+                title: 'Discard draft and close session',
+                body: 'Are you sure? All unsaved draft PFMEA changes will be permanently lost.',
+                dangerNote: 'DATA WILL BE PERMANENTLY LOST',
+                onConfirm: async () => {
+                  await discardDraftAndCloseSession()
+                  return true
+                },
+              })
+              return
+            }
+            void startEditSession()
+          }}
+          onOpenRevisionHistory={openRevisionHistory}
+          onOpenSave={() => {
+            setErr('')
+            setShowSave(true)
+          }}
+          onToggleColumn={(id, checked) => toggleColumnVisibility(id as PfmeaColumnId, checked)}
+          onToggleColumnFilters={() => setColumnFiltersOpen((value) => !value)}
+          onUncheckColumnGroup={(ids) => uncheckColumnGroup(ids as PfmeaColumnId[])}
+          projectId={projectId}
+          saveReadOnly={readOnly}
+          visibleColumnIds={visibleColumnIds}
+        />
 
         <div ref={tableWrapRef} style={{ ...card, padding: 0, borderRadius: SURFACE_RADIUS, overflow: 'visible' }}>
           <div
