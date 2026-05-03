@@ -57,6 +57,11 @@ export type PfmeaRevisionPublishResult = {
   usedFallback: boolean
 }
 
+export type PfmeaHistoryFallbackInsertResult = {
+  inserted: boolean
+  errorMessage: string | null
+}
+
 export type PfmeaRowOrderUpdate = {
   id: string
   created_at: string
@@ -555,6 +560,52 @@ export async function fetchPfmeaRevisionHistory(
     avgRpn: toFiniteNumber(x.avg_rpn),
     description: x.change_description ?? '',
   }))
+}
+
+export async function insertPfmeaHistoryFallback(
+  supabase: SupabaseClient,
+  params: {
+    authorId: string
+    authorName: string
+    avgRpn: number | null
+    changeDescription: string
+    createdAt?: string
+    projectId: string
+    revisionLabel: string
+    riskCount: number
+  }
+): Promise<PfmeaHistoryFallbackInsertResult> {
+  const historyInsert = await supabase.from('pfmea_change_history').insert([
+    {
+      project_id: params.projectId,
+      revision_label: params.revisionLabel || '0.0.0',
+      change_description: params.changeDescription,
+      author_id: params.authorId,
+      author_name: params.authorName,
+      risk_count: params.riskCount,
+      avg_rpn: params.avgRpn,
+      created_at: params.createdAt ?? new Date().toISOString(),
+    },
+  ])
+
+  if (historyInsert.error) {
+    return { inserted: false, errorMessage: historyInsert.error.message }
+  }
+  return { inserted: true, errorMessage: null }
+}
+
+export async function cleanupPfmeaDraftRowsAfterPublish(
+  supabase: SupabaseClient,
+  params: {
+    draftRevisionId: string | null
+    publishedRevisionId: string | null
+  }
+) {
+  if (!params.draftRevisionId || !params.publishedRevisionId || params.draftRevisionId === params.publishedRevisionId) {
+    return false
+  }
+  await deletePfmeaRowsByRevision(supabase, params.draftRevisionId)
+  return true
 }
 
 export async function deletePfmeaRowsByRevision(supabase: SupabaseClient, revisionId: string) {

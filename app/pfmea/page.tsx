@@ -84,6 +84,7 @@ import {
   summarizePfmeaRowsForError,
 } from '@/features/pfmea/pfmea-payload-utils'
 import {
+  cleanupPfmeaDraftRowsAfterPublish,
   deletePfmeaEditSession,
   deletePfmeaRowsByRevision,
   ensurePfmeaProcessDraft,
@@ -94,6 +95,7 @@ import {
   fetchPfmeaRowsForRevision,
   fetchPfmeaProjectView,
   fetchPfmeaRevisionHistory,
+  insertPfmeaHistoryFallback,
   persistPfmeaDirtyRevisionRows,
   persistPfmeaRowOrderMetadata,
   publishPfmeaRevisionWithHistory,
@@ -2566,22 +2568,19 @@ useEffect(() => {
         revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
 
         if (!historyAlreadyInserted) {
-          const historyInsert = await supabase.from('pfmea_change_history').insert([
-            {
-              project_id: projectId,
-              revision_label: revisionLabel || '0.0.0',
-              change_description: desc,
-              author_id: uid,
-              author_name: historyAuthor,
-              risk_count: rowsSorted.length,
-              avg_rpn: avgRpnValue,
-              created_at: new Date().toISOString(),
-            },
-          ])
+          const historyInsert = await insertPfmeaHistoryFallback(supabase, {
+            authorId: uid,
+            authorName: historyAuthor,
+            avgRpn: avgRpnValue,
+            changeDescription: desc,
+            projectId,
+            revisionLabel,
+            riskCount: rowsSorted.length,
+          })
           saveTimer.mark('insert pfmea history fallback')
-          if (historyInsert.error) {
+          if (historyInsert.errorMessage) {
             // Optional table; keep publish successful even if custom history insert is unavailable.
-            console.warn('PFMEA history insert skipped:', historyInsert.error.message)
+            console.warn('PFMEA history insert skipped:', historyInsert.errorMessage)
           }
         } else {
           saveTimer.mark('skip client history insert')
@@ -2598,17 +2597,15 @@ useEffect(() => {
       clearDirtyDraftPersisted()
       setDraftRevisionIdOverride(null)
       resetPfmeaEditRuntimeState()
-      if (draftRevisionId && publishedRevisionId && draftRevisionId !== publishedRevisionId) {
-        try {
-          const cleanupDraftRes = await supabase.from('pfmea_rows').delete().eq('revision_id', draftRevisionId)
-          if (cleanupDraftRes.error) throw cleanupDraftRes.error
-        } catch (cleanupDraftError: any) {
-          console.warn('PFMEA draft cleanup skipped:', cleanupDraftError?.message ?? String(cleanupDraftError))
-        }
-        saveTimer.mark('cleanup old draft rows')
+      try {
+        const draftRowsCleaned = await cleanupPfmeaDraftRowsAfterPublish(supabase, { draftRevisionId, publishedRevisionId })
+        if (draftRowsCleaned) saveTimer.mark('cleanup old draft rows')
+      } catch (cleanupDraftError: any) {
+        console.warn('PFMEA draft cleanup skipped:', cleanupDraftError?.message ?? String(cleanupDraftError))
+        if (draftRevisionId && publishedRevisionId && draftRevisionId !== publishedRevisionId) saveTimer.mark('cleanup old draft rows')
       }
       if (projectId && userId) {
-        await supabase.from('pfmea_edit_sessions').delete().eq('project_id', projectId).eq('locked_by', userId)
+        await deletePfmeaEditSession(supabase, projectId, userId)
         saveTimer.mark('cleanup edit session')
       }
       setEditSession(null)

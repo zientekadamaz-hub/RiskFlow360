@@ -157,6 +157,7 @@ const rowOrderUtils = {
   },
 }
 const {
+  cleanupPfmeaDraftRowsAfterPublish,
   deletePfmeaEditSession,
   deletePfmeaRowsByRevision,
   fetchPfmeaAuthorName,
@@ -166,6 +167,7 @@ const {
   fetchPfmeaProjectView,
   fetchPfmeaRowsForRevision,
   fetchPfmeaRevisionHistory,
+  insertPfmeaHistoryFallback,
   persistPfmeaDirtyRevisionRows,
   persistPfmeaRowOrderMetadata,
   publishPfmeaRevisionWithHistory,
@@ -396,6 +398,46 @@ async function main() {
   }
 
   {
+    const inserts = []
+    const supabase = createSupabase((state) => {
+      if (state.insertPayload) inserts.push(state.insertPayload)
+      return { data: null, error: null }
+    })
+    const result = await insertPfmeaHistoryFallback(supabase, {
+      authorId: 'user-1',
+      authorName: 'Adam',
+      avgRpn: 144,
+      changeDescription: 'Fallback history',
+      createdAt: '2026-05-03T10:00:00.000Z',
+      projectId: 'project-1',
+      revisionLabel: '2.0.0',
+      riskCount: 5,
+    })
+    assert.equal(result.inserted, true)
+    assert.equal(result.errorMessage, null)
+    assert.equal(inserts[0][0].revision_label, '2.0.0')
+    assert.equal(inserts[0][0].created_at, '2026-05-03T10:00:00.000Z')
+  }
+
+  {
+    const supabase = createSupabase((state) => {
+      if (state.insertPayload) return { data: null, error: { message: 'history table unavailable' } }
+      return { data: null, error: null }
+    })
+    const result = await insertPfmeaHistoryFallback(supabase, {
+      authorId: 'user-1',
+      authorName: 'Adam',
+      avgRpn: null,
+      changeDescription: 'Fallback history',
+      projectId: 'project-1',
+      revisionLabel: '',
+      riskCount: 5,
+    })
+    assert.equal(result.inserted, false)
+    assert.equal(result.errorMessage, 'history table unavailable')
+  }
+
+  {
     const supabase = createSupabase(() => ({ data: null, error: null }), {
       rpc: {
         publish_pfmea_revision_with_history: {
@@ -455,6 +497,24 @@ async function main() {
     await deletePfmeaEditSession(supabase, 'project-1', 'user-1')
     assert.equal(deleted[0], 'pfmea_rows:revision_id=draft-rev')
     assert.equal(deleted[1], 'pfmea_edit_sessions:project_id=project-1,locked_by=user-1')
+  }
+
+  {
+    const deleted = []
+    const supabase = createSupabase((state) => {
+      if (state.delete) deleted.push(`${state.table}:${state.filters.map((filter) => `${filter.column}=${filter.value}`).join(',')}`)
+      return { data: null, error: null }
+    })
+    assert.equal(await cleanupPfmeaDraftRowsAfterPublish(supabase, {
+      draftRevisionId: 'draft-rev',
+      publishedRevisionId: 'open-rev',
+    }), true)
+    assert.equal(await cleanupPfmeaDraftRowsAfterPublish(supabase, {
+      draftRevisionId: 'open-rev',
+      publishedRevisionId: 'open-rev',
+    }), false)
+    assert.equal(deleted.length, 1)
+    assert.equal(deleted[0], 'pfmea_rows:revision_id=draft-rev')
   }
 
   {
