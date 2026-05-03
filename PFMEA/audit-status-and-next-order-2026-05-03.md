@@ -28,7 +28,7 @@ Nie jest to jeszcze koniec refaktoryzacji. Glowne otwarte obszary to: rotacja se
 | Header globalny | DONE | Prezentacja headera rozbita na mniejsze komponenty; logika auth/cache nadal centralnie w `AppHeader`. |
 | Error handling foundation | DONE / CONTINUE | `src/lib/error-utils.ts` istnieje i jest uzywany w kluczowych miejscach; pozostale legacy flow do przepiecia przy refaktorach. |
 | Accessibility foundation | PARTIAL | Header i standardowe dialogi poprawione; zostaje focus trap, custom select, tabele i wykresy. |
-| PFMEA helper extraction | PARTIAL / ADVANCED | Duza czesc czystej logiki jest w `src/features/pfmea/*-utils.ts`; dodatkowo `pfmea-service` obsluguje author/role/project view/history, edit session startup, draft ensure, pobieranie wierszy rewizji, restore snapshot, batch update dirty rows, row order persistence, publish RPC/history wrapper, fallback history insert i cleanup draft rows po publikacji. Rozpoczeto fizyczne odchudzanie UI: top summary i save revision modal sa wydzielone z `app/pfmea/page.tsx`. |
+| PFMEA helper extraction | PARTIAL / ADVANCED | Duza czesc czystej logiki jest w `src/features/pfmea/*-utils.ts`; dodatkowo `pfmea-service` obsluguje author/role/project view/history, edit session startup, draft ensure, pobieranie wierszy rewizji, restore snapshot, batch update dirty rows, row order persistence, publish RPC/history wrapper, fallback history insert i cleanup draft rows po publikacji. Rozpoczeto fizyczne odchudzanie UI: top summary, save revision modal, confirm dialog i revision history modal sa wydzielone z `app/pfmea/page.tsx`. |
 | PFMEA save timeout mitigation | DONE / MONITOR | Dirty rows, indeksy, timing instrumentation, lżejszy refresh i RPC publish/history wdrozone. Trzeba monitorowac realne czasy. |
 | PCP service layer | DONE FOUNDATION | `src/features/pcp/pcp-utils.ts` zawiera helpery, a `src/features/pcp/pcp-service.ts` zawiera bezpiecznie wydzielone operacje Supabase/danych. Strona PCP nadal trzyma UI i stan. |
 | PFD service/page separation | OPEN | Nadal wymaga osobnego etapu. |
@@ -48,7 +48,7 @@ Nie jest to jeszcze koniec refaktoryzacji. Glowne otwarte obszary to: rotacja se
 | 4 | B-020/B-013 | Pomiar PFMEA save timings | OPEN | Trzeba raz zapisac PFMEA i ocenic realne bottlenecki po optymalizacjach. |
 | 5 | B-021 | PCP service layer | DONE FOUNDATION | Wykonano bezpieczne wydzielenie `pcp-service`; nastepny PCP krok to tylko opcjonalny hook tabeli i browser smoke. |
 | 6 | PFD service layer | OPEN | Najlepszy kolejny refaktor techniczny: analogiczny do PCP, ale nadal ostroznie, bo dotyka PFD nodes/edges i revision flow. |
-| 7 | B-005 | PFMEA service/UI layer | PARTIAL / ADVANCED | Wydzielono bezpieczne elementy serwisu: edit session startup, ensure draft, pobieranie wierszy rewizji, restore snapshot, batch update dirty rows, row order persistence, publish RPC/history wrapper, fallback history insert i cleanup draft rows po publikacji. Dodatkowo rozpoczęto fizyczne wydzielanie komponentow UI PFMEA. Pozostaje pelna orkiestracja save/publish oraz duze komponenty: toolbar, revision history modal, column filter, table/cell editor. |
+| 7 | B-005 | PFMEA service/UI layer | PARTIAL / ADVANCED | Wydzielono bezpieczne elementy serwisu: edit session startup, ensure draft, pobieranie wierszy rewizji, restore snapshot, batch update dirty rows, row order persistence, publish RPC/history wrapper, fallback history insert i cleanup draft rows po publikacji. Dodatkowo rozpoczęto fizyczne wydzielanie komponentow UI PFMEA. Pozostaje pelna orkiestracja save/publish oraz duze komponenty: toolbar, column filter, table/cell editor. |
 | 8 | B-017 | RPC/server route hardening | OPEN | Wymaga decyzji architektonicznej i service role env; lepiej po regression env. |
 | 9 | B-018 | Leaked password protection | OPEN | Do wlaczenia w Supabase Dashboard, jesli plan pozwala. Niski koszt, ale wymaga admin dashboard. |
 | 10 | B-009 | Indeksy/report performance review | OPEN | Robic po wiekszej probce danych lub po konkretnym wolnym query. |
@@ -61,7 +61,7 @@ Nie jest to jeszcze koniec refaktoryzacji. Glowne otwarte obszary to: rotacja se
 1. Zrotowac ujawnione sekrety Supabase i zaktualizowac lokalne/hostingowe env.
 2. Przygotowac osobna organizacje/projekt regresyjny i wlaczyc browser smoke tests.
 3. Przejsc do PFD service/session/publish separation, wzorujac sie na PCP service.
-4. Kontynuowac fizyczne odchudzanie PFMEA UI: nastepny bezpieczny etap to revision history modal i confirm dialog, potem toolbar/column filter, a dopiero pozniej table/cell editor.
+4. Kontynuowac fizyczne odchudzanie PFMEA UI: nastepny bezpieczny etap to toolbar/column filter, a dopiero pozniej table/cell editor.
 5. Przed kazda kolejna migracja schema-changing wykonac swiezy Supabase CLI dump.
 6. Wlaczyc kolejne hardeningi Supabase/auth: leaked password protection, trwaly rate limit, ewentualne server routes dla wrazliwych RPC.
 
