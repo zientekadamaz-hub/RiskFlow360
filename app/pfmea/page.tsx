@@ -16,6 +16,11 @@ import { PfmeaToolbar } from '@/features/pfmea/pfmea-toolbar'
 import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
 import { adjacentPopupStyle, anchoredPopupStyle } from '@/features/pfmea/pfmea-popup-position'
 import {
+  MERGED_CELL_TOP_PADDING,
+  MergedCellInner,
+  mergedCellTdStyle,
+} from '@/features/pfmea/pfmea-merged-cell'
+import {
   clampRiskInt,
   riskCellKey,
   riskColorForMatrixCell,
@@ -4235,55 +4240,6 @@ useEffect(() => {
 }
 
 /* ===================== TD COMPONENTS ===================== */
-
-const MERGED_CELL_STICKY_ROWSPAN = 2
-const MERGED_CELL_TOP_PADDING = 4
-const MERGED_CELL_BOTTOM_PADDING = 6
-
-function shouldUseMergedCellSticky(rowSpan?: number) {
-  return (rowSpan ?? 0) >= MERGED_CELL_STICKY_ROWSPAN
-}
-
-function mergedCellTdStyle(rowSpan?: number, style?: React.CSSProperties): React.CSSProperties | undefined {
-  if (!shouldUseMergedCellSticky(rowSpan)) return style
-  return {
-    verticalAlign: 'top',
-    overflow: 'visible',
-    ['--pfmea-td-pad-top' as any]: `${MERGED_CELL_TOP_PADDING}px`,
-    ['--pfmea-td-pad-bottom' as any]: `${MERGED_CELL_BOTTOM_PADDING}px`,
-    ...(style ?? {}),
-  }
-}
-
-function MergedCellInner(props: {
-  rowSpan?: number
-  children: React.ReactNode
-  gap?: number
-}) {
-  const sticky = shouldUseMergedCellSticky(props.rowSpan)
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: props.gap ?? 8,
-        width: '100%',
-        ...(sticky
-          ? {
-              position: 'sticky',
-              top: 'var(--pfmea-sticky-cell-top, 52px)',
-              minHeight: 28,
-              padding: 0,
-              zIndex: 1,
-            }
-          : null),
-      }}
-    >
-      {props.children}
-    </div>
-  )
-}
 
 function TdRead(props: { value: string; className: string; style?: React.CSSProperties; rowSpan?: number; onClick?: () => void }) {
   return (
