@@ -38,6 +38,7 @@ function createBuilder(table, resolveResponse, calls) {
     selected: null,
     table,
     terminal: null,
+    updatePayload: null,
     upsertOptions: null,
     upsertPayload: null,
   }
@@ -85,6 +86,10 @@ function createBuilder(table, resolveResponse, calls) {
       calls.push(state)
       return Promise.resolve(resolveResponse(state)).then(onFulfilled, onRejected)
     },
+    update(payload) {
+      state.updatePayload = payload
+      return builder
+    },
     upsert(payload, options) {
       state.upsertPayload = payload
       state.upsertOptions = options ?? null
@@ -121,6 +126,13 @@ const payloadUtils = {
       failure_mode_group_id: row.failure_mode_group_id ?? null,
     }
   },
+  buildPfmeaPublishedSyncPatch(row) {
+    return {
+      failure_mode: row.failure_mode ?? '',
+      failure_mode_group_id: row.failure_mode_group_id ?? null,
+      rpn: row.rpn ?? null,
+    }
+  },
   isMissingPfmeaGroupIdColumnError(error) {
     return String(error?.message ?? '').toLowerCase().includes('failure_mode_group_id')
   },
@@ -153,6 +165,8 @@ const {
   fetchPfmeaProjectView,
   fetchPfmeaRowsForRevision,
   fetchPfmeaRevisionHistory,
+  persistPfmeaDirtyRevisionRows,
+  persistPfmeaRowOrderMetadata,
   restorePfmeaRowsSnapshotToRevision,
   startPfmeaEditSession,
 } = loadTypeScriptModule(['src', 'features', 'pfmea', 'pfmea-service.ts'], {
@@ -299,6 +313,64 @@ async function main() {
     assert.equal(inserts.length, 1)
     assert.equal(Object.prototype.hasOwnProperty.call(inserts[0][0], 'failure_mode_group_id'), false)
     assert.equal(result.rows.length, 1)
+  }
+
+  {
+    const updates = []
+    const supabase = createSupabase((state) => {
+      if (state.updatePayload) updates.push(state)
+      return state.terminal === 'maybeSingle'
+        ? { data: { id: state.filters.find((filter) => filter.column === 'id')?.value }, error: null }
+        : { data: null, error: null }
+    })
+    const updatedCount = await persistPfmeaDirtyRevisionRows(supabase, {
+      dirtyIds: ['source-1'],
+      groupIdsSupported: false,
+      mappedRows: [
+        { id: 'mapped-1', operation_id: 'op-1', failure_mode: 'Mode', failure_mode_group_id: 'fm-1', created_at: '2026-05-03T08:00:00.000Z' },
+      ],
+      revisionId: 'rev-3',
+      sourceRows: [
+        { id: 'source-1', operation_id: 'op-1', failure_mode: 'Mode', failure_mode_group_id: 'fm-1', created_at: '2026-05-03T08:00:00.000Z' },
+      ],
+    })
+    assert.equal(updatedCount, 1)
+    assert.equal(updates.length, 1)
+    assert.equal(Object.prototype.hasOwnProperty.call(updates[0].updatePayload, 'failure_mode_group_id'), false)
+  }
+
+  {
+    const updates = []
+    const supabase = createSupabase((state) => {
+      if (state.updatePayload) updates.push(state)
+      return { data: null, error: null }
+    })
+    const persistedUpdates = await persistPfmeaRowOrderMetadata(supabase, {
+      groupIdsSupported: true,
+      preparedUpdates: [{
+        action_plan_group_id: 'ap-1',
+        created_at: '2026-05-03T08:01:00.000Z',
+        failure_block_group_id: 'fb-1',
+        failure_mode_group_id: 'fm-1',
+        id: 'row-1',
+        row_no: '1',
+      }],
+      revisionId: 'rev-4',
+      sourceRows: [{
+        action_plan_group_id: null,
+        created_at: '2026-05-03T08:00:00.000Z',
+        failure_block_group_id: null,
+        failure_mode_group_id: null,
+        id: 'row-1',
+        operation_id: 'op-1',
+        revision_id: 'rev-4',
+        row_no: null,
+      }],
+    })
+    assert.equal(persistedUpdates.length, 1)
+    assert.equal(updates.length, 1)
+    assert.equal(updates[0].updatePayload.row_no, '1')
+    assert.equal(updates[0].filters.some((filter) => filter.column === 'revision_id' && filter.value === 'rev-4'), true)
   }
 
   {

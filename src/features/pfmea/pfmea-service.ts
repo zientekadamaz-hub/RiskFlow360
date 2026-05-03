@@ -4,12 +4,18 @@ import {
   PFMEA_SELECT_FIELDS,
   PFMEA_SELECT_FIELDS_LEGACY,
   buildPfmeaInsertPayloadForRevision,
+  buildPfmeaPublishedSyncPatch,
   isMissingPfmeaGroupIdColumnError,
   stripPfmeaGroupIdsFromPayload,
   type PfmeaPayloadRow,
 } from './pfmea-payload-utils'
 import { isPlaceholderRowId } from './pfmea-hierarchy-utils'
-import { getPfmeaRowOperationIds, sortPfmeaRows } from './pfmea-row-order-utils'
+import {
+  buildPfmeaCreatedAtOrder,
+  getPfmeaRowOperationIds,
+  sortPfmeaRows,
+  type PfmeaOrderRow,
+} from './pfmea-row-order-utils'
 
 export type PfmeaProjectView = {
   id: string
@@ -42,6 +48,15 @@ export type PfmeaHistoryEntry = {
 export type PfmeaRevisionRowsResult<Row extends PfmeaPayloadRow = PfmeaPayloadRow> = {
   groupIdsSupported: boolean
   rows: Row[]
+}
+
+export type PfmeaRowOrderUpdate = {
+  id: string
+  created_at: string
+  row_no: string | null
+  failure_mode_group_id: string | null
+  failure_block_group_id: string | null
+  action_plan_group_id: string | null
 }
 
 export type PfmeaEditSessionStartResult =
@@ -249,6 +264,115 @@ export async function restorePfmeaRowsSnapshotToRevision<Row extends PfmeaPayloa
     operationIds,
     revisionId: params.revisionId,
   })
+}
+
+export async function persistPfmeaDirtyRevisionRows<Row extends PfmeaPayloadRow = PfmeaPayloadRow>(
+  supabase: SupabaseClient,
+  params: {
+    batchSize?: number
+    dirtyIds: Iterable<string>
+    groupIdsSupported?: boolean | null
+    mappedRows: Row[]
+    revisionId: string
+    sourceRows: Row[]
+  }
+) {
+  const dirtyIds = new Set(params.dirtyIds)
+  const rowsToPersist = params.mappedRows.filter((row, index) => {
+    const sourceRow = params.sourceRows[index]
+    return dirtyIds.has(row.id) || (sourceRow ? dirtyIds.has(sourceRow.id) : false)
+  })
+
+  const batchSize = params.batchSize ?? 25
+  for (let index = 0; index < rowsToPersist.length; index += batchSize) {
+    const batch = rowsToPersist.slice(index, index + batchSize)
+    const results = await Promise.all(
+      batch.map((row) => {
+        const patch = buildPfmeaPublishedSyncPatch(row)
+        return supabase
+          .from('pfmea_rows')
+          .update(
+            params.groupIdsSupported === false
+              ? stripPfmeaGroupIdsFromPayload(patch as Record<string, unknown>)
+              : patch
+          )
+          .eq('id', row.id)
+          .eq('revision_id', params.revisionId)
+          .select('id')
+          .maybeSingle()
+          .then((result) => ({ rowId: row.id, result }))
+      })
+    )
+
+    for (const { rowId, result } of results) {
+      if (result.error) throw result.error
+      if (!result.data?.id) {
+        throw new Error(`PFMEA draft integrity check failed. Row ${rowId} was not updated in revision ${params.revisionId}.`)
+      }
+    }
+  }
+
+  return rowsToPersist.length
+}
+
+export async function persistPfmeaRowOrderMetadata<Row extends PfmeaOrderRow & { revision_id?: string | null } = PfmeaOrderRow & { revision_id?: string | null }>(
+  supabase: SupabaseClient,
+  params: {
+    batchSize?: number
+    groupIdsSupported?: boolean | null
+    preparedUpdates?: PfmeaRowOrderUpdate[]
+    revisionId: string
+    sourceRows: Row[]
+  }
+) {
+  const baseRows = sortPfmeaRows(params.sourceRows).filter(
+    (row) => !isPlaceholderRowId(row.id) && (!row.revision_id || row.revision_id === params.revisionId)
+  )
+  if (baseRows.length === 0) return []
+
+  const rowById = new Map(baseRows.map((row) => [row.id, row] as const))
+  const updates = (params.preparedUpdates ?? buildPfmeaCreatedAtOrder(baseRows)).filter((item) => {
+    const row = rowById.get(item.id)
+    if (!row) return false
+    return (
+      (row.created_at ?? '') !== item.created_at ||
+      (row.row_no ?? null) !== item.row_no ||
+      (row.failure_mode_group_id ?? null) !== item.failure_mode_group_id ||
+      (row.failure_block_group_id ?? null) !== item.failure_block_group_id ||
+      (row.action_plan_group_id ?? null) !== item.action_plan_group_id
+    )
+  })
+  if (updates.length === 0) return []
+
+  const batchSize = params.batchSize ?? 25
+  for (let index = 0; index < updates.length; index += batchSize) {
+    const batch = updates.slice(index, index + batchSize)
+    const results = await Promise.all(
+      batch.map((item) =>
+        supabase
+          .from('pfmea_rows')
+          .update(
+            params.groupIdsSupported === false
+              ? { created_at: item.created_at }
+              : {
+                  created_at: item.created_at,
+                  row_no: item.row_no,
+                  failure_mode_group_id: item.failure_mode_group_id,
+                  failure_block_group_id: item.failure_block_group_id,
+                  action_plan_group_id: item.action_plan_group_id,
+                }
+          )
+          .eq('id', item.id)
+          .eq('revision_id', params.revisionId)
+      )
+    )
+
+    for (const result of results) {
+      if (result.error) throw result.error
+    }
+  }
+
+  return updates
 }
 
 export async function ensurePfmeaProcessDraft(

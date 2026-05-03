@@ -47,7 +47,6 @@ import {
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
-  buildPfmeaCreatedAtOrder,
   buildPfmeaStableOrderMetadata,
   buildPfmeaRowsWithStableOrderMetadata,
   getPfmeaRowOperationId,
@@ -80,7 +79,6 @@ import {
   PFMEA_SELECT_FIELDS,
   PFMEA_SELECT_FIELDS_LEGACY,
   buildPfmeaPublishedMetadataPatch,
-  buildPfmeaPublishedSyncPatch,
   isMissingPfmeaGroupIdColumnError,
   stripPfmeaGroupIdsFromPayload,
   summarizePfmeaRowsForError,
@@ -96,8 +94,11 @@ import {
   fetchPfmeaRowsForRevision,
   fetchPfmeaProjectView,
   fetchPfmeaRevisionHistory,
+  persistPfmeaDirtyRevisionRows,
+  persistPfmeaRowOrderMetadata,
   restorePfmeaRowsSnapshotToRevision,
   startPfmeaEditSession,
+  type PfmeaRowOrderUpdate,
   type PfmeaEditSession,
   type PfmeaHistoryEntry,
   type PfmeaProjectView,
@@ -2428,39 +2429,13 @@ useEffect(() => {
     if (snapshotRows.length === 0) return snapshotRows
 
     const mappedSnapshotRows = await remapPfmeaSnapshotRowsToRevision(revisionId, snapshotRows)
-    const rowsToPersist = mappedSnapshotRows.filter((row, index) => {
-      const sourceRow = snapshotRows[index]
-      return dirtyIdsBeforeRemap.has(row.id) || (sourceRow ? dirtyIdsBeforeRemap.has(sourceRow.id) : false)
+    await persistPfmeaDirtyRevisionRows<PfmeaRow>(supabase, {
+      dirtyIds: dirtyIdsBeforeRemap,
+      groupIdsSupported: pfmeaGroupIdsSupportedRef.current,
+      mappedRows: mappedSnapshotRows,
+      revisionId,
+      sourceRows: snapshotRows,
     })
-
-    const batchSize = 25
-    for (let index = 0; index < rowsToPersist.length; index += batchSize) {
-      const batch = rowsToPersist.slice(index, index + batchSize)
-      const results = await Promise.all(
-        batch.map((row) => {
-          const patch = buildPfmeaPublishedSyncPatch(row)
-          return supabase
-            .from('pfmea_rows')
-            .update(
-              pfmeaGroupIdsSupportedRef.current === false
-                ? stripPfmeaGroupIdsFromPayload(patch as Record<string, unknown>)
-                : patch
-            )
-            .eq('id', row.id)
-            .eq('revision_id', revisionId)
-            .select('id')
-            .maybeSingle()
-            .then((result) => ({ rowId: row.id, result }))
-        })
-      )
-
-      for (const { rowId, result } of results) {
-        if (result.error) throw result.error
-        if (!result.data?.id) {
-          throw new Error(`PFMEA draft integrity check failed. Row ${rowId} was not updated in revision ${revisionId}.`)
-        }
-      }
-    }
 
     rowsRef.current = mappedSnapshotRows
     setRows(mappedSnapshotRows)
@@ -2949,47 +2924,13 @@ useEffect(() => {
       )
       if (baseRows.length === 0) return
 
-      const rowById = new Map(baseRows.map((row) => [row.id, row] as const))
-      const updates = (preparedUpdates ?? buildPfmeaCreatedAtOrder(baseRows)).filter((item) => {
-        const row = rowById.get(item.id)
-        if (!row) return false
-        return (
-          (row.created_at ?? '') !== item.created_at ||
-          (row.row_no ?? null) !== item.row_no ||
-          (row.failure_mode_group_id ?? null) !== item.failure_mode_group_id ||
-          (row.failure_block_group_id ?? null) !== item.failure_block_group_id ||
-          (row.action_plan_group_id ?? null) !== item.action_plan_group_id
-        )
+      const updates = await persistPfmeaRowOrderMetadata<PfmeaRow>(supabase, {
+        groupIdsSupported: pfmeaGroupIdsSupportedRef.current,
+        preparedUpdates: preparedUpdates as PfmeaRowOrderUpdate[] | undefined,
+        revisionId,
+        sourceRows: baseRows,
       })
       if (updates.length === 0) return
-      const batchSize = 25
-
-      for (let index = 0; index < updates.length; index += batchSize) {
-        const batch = updates.slice(index, index + batchSize)
-        const results = await Promise.all(
-          batch.map((item) =>
-            supabase
-              .from('pfmea_rows')
-              .update(
-                pfmeaGroupIdsSupportedRef.current === false
-                  ? { created_at: item.created_at }
-                  : {
-                      created_at: item.created_at,
-                      row_no: item.row_no,
-                      failure_mode_group_id: item.failure_mode_group_id,
-                      failure_block_group_id: item.failure_block_group_id,
-                      action_plan_group_id: item.action_plan_group_id,
-                    }
-              )
-              .eq('id', item.id)
-              .eq('revision_id', revisionId)
-          )
-        )
-
-        for (const result of results) {
-          if (result.error) throw result.error
-        }
-      }
 
       const createdAtById = new Map(updates.map((item) => [item.id, item.created_at]))
       const rowNoById = new Map(updates.map((item) => [item.id, item.row_no]))
