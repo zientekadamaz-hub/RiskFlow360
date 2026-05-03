@@ -57,3 +57,27 @@ export function MergedCellInner(props: {
     </div>
   )
 }
+
+export function TdRead(props: {
+  value: string
+  className: string
+  style?: React.CSSProperties
+  rowSpan?: number
+  onClick?: () => void
+}) {
+  return (
+    <td
+      rowSpan={props.rowSpan}
+      className={props.className}
+      style={{
+        ...(mergedCellTdStyle(props.rowSpan, props.style) ?? {}),
+        cursor: props.onClick ? 'pointer' : undefined,
+      }}
+      onClick={props.onClick}
+    >
+      <MergedCellInner rowSpan={props.rowSpan} gap={0}>
+        <span>{props.value || ''}</span>
+      </MergedCellInner>
+    </td>
+  )
+}

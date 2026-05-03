@@ -18,6 +18,7 @@ import { adjacentPopupStyle, anchoredPopupStyle } from '@/features/pfmea/pfmea-p
 import {
   MERGED_CELL_TOP_PADDING,
   MergedCellInner,
+  TdRead,
   mergedCellTdStyle,
 } from '@/features/pfmea/pfmea-merged-cell'
 import {
@@ -4240,21 +4241,6 @@ useEffect(() => {
 }
 
 /* ===================== TD COMPONENTS ===================== */
-
-function TdRead(props: { value: string; className: string; style?: React.CSSProperties; rowSpan?: number; onClick?: () => void }) {
-  return (
-    <td
-      rowSpan={props.rowSpan}
-      className={props.className}
-      style={{ ...(mergedCellTdStyle(props.rowSpan, props.style) ?? {}), cursor: props.onClick ? 'pointer' : undefined }}
-      onClick={props.onClick}
-    >
-      <MergedCellInner rowSpan={props.rowSpan} gap={0}>
-        <span>{props.value || ''}</span>
-      </MergedCellInner>
-    </td>
-  )
-}
 
 function TdText(props: {
   value: string
