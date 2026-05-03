@@ -89,12 +89,14 @@ import {
 import {
   deletePfmeaEditSession,
   deletePfmeaRowsByRevision,
+  ensurePfmeaProcessDraft,
   fetchPfmeaAuthorName,
   fetchPfmeaCurrentDraftRevisionId,
   fetchPfmeaEditSession,
   fetchPfmeaProjectRole,
   fetchPfmeaProjectView,
   fetchPfmeaRevisionHistory,
+  startPfmeaEditSession,
   type PfmeaEditSession,
   type PfmeaHistoryEntry,
   type PfmeaProjectView,
@@ -877,76 +879,35 @@ useEffect(() => {
     setErr('')
     resetPfmeaEditRuntimeState()
     try {
-      const nowIso = new Date().toISOString()
-      const res = await supabase
-        .from('pfmea_edit_sessions')
-        .select('project_id,locked_by,last_activity_at')
-        .eq('project_id', projectId)
-        .maybeSingle()
-      const row = (res.data ?? null) as { locked_by?: string | null; last_activity_at?: string | null } | null
-      const otherOwner = row?.locked_by ?? null
-      const last = row?.last_activity_at ? new Date(row.last_activity_at).getTime() : 0
-      const hasExistingDraftRevision = !!(project?.current_draft_revision_id ?? draftRevisionIdOverride)
-      const hasActiveOwnedSession = !!otherOwner && otherOwner === userId && sessionNow - last < EDIT_LOCK_MS
-      const hasActiveOther = !!otherOwner && otherOwner !== userId && sessionNow - last < EDIT_LOCK_MS
+      const sessionStart = await startPfmeaEditSession(supabase, {
+        draftRevisionIdOverride,
+        editLockMs: EDIT_LOCK_MS,
+        hasExistingDraftRevision: !!(project?.current_draft_revision_id ?? draftRevisionIdOverride),
+        isChampion,
+        nowMs: sessionNow,
+        projectId,
+        userId,
+      })
 
-      forceRefreshExistingDraftFromOpenRef.current = hasExistingDraftRevision && !hasActiveOwnedSession
-
-      if (hasActiveOther && !isChampion) {
-        setErr('This PFMEA is currently locked by another user.')
+      if (sessionStart.blocked) {
+        setErr(sessionStart.message)
         forceRefreshExistingDraftFromOpenRef.current = false
         return
       }
 
-      if (otherOwner && otherOwner !== userId) {
-        const draftId = await fetchPfmeaCurrentDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
-        if (draftId) {
-          await deletePfmeaRowsByRevision(supabase, draftId)
-          setDraftRevisionIdOverride(null)
-          setDirtyPfmeaIds([])
-          setDeletedPfmeaIds([])
-          clearDirtyDraftPersisted()
-        }
-        forceRefreshExistingDraftFromOpenRef.current = false
+      forceRefreshExistingDraftFromOpenRef.current = sessionStart.shouldRefreshExistingDraftFromOpen
+      if (sessionStart.draftRowsDeleted) {
+        setDraftRevisionIdOverride(null)
+        setDirtyPfmeaIds([])
+        setDeletedPfmeaIds([])
+        clearDirtyDraftPersisted()
       }
 
-      if (!hasActiveOther && !hasActiveOwnedSession && hasExistingDraftRevision) {
-        const draftId = await fetchPfmeaCurrentDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
-        if (draftId) {
-          await deletePfmeaRowsByRevision(supabase, draftId)
-          setDraftRevisionIdOverride(null)
-          setDirtyPfmeaIds([])
-          setDeletedPfmeaIds([])
-          clearDirtyDraftPersisted()
-        }
-      }
-
-      const upsertRes = await supabase.from('pfmea_edit_sessions').upsert(
-        [
-          {
-            project_id: projectId,
-            locked_by: userId,
-            started_at: nowIso,
-            last_activity_at: nowIso,
-            updated_at: nowIso,
-          },
-        ],
-        { onConflict: 'project_id' }
-      )
-      if (upsertRes.error) throw new Error(upsertRes.error.message)
-
-      const ensureDraftRes = await supabase.rpc('ensure_process_draft', {
-        p_project_id: projectId,
-        p_user_id: userId,
-      })
-      if (ensureDraftRes.error) throw ensureDraftRes.error
-
-      const refreshedView = await fetchPfmeaProjectView(supabase, projectId)
+      const refreshedView = sessionStart.projectView
       setProject(refreshedView as any)
 
-      const refreshedDraftRevisionId =
-        refreshedView.current_draft_revision_id ?? (ensureDraftRes.data as string | null) ?? null
-      const refreshedOpenRevisionId = refreshedView.current_open_revision_id ?? null
+      const refreshedDraftRevisionId = sessionStart.draftRevisionId
+      const refreshedOpenRevisionId = sessionStart.openRevisionId
 
       const hydrateDraftRowsFromOpen = async () => {
         if (!refreshedDraftRevisionId || !refreshedOpenRevisionId || refreshedDraftRevisionId === refreshedOpenRevisionId) return
@@ -1310,15 +1271,10 @@ useEffect(() => {
     // if project is obsolete -> no draft changes
     if ((project?.status ?? 'DRAFT') === 'OBSOLETE') throw new Error('Process is OBSOLETE (read-only).')
 
-    const { data, error } = await supabase.rpc('ensure_process_draft', {
-      p_project_id: projectId,
-      p_user_id: userId,
-    })
-
-    if (error) throw error
+    const ensuredDraftId = await ensurePfmeaProcessDraft(supabase, projectId, userId)
     // refresh project to get current_draft_revision_id
     const pv = await loadProjectView({ syncDraftOverride: false })
-    const ensured = pv.current_draft_revision_id ?? (data as string | null) ?? null
+    const ensured = pv.current_draft_revision_id ?? ensuredDraftId
     await ensureDraftRowsHydrated(ensured, pv.current_open_revision_id ?? sourceRevisionIdBeforeDraft)
     forceRefreshExistingDraftFromOpenRef.current = false
     if (ensured) setDraftRevisionIdOverride(ensured)

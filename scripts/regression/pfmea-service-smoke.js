@@ -36,6 +36,8 @@ function createBuilder(table, resolveResponse, calls) {
     selected: null,
     table,
     terminal: null,
+    upsertOptions: null,
+    upsertPayload: null,
   }
 
   const builder = {
@@ -73,17 +75,26 @@ function createBuilder(table, resolveResponse, calls) {
       calls.push(state)
       return Promise.resolve(resolveResponse(state)).then(onFulfilled, onRejected)
     },
+    upsert(payload, options) {
+      state.upsertPayload = payload
+      state.upsertOptions = options ?? null
+      return builder
+    },
   }
 
   return builder
 }
 
-function createSupabase(responder) {
+function createSupabase(responder, options = {}) {
   const calls = []
   return {
     calls,
     from(table) {
       return createBuilder(table, (state) => responder(state), calls)
+    },
+    rpc(name, params) {
+      calls.push({ params, rpc: name })
+      return Promise.resolve(options.rpc?.[name] ?? { data: null, error: null })
     },
   }
 }
@@ -98,6 +109,7 @@ const {
   fetchPfmeaProjectRole,
   fetchPfmeaProjectView,
   fetchPfmeaRevisionHistory,
+  startPfmeaEditSession,
 } = loadTypeScriptModule(['src', 'features', 'pfmea', 'pfmea-service.ts'], {
   './pfmea-display-utils': displayUtils,
 })
@@ -193,6 +205,75 @@ async function main() {
     await deletePfmeaEditSession(supabase, 'project-1', 'user-1')
     assert.equal(deleted[0], 'pfmea_rows:revision_id=draft-rev')
     assert.equal(deleted[1], 'pfmea_edit_sessions:project_id=project-1,locked_by=user-1')
+  }
+
+  {
+    const nowMs = new Date('2026-05-03T10:00:00.000Z').getTime()
+    const supabase = createSupabase((state) => {
+      assert.equal(state.table, 'pfmea_edit_sessions')
+      return {
+        data: {
+          locked_by: 'other-user',
+          last_activity_at: '2026-05-03T09:59:00.000Z',
+        },
+        error: null,
+      }
+    })
+    const result = await startPfmeaEditSession(supabase, {
+      editLockMs: 48 * 60 * 60 * 1000,
+      hasExistingDraftRevision: false,
+      isChampion: false,
+      nowMs,
+      projectId: 'project-1',
+      userId: 'user-1',
+    })
+    assert.equal(result.blocked, true)
+    assert.equal(result.message, 'This PFMEA is currently locked by another user.')
+  }
+
+  {
+    const calls = []
+    const supabase = createSupabase((state) => {
+      calls.push(state)
+      if (state.table === 'pfmea_edit_sessions' && state.upsertPayload) return { data: null, error: null }
+      if (state.table === 'pfmea_edit_sessions') return { data: null, error: null }
+      if (state.table === 'projects_with_revision') {
+        return {
+          data: {
+            current_draft_revision_id: 'draft-rev',
+            current_open_revision_id: 'open-rev',
+            draft_revision_label: '1.0.0',
+            id: 'project-1',
+            name: 'Insulation Potting',
+            open_revision_label: '1.0.0',
+            standard: 'GENERIC',
+            status: 'OPEN',
+          },
+          error: null,
+        }
+      }
+      return { data: null, error: null }
+    }, {
+      rpc: {
+        ensure_process_draft: { data: 'draft-rev-from-rpc', error: null },
+      },
+    })
+    const result = await startPfmeaEditSession(supabase, {
+      editLockMs: 48 * 60 * 60 * 1000,
+      hasExistingDraftRevision: false,
+      isChampion: false,
+      nowIso: '2026-05-03T10:00:00.000Z',
+      nowMs: new Date('2026-05-03T10:00:00.000Z').getTime(),
+      projectId: 'project-1',
+      userId: 'user-1',
+    })
+    assert.equal(result.blocked, false)
+    assert.equal(result.draftRevisionId, 'draft-rev')
+    assert.equal(result.openRevisionId, 'open-rev')
+    assert.equal(result.draftRowsDeleted, false)
+    assert.equal(result.shouldRefreshExistingDraftFromOpen, false)
+    assert.equal(calls.some((state) => state.table === 'pfmea_edit_sessions' && state.upsertPayload), true)
+    assert.equal(supabase.calls.some((call) => call.rpc === 'ensure_process_draft'), true)
   }
 
   console.log('pfmea service smoke passed')

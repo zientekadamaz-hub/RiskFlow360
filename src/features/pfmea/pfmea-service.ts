@@ -29,9 +29,28 @@ export type PfmeaHistoryEntry = {
   description: string
 }
 
+export type PfmeaEditSessionStartResult =
+  | {
+      blocked: true
+      message: string
+    }
+  | {
+      blocked: false
+      draftRevisionId: string | null
+      draftRowsDeleted: boolean
+      openRevisionId: string | null
+      projectView: PfmeaProjectView
+      shouldRefreshExistingDraftFromOpen: boolean
+    }
+
 type ProfileNameRow = {
   first_name?: string | null
   last_name?: string | null
+}
+
+type PfmeaEditSessionLockRow = {
+  locked_by?: string | null
+  last_activity_at?: string | null
 }
 
 const PFMEA_PROJECT_VIEW_SELECT = 'id,name,standard,status,current_open_revision_id,current_draft_revision_id,open_revision_label,draft_revision_label'
@@ -126,6 +145,98 @@ export async function fetchPfmeaCurrentDraftRevisionId(
     .maybeSingle()
 
   return (projectRes.data?.current_draft_revision_id as string | null | undefined) ?? null
+}
+
+export async function ensurePfmeaProcessDraft(
+  supabase: SupabaseClient,
+  projectId: string,
+  userId: string
+): Promise<string | null> {
+  const res = await supabase.rpc('ensure_process_draft', {
+    p_project_id: projectId,
+    p_user_id: userId,
+  })
+  if (res.error) throw res.error
+  return (res.data as string | null) ?? null
+}
+
+export async function startPfmeaEditSession(
+  supabase: SupabaseClient,
+  params: {
+    draftRevisionIdOverride?: string | null
+    editLockMs: number
+    hasExistingDraftRevision: boolean
+    isChampion: boolean
+    nowIso?: string
+    nowMs?: number
+    projectId: string
+    userId: string
+  }
+): Promise<PfmeaEditSessionStartResult> {
+  const nowMs = params.nowMs ?? Date.now()
+  const nowIso = params.nowIso ?? new Date(nowMs).toISOString()
+  const lockRes = await supabase
+    .from('pfmea_edit_sessions')
+    .select('project_id,locked_by,last_activity_at')
+    .eq('project_id', params.projectId)
+    .maybeSingle()
+  if (lockRes.error) throw lockRes.error
+
+  const lock = (lockRes.data ?? null) as PfmeaEditSessionLockRow | null
+  const otherOwner = lock?.locked_by ?? null
+  const last = lock?.last_activity_at ? new Date(lock.last_activity_at).getTime() : 0
+  const hasActiveOwnedSession = !!otherOwner && otherOwner === params.userId && nowMs - last < params.editLockMs
+  const hasActiveOther = !!otherOwner && otherOwner !== params.userId && nowMs - last < params.editLockMs
+  let shouldRefreshExistingDraftFromOpen = params.hasExistingDraftRevision && !hasActiveOwnedSession
+  let draftRowsDeleted = false
+
+  if (hasActiveOther && !params.isChampion) {
+    return { blocked: true, message: 'This PFMEA is currently locked by another user.' }
+  }
+
+  if (otherOwner && otherOwner !== params.userId) {
+    const draftId = await fetchPfmeaCurrentDraftRevisionId(supabase, params.projectId) ?? params.draftRevisionIdOverride ?? null
+    if (draftId) {
+      await deletePfmeaRowsByRevision(supabase, draftId)
+      draftRowsDeleted = true
+    }
+    shouldRefreshExistingDraftFromOpen = false
+  }
+
+  if (!hasActiveOther && !hasActiveOwnedSession && params.hasExistingDraftRevision) {
+    const draftId = await fetchPfmeaCurrentDraftRevisionId(supabase, params.projectId) ?? params.draftRevisionIdOverride ?? null
+    if (draftId) {
+      await deletePfmeaRowsByRevision(supabase, draftId)
+      draftRowsDeleted = true
+    }
+  }
+
+  const upsertRes = await supabase.from('pfmea_edit_sessions').upsert(
+    [
+      {
+        project_id: params.projectId,
+        locked_by: params.userId,
+        started_at: nowIso,
+        last_activity_at: nowIso,
+        updated_at: nowIso,
+      },
+    ],
+    { onConflict: 'project_id' }
+  )
+  if (upsertRes.error) throw new Error(upsertRes.error.message)
+
+  const ensuredDraftId = await ensurePfmeaProcessDraft(supabase, params.projectId, params.userId)
+  const projectView = await fetchPfmeaProjectView(supabase, params.projectId)
+  const draftRevisionId = projectView.current_draft_revision_id ?? ensuredDraftId
+
+  return {
+    blocked: false,
+    draftRevisionId,
+    draftRowsDeleted,
+    openRevisionId: projectView.current_open_revision_id ?? null,
+    projectView,
+    shouldRefreshExistingDraftFromOpen,
+  }
 }
 
 export async function fetchPfmeaRevisionHistory(
