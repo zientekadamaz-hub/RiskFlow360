@@ -32,7 +32,7 @@ import {
   parseIsoDateParts,
   todayIsoDate,
 } from '@/features/pfmea/pfmea-date-utils'
-import { normalizeHistoryText, parseExamples, shortSeverityLabel, toFiniteNumber } from '@/features/pfmea/pfmea-display-utils'
+import { normalizeHistoryText, parseExamples, shortSeverityLabel } from '@/features/pfmea/pfmea-display-utils'
 import { getPreviousRequiredFieldForActionPlan } from '@/features/pfmea/pfmea-action-validation-utils'
 import {
   buildPfmeaBlockMergeInfoByHierarchy,
@@ -87,6 +87,19 @@ import {
   summarizePfmeaRowsForError,
 } from '@/features/pfmea/pfmea-payload-utils'
 import {
+  deletePfmeaEditSession,
+  deletePfmeaRowsByRevision,
+  fetchPfmeaAuthorName,
+  fetchPfmeaCurrentDraftRevisionId,
+  fetchPfmeaEditSession,
+  fetchPfmeaProjectRole,
+  fetchPfmeaProjectView,
+  fetchPfmeaRevisionHistory,
+  type PfmeaEditSession,
+  type PfmeaHistoryEntry,
+  type PfmeaProjectView,
+} from '@/features/pfmea/pfmea-service'
+import {
   SettingsSummaryGrid,
   SettingsSummaryTile,
   SettingsBackdrop,
@@ -102,16 +115,7 @@ import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
 
 /* ===================== TYPES ===================== */
 
-type ProjectView = {
-  id: string
-  name: string
-  standard?: string | null
-  status: 'DRAFT' | 'OPEN' | 'OBSOLETE'
-  current_open_revision_id: string | null
-  current_draft_revision_id: string | null
-  open_revision_label: string | null
-  draft_revision_label: string | null
-}
+type ProjectView = PfmeaProjectView
 
 type Operation = {
   id: string
@@ -212,21 +216,6 @@ type SeverityOption = {
 type SelectOption = {
   value: string
   label: string
-}
-type PfmeaHistoryEntry = {
-  id: string
-  at: string
-  revisionLabel: string
-  author: string
-  riskCount: number | null
-  avgRpn: number | null
-  description: string
-}
-type PfmeaEditSession = {
-  projectId: string
-  lockedBy: string
-  startedAt: string
-  lastActivityAt: string
 }
 
 type PfdDiagramRow = {
@@ -843,16 +832,9 @@ useEffect(() => {
 
     ;(async () => {
       try {
-        const res = await supabase
-          .from('profiles')
-          .select('first_name,last_name')
-          .eq('id', userId)
-          .maybeSingle()
+        const authorName = await fetchPfmeaAuthorName(supabase, userId)
         if (!alive) return
-        const first = ((res.data as { first_name?: string | null } | null)?.first_name ?? '').trim()
-        const last = ((res.data as { last_name?: string | null } | null)?.last_name ?? '').trim()
-        const full = `${first} ${last}`.trim()
-        setCurrentAuthorName(full || 'Unknown user')
+        setCurrentAuthorName(authorName)
       } catch {
         if (!alive) return
         setCurrentAuthorName('Unknown user')
@@ -870,19 +852,7 @@ useEffect(() => {
       return
     }
     try {
-      const projectRes = await supabase.from('projects').select('organization_id').eq('id', projectId).maybeSingle()
-      const organizationId = (projectRes.data as { organization_id?: string | null } | null)?.organization_id ?? null
-      if (!organizationId) {
-        setIsChampion(false)
-        return
-      }
-      const memberRes = await supabase
-        .from('organization_members')
-        .select('role')
-        .eq('organization_id', organizationId)
-        .eq('user_id', userId)
-        .maybeSingle()
-      const role = ((memberRes.data as { role?: string | null } | null)?.role ?? '').toLowerCase()
+      const role = (await fetchPfmeaProjectRole(supabase, projectId, userId) ?? '').toLowerCase()
       setIsChampion(role === 'champion')
     } catch {
       setIsChampion(false)
@@ -895,27 +865,7 @@ useEffect(() => {
       return
     }
     try {
-      const res = await supabase
-        .from('pfmea_edit_sessions')
-        .select('project_id,locked_by,started_at,last_activity_at')
-        .eq('project_id', projectId)
-        .maybeSingle()
-      if (res.error || !res.data) {
-        setEditSession(null)
-        return
-      }
-      const row = res.data as {
-        project_id: string
-        locked_by: string
-        started_at: string
-        last_activity_at: string
-      }
-      setEditSession({
-        projectId: row.project_id,
-        lockedBy: row.locked_by,
-        startedAt: row.started_at,
-        lastActivityAt: row.last_activity_at,
-      })
+      setEditSession(await fetchPfmeaEditSession(supabase, projectId))
     } catch {
       setEditSession(null)
     }
@@ -949,14 +899,9 @@ useEffect(() => {
       }
 
       if (otherOwner && otherOwner !== userId) {
-        const projectRes = await supabase
-          .from('projects_with_revision')
-          .select('current_draft_revision_id')
-          .eq('id', projectId)
-          .maybeSingle()
-        const draftId = (projectRes.data?.current_draft_revision_id as string | null | undefined) ?? draftRevisionIdOverride
+        const draftId = await fetchPfmeaCurrentDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
         if (draftId) {
-          await supabase.from('pfmea_rows').delete().eq('revision_id', draftId)
+          await deletePfmeaRowsByRevision(supabase, draftId)
           setDraftRevisionIdOverride(null)
           setDirtyPfmeaIds([])
           setDeletedPfmeaIds([])
@@ -966,15 +911,9 @@ useEffect(() => {
       }
 
       if (!hasActiveOther && !hasActiveOwnedSession && hasExistingDraftRevision) {
-        const projectRes = await supabase
-          .from('projects_with_revision')
-          .select('current_draft_revision_id')
-          .eq('id', projectId)
-          .maybeSingle()
-        const draftId = (projectRes.data?.current_draft_revision_id as string | null | undefined) ?? draftRevisionIdOverride
+        const draftId = await fetchPfmeaCurrentDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
         if (draftId) {
-          const deleteDraftRowsRes = await supabase.from('pfmea_rows').delete().eq('revision_id', draftId)
-          if (deleteDraftRowsRes.error) throw deleteDraftRowsRes.error
+          await deletePfmeaRowsByRevision(supabase, draftId)
           setDraftRevisionIdOverride(null)
           setDirtyPfmeaIds([])
           setDeletedPfmeaIds([])
@@ -1002,14 +941,7 @@ useEffect(() => {
       })
       if (ensureDraftRes.error) throw ensureDraftRes.error
 
-      const refreshedProjectRes = await supabase
-        .from('projects_with_revision')
-        .select('id,name,standard,status,current_open_revision_id,current_draft_revision_id,open_revision_label,draft_revision_label')
-        .eq('id', projectId)
-        .single()
-      if (refreshedProjectRes.error) throw refreshedProjectRes.error
-
-      const refreshedView = refreshedProjectRes.data as ProjectView
+      const refreshedView = await fetchPfmeaProjectView(supabase, projectId)
       setProject(refreshedView as any)
 
       const refreshedDraftRevisionId =
@@ -1019,8 +951,7 @@ useEffect(() => {
       const hydrateDraftRowsFromOpen = async () => {
         if (!refreshedDraftRevisionId || !refreshedOpenRevisionId || refreshedDraftRevisionId === refreshedOpenRevisionId) return
 
-        const deleteExistingDraftRowsRes = await supabase.from('pfmea_rows').delete().eq('revision_id', refreshedDraftRevisionId)
-        if (deleteExistingDraftRowsRes.error) throw deleteExistingDraftRowsRes.error
+        await deletePfmeaRowsByRevision(supabase, refreshedDraftRevisionId)
 
         const loadSourceRows = async () => {
           const sourceSelect =
@@ -1089,14 +1020,9 @@ useEffect(() => {
     setErr('')
     resetPfmeaEditRuntimeState()
     try {
-      const projectRes = await supabase
-        .from('projects_with_revision')
-        .select('current_draft_revision_id')
-        .eq('id', projectId)
-        .maybeSingle()
-      const draftId = (projectRes.data?.current_draft_revision_id as string | null | undefined) ?? draftRevisionIdOverride
-      if (draftId) await supabase.from('pfmea_rows').delete().eq('revision_id', draftId)
-      await supabase.from('pfmea_edit_sessions').delete().eq('project_id', projectId).eq('locked_by', userId)
+      const draftId = await fetchPfmeaCurrentDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
+      if (draftId) await deletePfmeaRowsByRevision(supabase, draftId)
+      await deletePfmeaEditSession(supabase, projectId, userId)
       setDraftRevisionIdOverride(null)
       setDirtyPfmeaIds([])
       setDeletedPfmeaIds([])
@@ -1264,14 +1190,7 @@ useEffect(() => {
 
   /* ---------- helper: reload only project view ---------- */
   const loadProjectView = useCallback(async (options?: { syncDraftOverride?: boolean }) => {
-    const pr = await supabase
-      .from('projects_with_revision')
-      .select('id,name,standard,status,current_open_revision_id,current_draft_revision_id,open_revision_label,draft_revision_label')
-      .eq('id', projectId)
-      .single()
-
-    if (pr.error) throw pr.error
-    const view = pr.data as ProjectView
+    const view = await fetchPfmeaProjectView(supabase, projectId)
     setProject(view as any)
     if (options?.syncDraftOverride === true && view.current_draft_revision_id) {
       setDraftRevisionIdOverride(view.current_draft_revision_id)
@@ -1303,8 +1222,7 @@ useEffect(() => {
       const hasExistingDraftRows = (existingDraftRowsRes.data?.length ?? 0) > 0
       if (hasExistingDraftRows && !options?.replaceExisting) return
       if (hasExistingDraftRows && options?.replaceExisting) {
-        const deleteExistingDraftRowsRes = await supabase.from('pfmea_rows').delete().eq('revision_id', draftRevisionId)
-        if (deleteExistingDraftRowsRes.error) throw deleteExistingDraftRowsRes.error
+        await deletePfmeaRowsByRevision(supabase, draftRevisionId)
       }
 
       const openRowsRes = await supabase
@@ -1358,20 +1276,20 @@ useEffect(() => {
       if (insertCloneRes.error) throw insertCloneRes.error
     }
 
-      const hasVisibleRowsFromCurrentDraft =
-        !!(project?.current_draft_revision_id || draftRevisionIdOverride) &&
-        rowsRef.current.some(
-          (row) =>
-            !isPlaceholderRowId(row.id) &&
-            row.revision_id === (draftRevisionIdOverride ?? project?.current_draft_revision_id ?? null)
-        )
-      const shouldRefreshExistingDraftFromOpen =
-        !!project?.current_open_revision_id &&
-        !!(draftRevisionIdOverride ?? project?.current_draft_revision_id) &&
-        (
-          forceRefreshExistingDraftFromOpenRef.current ||
-          (!persistedDirtyDraft && !hasVisibleRowsFromCurrentDraft)
-        )
+    const hasVisibleRowsFromCurrentDraft =
+      !!(project?.current_draft_revision_id || draftRevisionIdOverride) &&
+      rowsRef.current.some(
+        (row) =>
+          !isPlaceholderRowId(row.id) &&
+          row.revision_id === (draftRevisionIdOverride ?? project?.current_draft_revision_id ?? null)
+      )
+    const shouldRefreshExistingDraftFromOpen =
+      !!project?.current_open_revision_id &&
+      !!(draftRevisionIdOverride ?? project?.current_draft_revision_id) &&
+      (
+        forceRefreshExistingDraftFromOpenRef.current ||
+        (!persistedDirtyDraft && !hasVisibleRowsFromCurrentDraft)
+      )
 
     if (draftRevisionIdOverride) {
       await ensureDraftRowsHydrated(draftRevisionIdOverride, project?.current_open_revision_id ?? sourceRevisionIdBeforeDraft, {
@@ -3080,38 +2998,7 @@ useEffect(() => {
 
     setHistoryLoading(true)
     try {
-      const customRes = await supabase
-        .from('pfmea_change_history')
-        .select('id,created_at,revision_label,change_description,author_name,risk_count,avg_rpn')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(200)
-
-      if (!customRes.error && (customRes.data?.length ?? 0) > 0) {
-        const rowsRaw = (customRes.data ?? []) as Array<{
-          id?: string | null
-          created_at?: string | null
-          revision_label?: string | null
-          change_description?: string | null
-          author_name?: string | null
-          risk_count?: number | null
-          avg_rpn?: number | string | null
-        }>
-
-        setHistoryEntries(
-          rowsRaw.map((x, idx) => ({
-            id: x.id ?? `pfmea-h-db-${idx}`,
-            at: x.created_at ?? new Date(0).toISOString(),
-            revisionLabel: (x.revision_label ?? '0.0.0').toString(),
-            author: normalizeHistoryText(x.author_name) || 'Unknown user',
-            riskCount: toFiniteNumber(x.risk_count),
-            avgRpn: toFiniteNumber(x.avg_rpn),
-            description: x.change_description ?? '',
-          }))
-        )
-        return
-      }
-      setHistoryEntries([])
+      setHistoryEntries(await fetchPfmeaRevisionHistory(supabase, projectId))
     } catch (e: any) {
       setErr(e?.message ?? String(e))
       setHistoryEntries([])
