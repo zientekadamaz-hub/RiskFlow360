@@ -8,6 +8,8 @@ import { supabase } from '../lib/supabaseBrowser'
 import { type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/matrixColors'
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 import { isTimeoutError } from '@/lib/error-utils'
+import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
+import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
 import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
 import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
 import {
@@ -71,7 +73,6 @@ import {
 } from '@/features/pfmea/pfmea-row-match-utils'
 import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
 import { hydratePfmeaGroupIds } from '@/features/pfmea/pfmea-row-normalization-utils'
-import { pfmeaRevisionNumberFromLabel } from '@/features/pfmea/pfmea-revision-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
 import { createPfmeaSaveTimer, formatPfmeaSaveTimings } from '@/features/pfmea/pfmea-save-timing-utils'
 import { parsePfmeaPublishResult } from '@/features/pfmea/pfmea-publish-utils'
@@ -260,7 +261,6 @@ const SURFACE_RADIUS = 8
 const SURFACE_BG = 'rgba(255,255,255,0.08)'
 const SURFACE_BG_STRONG = 'rgba(255,255,255,0.12)'
 const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
-const SURFACE_PANEL_BG = 'rgb(40, 39, 47)'
 const SURFACE_TEXT = '#f8fafc'
 const SURFACE_MUTED = 'rgba(255,255,255,0.72)'
 
@@ -504,12 +504,7 @@ function PfmeaFullPageContent() {
   const [showSave, setShowSave] = useState(false)
   const [saveBusy, setSaveBusy] = useState(false)
   const [changeDesc, setChangeDesc] = useState('')
-  const [confirmDialog, setConfirmDialog] = useState<null | {
-    title: string
-    body: string
-    dangerNote?: string
-    onConfirm: () => Promise<boolean | void> | boolean | void
-  }>(null)
+  const [confirmDialog, setConfirmDialog] = useState<PfmeaConfirmDialogConfig | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -3550,168 +3545,23 @@ useEffect(() => {
       )}
 
       {confirmDialog && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 80,
-          }}
-          onClick={() => (confirmBusy ? null : setConfirmDialog(null))}
-        >
-          <div
-            style={{
-              width: 520,
-              maxWidth: '92vw',
-              background: SURFACE_PANEL_BG,
-              borderRadius: SURFACE_RADIUS,
-              border: `1px solid ${SURFACE_BORDER}`,
-              boxShadow: '0 16px 36px rgba(0,0,0,0.2)',
-              padding: 20,
-              color: SURFACE_TEXT,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 10 }}>{confirmDialog.title}</div>
-            <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.5, marginBottom: 10 }}>{confirmDialog.body}</div>
-            {confirmDialog.dangerNote ? (
-              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.4, color: '#ef4444', marginBottom: 16 }}>
-                {confirmDialog.dangerNote}
-              </div>
-            ) : null}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => (confirmBusy ? null : setConfirmDialog(null))}
-                disabled={confirmBusy}
-                style={{ ...actionBtn, height: 28, padding: '0 12px' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (confirmBusy) return
-                  setConfirmBusy(true)
-                  try {
-                    const shouldClose = await confirmDialog.onConfirm()
-                    if (shouldClose !== false) setConfirmDialog(null)
-                  } catch (e: any) {
-                    setErr(e?.message ?? String(e))
-                  } finally {
-                    setConfirmBusy(false)
-                  }
-                }}
-                disabled={confirmBusy}
-                style={{ ...actionBtn, height: 28, padding: '0 12px' }}
-              >
-                Yes
-              </button>
-            </div>
-          </div>
-        </div>
+        <PfmeaConfirmDialog
+          actionButtonStyle={actionBtn}
+          busy={confirmBusy}
+          dialog={confirmDialog}
+          onBusyChange={setConfirmBusy}
+          onCancel={() => setConfirmDialog(null)}
+          onError={setErr}
+        />
       )}
 
       {historyOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 80,
-          }}
-          onClick={() => setHistoryOpen(false)}
-        >
-          <div
-            style={{
-              width: 1215,
-              maxWidth: '98vw',
-              maxHeight: '80vh',
-              overflow: 'auto',
-              background: SURFACE_PANEL_BG,
-              borderRadius: SURFACE_RADIUS,
-              border: `1px solid ${SURFACE_BORDER}`,
-              boxShadow: '0 16px 36px rgba(0,0,0,0.2)',
-              padding: 20,
-              color: SURFACE_TEXT,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 10 }}>PFMEA revision history</div>
-            {historyLoading ? (
-              <div style={{ fontSize: 14, color: SURFACE_MUTED, padding: '10px 0' }}>Loading history...</div>
-            ) : historyEntries.length === 0 ? (
-              <div style={{ fontSize: 14, color: SURFACE_MUTED, padding: '10px 0' }}>No saved history yet.</div>
-            ) : (
-              <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 260 }}>
-                <table style={{ width: '100%', minWidth: 1080, tableLayout: 'fixed', borderCollapse: 'collapse', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: SURFACE_RADIUS }}>
-                  <thead>
-                    <tr>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
-                        Revision
-                      </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 120, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
-                        Date
-                      </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 120, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
-                        Author
-                      </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 200, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
-                        Description
-                      </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', borderRight: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
-                        Risks
-                      </th>
-                      <th style={{ position: 'sticky', top: 0, zIndex: 2, width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgb(52, 57, 69)' }}>
-                        Average RPN
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyEntries.map((h) => {
-                      const avgRpnColor = getRiskColorForAverageRpn(h.avgRpn)
-                      return (
-                      <tr key={h.id}>
-                        <td style={{ width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 15, color: SURFACE_TEXT, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)', fontWeight: 700 }}>
-                          {pfmeaRevisionNumberFromLabel(h.revisionLabel)}
-                        </td>
-                        <td style={{ width: 120, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)' }}>
-                          {new Date(h.at).toLocaleString()}
-                        </td>
-                        <td style={{ width: 120, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)' }}>
-                          {h.author}
-                        </td>
-                        <td style={{ width: 200, textAlign: 'center', padding: '8px 10px', fontSize: 15, color: SURFACE_TEXT, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {h.description}
-                        </td>
-                        <td style={{ width: 70, textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.08)' }}>
-                          {h.riskCount == null ? '-' : Math.round(h.riskCount)}
-                        </td>
-                        <td
-                          style={{
-                            width: 70,
-                            textAlign: 'center',
-                            padding: '8px 10px',
-                            fontSize: 14,
-                            color: '#f8fafc',
-                            borderBottom: '1px solid rgba(255,255,255,0.06)',
-                            background: avgRpnColor ? colorFill(avgRpnColor) : 'transparent',
-                          }}
-                        >
-                          {h.avgRpn == null ? '-' : Math.round(h.avgRpn)}
-                        </td>
-                      </tr>
-                    )})}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
+        <PfmeaRevisionHistoryModal
+          entries={historyEntries}
+          getAverageRpnColor={getRiskColorForAverageRpn}
+          loading={historyLoading}
+          onClose={() => setHistoryOpen(false)}
+        />
       )}
 
       {/* Table */}
