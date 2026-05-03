@@ -31,6 +31,8 @@ function loadTypeScriptModule(relativePath, moduleMap = {}) {
 function createBuilder(table, resolveResponse, calls) {
   const state = {
     filters: [],
+    inFilters: [],
+    insertPayload: null,
     limitCount: null,
     orderBy: [],
     selected: null,
@@ -51,6 +53,14 @@ function createBuilder(table, resolveResponse, calls) {
     },
     limit(count) {
       state.limitCount = count
+      return builder
+    },
+    in(column, values) {
+      state.inFilters.push({ column, values })
+      return builder
+    },
+    insert(payload) {
+      state.insertPayload = payload
       return builder
     },
     maybeSingle() {
@@ -100,6 +110,39 @@ function createSupabase(responder, options = {}) {
 }
 
 const displayUtils = loadTypeScriptModule(['src', 'features', 'pfmea', 'pfmea-display-utils.ts'])
+const payloadUtils = {
+  PFMEA_SELECT_FIELDS: 'modern-fields',
+  PFMEA_SELECT_FIELDS_LEGACY: 'legacy-fields',
+  buildPfmeaInsertPayloadForRevision(row, revisionId) {
+    return {
+      revision_id: revisionId,
+      operation_id: row.operation_id,
+      row_no: row.row_no ?? null,
+      failure_mode_group_id: row.failure_mode_group_id ?? null,
+    }
+  },
+  isMissingPfmeaGroupIdColumnError(error) {
+    return String(error?.message ?? '').toLowerCase().includes('failure_mode_group_id')
+  },
+  stripPfmeaGroupIdsFromPayload(payload) {
+    const next = { ...payload }
+    delete next.failure_mode_group_id
+    return next
+  },
+}
+const hierarchyUtils = {
+  isPlaceholderRowId(id) {
+    return String(id ?? '').startsWith('__')
+  },
+}
+const rowOrderUtils = {
+  getPfmeaRowOperationIds(rows) {
+    return Array.from(new Set(rows.map((row) => row.operation_id).filter(Boolean)))
+  },
+  sortPfmeaRows(rows) {
+    return [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  },
+}
 const {
   deletePfmeaEditSession,
   deletePfmeaRowsByRevision,
@@ -108,10 +151,15 @@ const {
   fetchPfmeaEditSession,
   fetchPfmeaProjectRole,
   fetchPfmeaProjectView,
+  fetchPfmeaRowsForRevision,
   fetchPfmeaRevisionHistory,
+  restorePfmeaRowsSnapshotToRevision,
   startPfmeaEditSession,
 } = loadTypeScriptModule(['src', 'features', 'pfmea', 'pfmea-service.ts'], {
   './pfmea-display-utils': displayUtils,
+  './pfmea-hierarchy-utils': hierarchyUtils,
+  './pfmea-payload-utils': payloadUtils,
+  './pfmea-row-order-utils': rowOrderUtils,
 })
 
 async function main() {
@@ -174,6 +222,83 @@ async function main() {
       error: null,
     }))
     assert.equal(await fetchPfmeaCurrentDraftRevisionId(supabase, 'project-1'), 'draft-rev')
+  }
+
+  {
+    const supabase = createSupabase((state) => {
+      assert.equal(state.table, 'pfmea_rows')
+      assert.equal(state.selected, 'modern-fields')
+      assert.equal(state.filters[0].column, 'revision_id')
+      assert.equal(state.filters[0].value, 'rev-1')
+      assert.equal(JSON.stringify(state.inFilters[0]), JSON.stringify({ column: 'operation_id', values: ['op-1', 'op-2'] }))
+      assert.equal(state.orderBy.length, 3)
+      return {
+        data: [{ id: 'row-1', revision_id: 'rev-1', operation_id: 'op-1', created_at: '2026-05-03T08:00:00.000Z' }],
+        error: null,
+      }
+    })
+    const result = await fetchPfmeaRowsForRevision(supabase, {
+      groupIdsSupported: true,
+      operationIds: ['op-1', 'op-2', 'op-1', ''],
+      revisionId: 'rev-1',
+    })
+    assert.equal(result.groupIdsSupported, true)
+    assert.equal(result.rows.length, 1)
+  }
+
+  {
+    let callCount = 0
+    const supabase = createSupabase((state) => {
+      callCount += 1
+      if (callCount === 1) {
+        assert.equal(state.selected, 'modern-fields')
+        return { data: null, error: { message: 'column pfmea_rows.failure_mode_group_id does not exist' } }
+      }
+      assert.equal(state.selected, 'legacy-fields')
+      return {
+        data: [{ id: 'row-legacy', revision_id: 'rev-1', operation_id: 'op-1', created_at: '2026-05-03T08:00:00.000Z' }],
+        error: null,
+      }
+    })
+    const result = await fetchPfmeaRowsForRevision(supabase, {
+      groupIdsSupported: true,
+      revisionId: 'rev-1',
+    })
+    assert.equal(result.groupIdsSupported, false)
+    assert.equal(result.rows[0].id, 'row-legacy')
+  }
+
+  {
+    const inserts = []
+    const deletes = []
+    const supabase = createSupabase((state) => {
+      if (state.delete) {
+        deletes.push(state)
+        return { data: null, error: null }
+      }
+      if (state.insertPayload) {
+        inserts.push(state.insertPayload)
+        return { data: null, error: null }
+      }
+      return {
+        data: [{ id: 'row-1', revision_id: 'rev-2', operation_id: 'op-1', created_at: '2026-05-03T08:00:00.000Z' }],
+        error: null,
+      }
+    })
+    const result = await restorePfmeaRowsSnapshotToRevision(supabase, {
+      batchSize: 1,
+      groupIdsSupported: false,
+      revisionId: 'rev-2',
+      sourceRows: [
+        { id: '__placeholder', operation_id: 'op-ignored', created_at: '2026-05-03T08:00:00.000Z' },
+        { id: 'row-1', operation_id: 'op-1', row_no: '1', failure_mode_group_id: 'fm-1', created_at: '2026-05-03T08:00:00.000Z' },
+      ],
+    })
+    assert.equal(deletes.length, 1)
+    assert.equal(JSON.stringify(deletes[0].inFilters[0]), JSON.stringify({ column: 'operation_id', values: ['op-1'] }))
+    assert.equal(inserts.length, 1)
+    assert.equal(Object.prototype.hasOwnProperty.call(inserts[0][0], 'failure_mode_group_id'), false)
+    assert.equal(result.rows.length, 1)
   }
 
   {

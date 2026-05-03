@@ -1,5 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeHistoryText, toFiniteNumber } from './pfmea-display-utils'
+import {
+  PFMEA_SELECT_FIELDS,
+  PFMEA_SELECT_FIELDS_LEGACY,
+  buildPfmeaInsertPayloadForRevision,
+  isMissingPfmeaGroupIdColumnError,
+  stripPfmeaGroupIdsFromPayload,
+  type PfmeaPayloadRow,
+} from './pfmea-payload-utils'
+import { isPlaceholderRowId } from './pfmea-hierarchy-utils'
+import { getPfmeaRowOperationIds, sortPfmeaRows } from './pfmea-row-order-utils'
 
 export type PfmeaProjectView = {
   id: string
@@ -27,6 +37,11 @@ export type PfmeaHistoryEntry = {
   riskCount: number | null
   avgRpn: number | null
   description: string
+}
+
+export type PfmeaRevisionRowsResult<Row extends PfmeaPayloadRow = PfmeaPayloadRow> = {
+  groupIdsSupported: boolean
+  rows: Row[]
 }
 
 export type PfmeaEditSessionStartResult =
@@ -145,6 +160,95 @@ export async function fetchPfmeaCurrentDraftRevisionId(
     .maybeSingle()
 
   return (projectRes.data?.current_draft_revision_id as string | null | undefined) ?? null
+}
+
+export async function fetchPfmeaRowsForRevision<Row extends PfmeaPayloadRow = PfmeaPayloadRow>(
+  supabase: SupabaseClient,
+  params: {
+    groupIdsSupported?: boolean | null
+    operationIds?: string[]
+    revisionId: string
+  }
+): Promise<PfmeaRevisionRowsResult<Row>> {
+  if (!params.revisionId) return { groupIdsSupported: params.groupIdsSupported !== false, rows: [] }
+
+  const scopedOperationIds = Array.from(new Set((params.operationIds ?? []).map((id) => String(id || '').trim()).filter(Boolean)))
+  const selectFields = params.groupIdsSupported === false ? PFMEA_SELECT_FIELDS_LEGACY : PFMEA_SELECT_FIELDS
+  let query = supabase.from('pfmea_rows').select(selectFields).eq('revision_id', params.revisionId)
+
+  if (scopedOperationIds.length > 0) {
+    query = query.in('operation_id', scopedOperationIds)
+  }
+
+  let response = await query
+    .order('operation_number', { foreignTable: 'operations', ascending: true })
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+
+  if (response.error && isMissingPfmeaGroupIdColumnError(response.error)) {
+    let legacyQuery = supabase.from('pfmea_rows').select(PFMEA_SELECT_FIELDS_LEGACY).eq('revision_id', params.revisionId)
+    if (scopedOperationIds.length > 0) {
+      legacyQuery = legacyQuery.in('operation_id', scopedOperationIds)
+    }
+    response = await legacyQuery
+      .order('operation_number', { foreignTable: 'operations', ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+
+    if (response.error) throw response.error
+    return {
+      groupIdsSupported: false,
+      rows: (response.data ?? []) as unknown as Row[],
+    }
+  }
+
+  if (response.error) throw response.error
+  return {
+    groupIdsSupported: params.groupIdsSupported !== false,
+    rows: (response.data ?? []) as unknown as Row[],
+  }
+}
+
+export async function restorePfmeaRowsSnapshotToRevision<Row extends PfmeaPayloadRow = PfmeaPayloadRow>(
+  supabase: SupabaseClient,
+  params: {
+    batchSize?: number
+    groupIdsSupported?: boolean | null
+    revisionId: string
+    sourceRows: Row[]
+  }
+): Promise<PfmeaRevisionRowsResult<Row>> {
+  const snapshotRows = sortPfmeaRows(params.sourceRows).filter((row) => !isPlaceholderRowId(row.id)) as Row[]
+  if (!params.revisionId || snapshotRows.length === 0) {
+    return { groupIdsSupported: params.groupIdsSupported !== false, rows: [] }
+  }
+
+  const operationIds = getPfmeaRowOperationIds(snapshotRows)
+  if (operationIds.length === 0) {
+    throw new Error(`PFMEA safety restore failed for revision ${params.revisionId}: no operation ids were found in the snapshot.`)
+  }
+
+  const deleteRes = await supabase.from('pfmea_rows').delete().eq('revision_id', params.revisionId).in('operation_id', operationIds)
+  if (deleteRes.error) throw deleteRes.error
+
+  const batchSize = params.batchSize ?? 25
+  for (let index = 0; index < snapshotRows.length; index += batchSize) {
+    const batch = snapshotRows.slice(index, index + batchSize)
+    const payload = batch.map((row) => {
+      const insertPayload = buildPfmeaInsertPayloadForRevision(row, params.revisionId)
+      return params.groupIdsSupported === false
+        ? stripPfmeaGroupIdsFromPayload(insertPayload as Record<string, unknown>)
+        : insertPayload
+    })
+    const insertRes = await supabase.from('pfmea_rows').insert(payload)
+    if (insertRes.error) throw insertRes.error
+  }
+
+  return fetchPfmeaRowsForRevision<Row>(supabase, {
+    groupIdsSupported: params.groupIdsSupported,
+    operationIds,
+    revisionId: params.revisionId,
+  })
 }
 
 export async function ensurePfmeaProcessDraft(
