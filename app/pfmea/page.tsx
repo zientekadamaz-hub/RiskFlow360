@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
-import { colorToBg as RISK_MATRIX_COLOR_HEX, type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/matrixColors'
+import { type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/matrixColors'
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 import { isTimeoutError } from '@/lib/error-utils'
 import {
@@ -98,6 +98,7 @@ import {
   settingsProcessAccent,
   settingsRiskSummaryTileStyle,
 } from '@/components/rf-ui'
+import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
 
 /* ===================== TYPES ===================== */
 
@@ -447,16 +448,6 @@ const PFMEA_EDITABLE_FIELDS: Array<
 
 const GLOBAL_PROJECT_ID = '00000000-0000-0000-0000-000000000000'
 
-const COLOR_HEX: Record<RiskColor, string> = RISK_MATRIX_COLOR_HEX
-
-function rgba(hex: string, alpha: number) {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.slice(0, 2), 16)
-  const g = parseInt(h.slice(2, 4), 16)
-  const b = parseInt(h.slice(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
 function cellKey(sev: number, doVal: number) {
   return riskCellKey(sev, doVal)
 }
@@ -470,13 +461,6 @@ function colorFill(c: RiskColor) {
   if (c === 'orange') return 'rgba(251,146,60,0.18)'
   if (c === 'yellow') return 'rgba(250,204,21,0.22)'
   return 'rgba(34,197,94,0.18)'
-}
-
-function colorBorder(c: RiskColor) {
-  if (c === 'red') return rgba(COLOR_HEX[c], 0.35)
-  if (c === 'orange') return rgba(COLOR_HEX[c], 0.45)
-  if (c === 'yellow') return rgba(COLOR_HEX[c], 0.55)
-  return rgba(COLOR_HEX[c], 0.45)
 }
 
 /* ===================== PFMEA PAGE ===================== */
@@ -3542,6 +3526,7 @@ useEffect(() => {
   const processNameLength = (project?.name ?? '').length
   const processSummaryFontSize = processNameLength > 42 ? 13 : processNameLength > 28 ? 15 : processNameLength > 18 ? 18 : 24
   const processSummaryValueStyle: React.CSSProperties = {
+    ...projectsSummaryValueStyle,
     alignItems: 'center',
     display: 'flex',
     fontSize: processSummaryFontSize,
@@ -3552,43 +3537,50 @@ useEffect(() => {
     whiteSpace: 'normal',
     wordBreak: 'break-word',
   }
+  const pfmeaSummaryMaxWidth = getSettingsSummaryGridMaxWidth(10)
+  const pfmeaSummaryValueStyle: React.CSSProperties = { ...projectsSummaryValueStyle, color: '#f8fafc' }
 
   const pfmeaSummary = (
-    <div style={{ width: '100%', maxWidth: getSettingsSummaryGridMaxWidth(10), marginLeft: 'auto', alignSelf: 'flex-start' }}>
-      <SettingsSummaryGrid columns={10} maxWidth={getSettingsSummaryGridMaxWidth(10)}>
+    <div style={{ width: '100%', maxWidth: pfmeaSummaryMaxWidth, marginLeft: 'auto', alignSelf: 'flex-start' }}>
+      <SettingsSummaryGrid columns={10} maxWidth={pfmeaSummaryMaxWidth}>
         <SettingsSummaryTile
           label="Process"
           style={{ gridColumn: 'span 2' }}
           value={project?.name ?? '-'}
           valueStyle={processSummaryValueStyle}
         />
-        <SettingsSummaryTile label="Revision" value={pfmeaRevisionNumberFromLabel(workingRevisionLabel)} />
-        <SettingsSummaryTile label="Operations" value={ops.length} />
-        <SettingsSummaryTile label="PFMEA rows" value={rowsSorted.length} />
+        <SettingsSummaryTile label="Revision" value={pfmeaRevisionNumberFromLabel(workingRevisionLabel)} valueStyle={pfmeaSummaryValueStyle} />
+        <SettingsSummaryTile label="Operations" value={ops.length} valueStyle={pfmeaSummaryValueStyle} />
+        <SettingsSummaryTile label="PFMEA rows" value={rowsSorted.length} valueStyle={pfmeaSummaryValueStyle} />
         <SettingsSummaryTile
           label="Average RPN"
           style={avgRpnSummary.color ? settingsRiskSummaryTileStyle(avgRpnSummary.color) : undefined}
           value={avgRpnSummary.avg == null ? '-' : Math.round(avgRpnSummary.avg)}
+          valueStyle={pfmeaSummaryValueStyle}
         />
         <SettingsSummaryTile
           label="Actions must be defined"
           style={settingsRiskSummaryTileStyle('red')}
           value={avgRpnSummary.buckets.red}
+          valueStyle={pfmeaSummaryValueStyle}
         />
         <SettingsSummaryTile
           label="Action plan required"
           style={settingsRiskSummaryTileStyle('orange')}
           value={avgRpnSummary.buckets.orange}
+          valueStyle={pfmeaSummaryValueStyle}
         />
         <SettingsSummaryTile
           label="Actions recommended"
           style={settingsRiskSummaryTileStyle('yellow')}
           value={avgRpnSummary.buckets.yellow}
+          valueStyle={pfmeaSummaryValueStyle}
         />
         <SettingsSummaryTile
           label="Acceptable risk"
           style={settingsRiskSummaryTileStyle('green')}
           value={avgRpnSummary.buckets.green}
+          valueStyle={pfmeaSummaryValueStyle}
         />
       </SettingsSummaryGrid>
     </div>
@@ -3604,6 +3596,7 @@ useEffect(() => {
       titleStyle={{ color: settingsProcessAccent, fontWeight: 600 }}
       subtitle="Analyze process risks and manage the PFMEA revision for the selected process."
       summary={pfmeaSummary}
+      summaryMaxWidth={pfmeaSummaryMaxWidth}
       backdrop={<SettingsBackdrop />}
     >
       <style jsx global>{`

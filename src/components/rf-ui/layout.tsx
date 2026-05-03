@@ -55,6 +55,7 @@ export function SettingsPageShell({
   subtitle,
   actions,
   summary,
+  summaryMaxWidth,
   children,
   backdrop,
 }: {
@@ -63,6 +64,7 @@ export function SettingsPageShell({
   subtitle: ReactNode
   actions?: ReactNode
   summary?: ReactNode
+  summaryMaxWidth?: number
   children: ReactNode
   backdrop?: ReactNode
 }) {
@@ -79,7 +81,7 @@ export function SettingsPageShell({
                 {actions ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>{actions}</div> : null}
               </div>
               {summary ? (
-                <div style={{ width: '100%', maxWidth: 920, marginLeft: 'auto', alignSelf: 'flex-start' }}>{summary}</div>
+                <div style={{ width: '100%', maxWidth: summaryMaxWidth ?? 920, marginLeft: 'auto', alignSelf: 'flex-start' }}>{summary}</div>
               ) : null}
             </div>
           </div>
@@ -154,4 +156,3 @@ export function SettingsBanner({
     </div>
   )
 }
-

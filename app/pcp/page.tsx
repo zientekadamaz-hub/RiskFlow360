@@ -19,82 +19,36 @@ import {
   normalizeClassValue,
   normalizeText,
 } from '@/features/pcp/pcp-utils'
-
-type ProjectView = {
-  id: string
-  name: string
-  status: 'DRAFT' | 'OPEN' | 'OBSOLETE'
-  current_open_revision_id: string | null
-  current_draft_revision_id: string | null
-  open_revision_label: string | null
-  draft_revision_label: string | null
-}
-
-type Operation = {
-  id: string
-  project_id: string
-  operation_number: number | null
-  name: string
-  machine: string | null
-  operation: string | null
-  active?: boolean
-}
-
-type PcpRow = {
-  id: string
-  revision_id?: string | null
-  operation_id: string
-  pfmea_row_id?: string | null
-  failure_mode: string | null
-  characteristic: string
-  class: string | null
-  severity?: number | string | null
-  rpn?: number | null
-  current_prevention: string | null
-  current_detection: string | null
-  control_method: string | null
-  sample_size: string | null
-  frequency: string | null
-  reaction_plan: string | null
-  source: string
-  status: string
-  created_at: string
-  updated_at: string
-  operations?: Operation | null
-  __placeholder?: boolean
-  __sortIndex?: number
-}
-
-type PcpHistoryEntry = {
-  id: string
-  at: string
-  revisionLabel: string
-  author: string
-  controlCount: number | null
-  description: string
-}
-
-type PcpEditSession = {
-  projectId: string
-  lockedBy: string
-  startedAt: string
-  lastActivityAt: string
-}
-
-type PfmeaPcpSeedRow = {
-  id: string
-  operation_id: string
-  pcp: boolean | null
-  failure_mode: string | null
-  class: string | null
-  characteristic: string | null
-  severity: number | string | null
-  rpn: number | null
-  current_prevention: string | null
-  current_detection: string | null
-  created_at?: string | null
-  operations?: Operation | Operation[] | null
-}
+import {
+  backfillPcpRowsFromPfmea,
+  deletePcpDraftRows,
+  deletePcpEditSession,
+  ensurePcpProcessDraft,
+  fetchCurrentPcpDraftRevisionId,
+  fetchLatestPfmeaRevisionIdForPcp,
+  fetchPcpEditSession,
+  fetchPcpOperations,
+  fetchPcpProjectView,
+  fetchPcpRevisionHistory,
+  fetchPcpRowsForRevision,
+  fetchPcpSelectionThreshold,
+  fetchPcpSessionLock,
+  fetchPcpUserProjectRole,
+  fetchPfmeaPcpSeedRows,
+  findEquivalentPcpRowInRevision,
+  hydratePcpDraftRows,
+  insertPcpRow,
+  publishPcpRevision,
+  touchPcpEditSession,
+  updatePcpRow,
+  upsertPcpEditSession,
+  type PcpEditSession,
+  type PcpHistoryEntry,
+  type PcpOperation as Operation,
+  type PcpProjectView as ProjectView,
+  type PcpRow,
+  type PfmeaPcpSeedRow,
+} from '@/features/pcp/pcp-service'
 
 type PcpColumnId =
   | 'id'
@@ -366,13 +320,7 @@ function PcpPageContent() {
   }, [rows])
 
   const loadProjectView = useCallback(async () => {
-    const pr = await supabase
-      .from('projects_with_revision')
-      .select('id,name,status,current_open_revision_id,current_draft_revision_id,open_revision_label,draft_revision_label')
-      .eq('id', projectId)
-      .single()
-    if (pr.error) throw pr.error
-    const view = pr.data as ProjectView
+    const view = await fetchPcpProjectView(supabase, projectId)
     setProject(view)
     if (view.current_draft_revision_id) setDraftRevisionIdOverride(view.current_draft_revision_id)
     return view
@@ -383,74 +331,20 @@ function PcpPageContent() {
       setEditSession(null)
       return
     }
-    const res = await supabase
-      .from('pcp_edit_sessions')
-      .select('project_id,locked_by,started_at,last_activity_at')
-      .eq('project_id', projectId)
-      .maybeSingle()
-    if (res.error || !res.data) {
-      setEditSession(null)
-      return
-    }
-    const row = res.data as { project_id: string; locked_by: string; started_at: string; last_activity_at: string }
-    setEditSession({ projectId: row.project_id, lockedBy: row.locked_by, startedAt: row.started_at, lastActivityAt: row.last_activity_at })
+    setEditSession(await fetchPcpEditSession(supabase, projectId))
   }, [projectId])
 
   const loadPcpSelectionThreshold = useCallback(async () => {
     if (!projectId) return 168
-    const globalProjectId = '00000000-0000-0000-0000-000000000000'
-    const res = await supabase
-      .from('risk_matrix_config')
-      .select('project_id,rpn_yellow_max')
-      .in('project_id', [projectId, globalProjectId])
-
-    if (res.error) return 168
-    const rows = (res.data ?? []) as Array<{ project_id?: string | null; rpn_yellow_max?: number | null }>
-    const exact = rows.find((row) => row.project_id === projectId)
-    const fallback = rows.find((row) => row.project_id === globalProjectId)
-    const raw = exact?.rpn_yellow_max ?? fallback?.rpn_yellow_max ?? 168
-    return typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 ? Math.trunc(raw) : 168
+    return fetchPcpSelectionThreshold(supabase, projectId)
   }, [projectId])
 
   const ensureDraftRowsHydrated = useCallback(async (draftRevisionId: string | null | undefined, sourceRevisionId: string | null | undefined) => {
-    const draftId = normalizeText(draftRevisionId)
-    const sourceId = normalizeText(sourceRevisionId)
-    if (!draftId || !sourceId || draftId === sourceId) return
-
-    const draftCountRes = await supabase
-      .from('control_plan_rows')
-      .select('id', { count: 'exact', head: true })
-      .eq('revision_id', draftId)
-    if ((draftCountRes.count ?? 0) > 0) return
-
-    const sourceRes = await supabase
-      .from('control_plan_rows')
-      .select('operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,sample_size,frequency,reaction_plan,source,status')
-      .eq('revision_id', sourceId)
-      .order('created_at', { ascending: true })
-    if (sourceRes.error) throw sourceRes.error
-
-    const sourceRows = (sourceRes.data ?? []) as Array<Partial<PcpRow> & { operation_id: string }>
-    if (sourceRows.length === 0) return
-
-    const insertPayload = sourceRows.map((row) => buildPcpRowPayload({ ...row, revision_id: draftId }))
-    const insertRes = await supabase.from('control_plan_rows').insert(insertPayload)
-    if (insertRes.error) throw insertRes.error
+    await hydratePcpDraftRows(supabase, draftRevisionId, sourceRevisionId)
   }, [])
 
   const findEquivalentRowInRevision = useCallback(async (row: PcpRow, revisionId: string) => {
-    const res = await supabase
-      .from('control_plan_rows')
-      .select('id,revision_id,operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,sample_size,frequency,reaction_plan,source,status,created_at,updated_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)')
-      .eq('revision_id', revisionId)
-      .eq('operation_id', row.operation_id)
-      .order('created_at', { ascending: true })
-    if (res.error) throw res.error
-    const revisionRows = ((res.data ?? []) as Array<PcpRow & { operations?: Operation[] | Operation | null }>).map((candidate) => ({
-      ...candidate,
-      operations: Array.isArray(candidate.operations) ? (candidate.operations[0] ?? null) : (candidate.operations ?? null),
-    }))
-    return revisionRows.find((candidate) => isEquivalentPcpRow(candidate, row)) ?? null
+    return findEquivalentPcpRowInRevision(supabase, row, revisionId)
   }, [])
 
   const loadUserContext = useCallback(async () => {
@@ -458,19 +352,7 @@ function PcpPageContent() {
       setIsChampion(false)
       return
     }
-    const projectRes = await supabase.from('projects').select('organization_id').eq('id', projectId).maybeSingle()
-    const organizationId = (projectRes.data as { organization_id?: string | null } | null)?.organization_id ?? null
-    if (!organizationId) {
-      setIsChampion(false)
-      return
-    }
-    const memberRes = await supabase
-      .from('organization_members')
-      .select('role')
-      .eq('organization_id', organizationId)
-      .eq('user_id', userId)
-      .maybeSingle()
-    const role = ((memberRes.data as { role?: string | null } | null)?.role ?? '').toLowerCase()
+    const role = (await fetchPcpUserProjectRole(supabase, projectId, userId) ?? '').toLowerCase()
     setIsChampion(role === 'champion')
   }, [projectId, userId])
 
@@ -488,14 +370,10 @@ function PcpPageContent() {
     }
     if ((project?.status ?? 'DRAFT') === 'OBSOLETE') throw new Error('Process is OBSOLETE (read-only).')
 
-    const { data, error } = await supabase.rpc('ensure_process_draft', {
-      p_project_id: projectId,
-      p_user_id: userId,
-    })
-    if (error) throw error
+    const ensuredDraftId = await ensurePcpProcessDraft(supabase, projectId, userId)
 
     const pv = await loadProjectView()
-    const ensured = pv.current_draft_revision_id ?? (data as string | null) ?? null
+    const ensured = pv.current_draft_revision_id ?? ensuredDraftId
     if (ensured) setDraftRevisionIdOverride(ensured)
     await ensureDraftRowsHydrated(ensured, pv.current_open_revision_id ?? workingRevisionId)
     return ensured
@@ -508,14 +386,7 @@ function PcpPageContent() {
       const pv = await loadProjectView()
       const pcpYellowMax = await loadPcpSelectionThreshold()
       setPcpYellowMax(pcpYellowMax)
-      const opsRes = await supabase
-        .from('operations')
-        .select('id,project_id,operation_number,name,machine,operation,active')
-        .eq('project_id', projectId)
-        .eq('active', true)
-        .order('operation_number', { ascending: true })
-      if (opsRes.error) throw opsRes.error
-      const operations = (opsRes.data ?? []) as Operation[]
+      const operations = await fetchPcpOperations(supabase, projectId)
 
       const openRevId = pv.current_open_revision_id ?? null
       const draftRevId = draftRevisionIdOverride ?? pv.current_draft_revision_id ?? null
@@ -527,44 +398,13 @@ function PcpPageContent() {
         return
       }
 
-      const rowsRes = await supabase
-        .from('control_plan_rows')
-        .select('id,revision_id,operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,sample_size,frequency,reaction_plan,source,status,created_at,updated_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)')
-        .eq('operations.project_id', projectId)
-        .eq('revision_id', revId)
-        .order('operation_number', { foreignTable: 'operations', ascending: true })
-        .order('created_at', { ascending: true })
-      if (rowsRes.error) throw rowsRes.error
-      const normalizedRows = ((rowsRes.data ?? []) as Array<PcpRow & { operations?: Operation[] | Operation | null }>).map((row) => ({
-        ...row,
-        operations: Array.isArray(row.operations) ? (row.operations[0] ?? null) : (row.operations ?? null),
-      }))
+      const normalizedRows = await fetchPcpRowsForRevision(supabase, projectId, revId)
       const loadPfmeaSeeds = async (seedRevisionId: string) => {
-        const res = await supabase
-          .from('pfmea_rows')
-          .select('id,operation_id,pcp,failure_mode,class,characteristic,severity,rpn,current_prevention,current_detection,created_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)')
-          .eq('operations.project_id', projectId)
-          .eq('revision_id', seedRevisionId)
-          .order('operation_number', { foreignTable: 'operations', ascending: true })
-          .order('created_at', { ascending: true })
-        if (res.error) throw res.error
-        return ((res.data ?? []) as Array<PfmeaPcpSeedRow>).map((row) => ({
-          ...row,
-          operations: Array.isArray(row.operations) ? (row.operations[0] ?? null) : (row.operations ?? null),
-        }))
+        return fetchPfmeaPcpSeedRows(supabase, projectId, seedRevisionId)
       }
 
       const loadLatestPfmeaRevisionId = async () => {
-        const res = await supabase
-          .from('pfmea_rows')
-          .select('revision_id,created_at,operations!inner(project_id)')
-          .eq('operations.project_id', projectId)
-          .order('created_at', { ascending: false })
-          .limit(200)
-
-        if (res.error) throw res.error
-        const rows = (res.data ?? []) as Array<{ revision_id?: string | null }>
-        return rows.find((row) => normalizeText(row.revision_id))?.revision_id ?? null
+        return fetchLatestPfmeaRevisionIdForPcp(supabase, projectId)
       }
 
       let pfmeaSeedRows = revId ? await loadPfmeaSeeds(revId) : []
@@ -714,17 +554,7 @@ function PcpPageContent() {
       }
 
       if (pfmeaBackfillCandidates.length > 0) {
-        const updates = await Promise.all(
-          pfmeaBackfillCandidates.map((candidate) =>
-            supabase
-              .from('control_plan_rows')
-              .update(candidate.patch)
-              .eq('id', candidate.id)
-          )
-        )
-
-        const failedUpdate = updates.find((result) => result.error)
-        if (failedUpdate?.error) throw failedUpdate.error
+        await backfillPcpRowsFromPfmea(supabase, pfmeaBackfillCandidates)
 
         setDirtyIds((prev) => {
           const next = new Set(prev)
@@ -745,26 +575,7 @@ function PcpPageContent() {
     }
     setHistoryLoading(true)
     try {
-      const customRes = await supabase
-        .from('pcp_change_history')
-        .select('id,created_at,revision_label,change_description,author_name,control_count')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(200)
-
-      if (!customRes.error && (customRes.data?.length ?? 0) > 0) {
-        const rowsRaw = (customRes.data ?? []) as Array<{ id?: string | null; created_at?: string | null; revision_label?: string | null; change_description?: string | null; author_name?: string | null; control_count?: number | null }>
-        setHistoryEntries(rowsRaw.map((x, idx) => ({
-          id: x.id ?? `pcp-h-db-${idx}`,
-          at: x.created_at ?? new Date(0).toISOString(),
-          revisionLabel: (x.revision_label ?? '0.0.0').toString(),
-          author: normalizeText(x.author_name) || 'Unknown user',
-          controlCount: x.control_count ?? null,
-          description: x.change_description ?? '',
-        })))
-        return
-      }
-      setHistoryEntries([])
+      setHistoryEntries(await fetchPcpRevisionHistory(supabase, projectId))
     } catch (e: any) {
       setErr(e?.message ?? String(e))
       setHistoryEntries([])
@@ -780,14 +591,9 @@ function PcpPageContent() {
     setSessionMsg('')
     try {
       const nowIso = new Date().toISOString()
-      const res = await supabase
-        .from('pcp_edit_sessions')
-        .select('project_id,locked_by,last_activity_at')
-        .eq('project_id', projectId)
-        .maybeSingle()
-      const row = (res.data ?? null) as { locked_by?: string | null; last_activity_at?: string | null } | null
-      const otherOwner = row?.locked_by ?? null
-      const last = row?.last_activity_at ? new Date(row.last_activity_at).getTime() : 0
+      const lock = await fetchPcpSessionLock(supabase, projectId)
+      const otherOwner = lock?.lockedBy ?? null
+      const last = lock?.lastActivityAt ? new Date(lock.lastActivityAt).getTime() : 0
       const hasActiveOther = !!otherOwner && otherOwner !== userId && sessionNow - last < EDIT_LOCK_MS
       if (hasActiveOther && !isChampion) {
         setErr('This PCP is currently locked by another user.')
@@ -795,10 +601,9 @@ function PcpPageContent() {
       }
 
       if (otherOwner && otherOwner !== userId) {
-        const projectRes = await supabase.from('projects_with_revision').select('current_draft_revision_id').eq('id', projectId).maybeSingle()
-        const draftId = (projectRes.data?.current_draft_revision_id as string | null | undefined) ?? draftRevisionIdOverride
+        const draftId = await fetchCurrentPcpDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
         if (draftId) {
-          await supabase.from('control_plan_rows').delete().eq('revision_id', draftId)
+          await deletePcpDraftRows(supabase, draftId)
           setDraftRevisionIdOverride(null)
           setDirtyIds([])
           setDeletedIds([])
@@ -807,8 +612,7 @@ function PcpPageContent() {
         setSessionMsg(`Previous PCP draft was discarded (${reason}).`)
       }
 
-      const upsertRes = await supabase.from('pcp_edit_sessions').upsert([{ project_id: projectId, locked_by: userId, started_at: nowIso, last_activity_at: nowIso, updated_at: nowIso }], { onConflict: 'project_id' })
-      if (upsertRes.error) throw new Error(upsertRes.error.message)
+      await upsertPcpEditSession(supabase, projectId, userId, nowIso)
       await loadEditSession()
       await loadAll()
     } catch (e: any) {
@@ -823,10 +627,9 @@ function PcpPageContent() {
     setSessionBusy(true)
     setErr('')
     try {
-      const projectRes = await supabase.from('projects_with_revision').select('current_draft_revision_id').eq('id', projectId).maybeSingle()
-      const draftId = (projectRes.data?.current_draft_revision_id as string | null | undefined) ?? draftRevisionIdOverride
-      if (draftId) await supabase.from('control_plan_rows').delete().eq('revision_id', draftId)
-      await supabase.from('pcp_edit_sessions').delete().eq('project_id', projectId).eq('locked_by', userId)
+      const draftId = await fetchCurrentPcpDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
+      if (draftId) await deletePcpDraftRows(supabase, draftId)
+      await deletePcpEditSession(supabase, projectId, userId)
       setDraftRevisionIdOverride(null)
       setDirtyIds([])
       setDeletedIds([])
@@ -862,7 +665,7 @@ function PcpPageContent() {
         setEdit((prev) => (prev && prev.rowId === row.id ? { ...prev, rowId: mappedRow.id } : prev))
       }
       if (isPlaceholderPcpRowId(row.id) || row.__placeholder) {
-        const insertPayload = buildPcpRowPayload({
+        const rowSource = {
           operation_id: row.operation_id,
           revision_id: finalRev,
           pfmea_row_id: row.pfmea_row_id ?? null,
@@ -877,11 +680,10 @@ function PcpPageContent() {
           reaction_plan: payload.reaction_plan ?? row.reaction_plan ?? '',
           source: payload.source ?? row.source ?? 'MANUAL',
           status: payload.status ?? row.status ?? 'OPEN',
-        })
-        const ins = await supabase.from('control_plan_rows').insert([insertPayload]).select('id,created_at,updated_at').single()
-        if (ins.error) throw ins.error
-        const newId = ins.data?.id
-        if (!newId) throw new Error('Failed to create PCP row.')
+        }
+        const insertPayload = buildPcpRowPayload(rowSource)
+        const ins = await insertPcpRow(supabase, rowSource)
+        const newId = ins.id
         markDirty(newId)
         setRows((prev) =>
           prev.map((x) =>
@@ -890,8 +692,8 @@ function PcpPageContent() {
                   ...row,
                   ...insertPayload,
                   id: newId,
-                  created_at: ins.data?.created_at ?? new Date().toISOString(),
-                  updated_at: ins.data?.updated_at ?? new Date().toISOString(),
+                  created_at: ins.created_at ?? new Date().toISOString(),
+                  updated_at: ins.updated_at ?? new Date().toISOString(),
                   revision_id: finalRev,
                   __placeholder: false,
                 } as PcpRow)
@@ -899,8 +701,7 @@ function PcpPageContent() {
           )
         )
       } else {
-        const res = await supabase.from('control_plan_rows').update(payload).eq('id', targetRow.id).eq('revision_id', finalRev)
-        if (res.error) throw res.error
+        await updatePcpRow(supabase, targetRow.id, finalRev, payload)
         markDirty(targetRow.id)
         if (requiresReload) {
           await loadAll(finalRev)
@@ -931,19 +732,18 @@ function PcpPageContent() {
       const uid = sess?.session?.user?.id
       if (!uid) throw new Error('Not authenticated.')
 
-      const { error } = await supabase.rpc('publish_process_module_revision', { p_project_id: projectId, p_module: 'PCP', p_change_description: desc, p_user_id: uid })
-      if (error) throw error
-
-      const revRes = await supabase.from('projects_with_revision').select('open_revision_label,draft_revision_label').eq('id', projectId).maybeSingle()
-      const row = (revRes.data ?? null) as { open_revision_label?: string | null; draft_revision_label?: string | null } | null
-      const revisionLabel = (row?.draft_revision_label ?? row?.open_revision_label ?? '0.0.0').toString()
-
-      await supabase.from('pcp_change_history').insert([{ project_id: projectId, revision_label: revisionLabel || '0.0.0', change_description: desc, author_id: uid, author_name: currentAuthorName || 'Unknown user', control_count: rowsSorted.length, created_at: new Date().toISOString() }])
+      await publishPcpRevision(supabase, {
+        authorId: uid,
+        authorName: currentAuthorName || 'Unknown user',
+        changeDescription: desc,
+        controlCount: rowsSorted.length,
+        projectId,
+      })
 
       setDirtyIds([])
       setDeletedIds([])
       setDraftRevisionIdOverride(null)
-      if (projectId && userId) await supabase.from('pcp_edit_sessions').delete().eq('project_id', projectId).eq('locked_by', userId)
+      if (projectId && userId) await deletePcpEditSession(supabase, projectId, userId)
       await loadAll()
       await loadRevisionHistory()
       await loadEditSession()
@@ -1048,7 +848,7 @@ function PcpPageContent() {
   useEffect(() => {
     if (!projectId || !userId || !isEditOwner) return
     const beat = setInterval(() => {
-      void supabase.from('pcp_edit_sessions').update({ last_activity_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('project_id', projectId).eq('locked_by', userId)
+      void touchPcpEditSession(supabase, projectId, userId, new Date().toISOString())
     }, 30_000)
     return () => clearInterval(beat)
   }, [projectId, userId, isEditOwner])

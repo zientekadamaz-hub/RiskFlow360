@@ -147,6 +147,14 @@ Wdrozone zostaly tylko rekomendacje bezpieczne: poprawki stabilnosciowe, walidac
    Pliki: `PFMEA/supabase-live-public-schema-dump-2026-05-03.sql`, `PFMEA/supabase-live-public-data-dump-2026-05-03.sql`, `PFMEA/supabase-live-public-pgdump-checksums-2026-05-03.json`, `.gitignore`, `PFMEA/supabase-operational-check-2026-05-02.md`.  
    Po naprawie/aktualizacji Windows wlaczono WSL2 i uruchomiono Docker Desktop 4.71.0. Wykonano Supabase CLI dump schematu public i danych public. Pliki backupu zostaly dodane do `.gitignore`, bo zawieraja realne dane.
 
+30. PCP service layer extraction
+   Pliki: `src/features/pcp/pcp-service.ts`, `app/pcp/page.tsx`, `scripts/regression/pcp-service-smoke.js`, `package.json`.
+   Wydzielono bezpieczna warstwe danych PCP: project view, edit session, RPN threshold, draft hydration, operations, rows, PFMEA seed rows, revision history, lock/session actions, insert/update row oraz publish PCP revision. `app/pcp/page.tsx` pozostaje odpowiedzialny za UI i orkiestracje stanu, ale bez bezposredniego rozrzucenia wiekszosci operacji Supabase po komponencie. Dodano smoke test `regression:pcp-service` i wlaczono go do `regression:shared`.
+
+31. PFMEA top summary standard width fix
+   Pliki: `src/components/rf-ui/layout.tsx`, `app/pfmea/page.tsx`.
+   Naprawiono niespojnosc gornych ramek PFMEA. `SettingsPageShell` dostal opcjonalne `summaryMaxWidth`, a PFMEA przekazuje szerokosc policzona dla 10 kafelkow standardu. Wartosci kafelkow PFMEA uzywaja tego samego stylu co Projects/Reports. Bez tej poprawki 10 kafelkow bylo scisniete do limitu standardowego dla 7 kafelkow, dlatego wizualnie odbiegaly od standardu.
+
 ## Czesciowo wdrozone rekomendacje
 
 - React Compiler cleanup: czesc realnych problemow usunieta, ale kilka zasad jest nadal wylaczonych dla legacy modulow.
@@ -156,6 +164,7 @@ Wdrozone zostaly tylko rekomendacje bezpieczne: poprawki stabilnosciowe, walidac
 ## Odrzucone / odlozone rekomendacje
 
 - Pelny refactor PFMEA/PFD/PCP: odlozony z powodu duzego ryzyka regresji w logice draft/revision/RPN.
+- PCP service layer: pierwszy bezpieczny etap wykonany; pozostaje ewentualne wydzielenie hookow stanu tabeli i pelniejsze browser regression.
 - Wlaczenie `reactStrictMode`: odlozone do czasu usuniecia legacy hook debt.
 - Migracje indeksow i konsolidacja migracji: odlozone, bo wymagaja potwierdzenia rzeczywistego stanu produkcyjnej bazy.
 - Uruchomienie regresji browserowych: odlozone, bo brak wymaganych zmiennych `REGRESSION_EMAIL`, `REGRESSION_PASSWORD`, `PFMEA_REGRESSION_PROJECT_ID`. Skrypty moga czyscic drafty, wiec nie powinny isc na aktywna baze.
@@ -202,6 +211,7 @@ Uwaga: `riskflow-current-dev.err.log` i `riskflow-current-dev.out.log` sa zmieni
 | `npm run regression:pfmea-risk` | PASS |
 | `npm run regression:pfmea-value` | PASS |
 | `npm run regression:pcp-utils` | PASS |
+| `npm run regression:pcp-service` | PASS |
 | `npm run regression:report-revision` | PASS |
 | `supabase db lint --linked` | PASS |
 | PostgreSQL 17 client tools / `pg_dump --version` | PASS |
@@ -211,6 +221,7 @@ Uwaga: `riskflow-current-dev.err.log` i `riskflow-current-dev.out.log` sa zmieni
 | Supabase CLI public schema dump | PASS |
 | Supabase CLI public data dump | PASS with circular FK restore warning |
 | `npm run check` | PASS |
+| `npm run build` po PCP service / PFMEA summary fix | PASS |
 | `npm run regression:all` | NOT RUN - brak dedykowanych env/data, testy moga mutowac drafty |
 
 Build: Next.js 16.1.1, 33 strony wygenerowane, kompilacja zakonczona sukcesem.
