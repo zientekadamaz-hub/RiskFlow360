@@ -37,6 +37,7 @@ import {
   type SeverityOption,
 } from '@/features/pfmea/pfmea-types'
 import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visibility'
+import { usePfmeaDirtyDraftPersistence } from '@/features/pfmea/use-pfmea-dirty-draft-persistence'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
@@ -145,7 +146,6 @@ import {
   settingsProcessAccent,
 } from '@/components/rf-ui'
 
-const PFMEA_DIRTY_DRAFT_KEY_PREFIX = '__PFMEA_DIRTY_DRAFT__'
 const EDIT_LOCK_HOURS = 48
 const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
 /* ===================== PFMEA PAGE ===================== */
@@ -192,7 +192,6 @@ function PfmeaFullPageContent() {
   // ===== REVISION SAVE (dirty tracking) =====
   const [dirtyPfmeaIds, setDirtyPfmeaIds] = useState<string[]>([])
   const [deletedPfmeaIds, setDeletedPfmeaIds] = useState<string[]>([])
-  const [persistedDirtyDraft, setPersistedDirtyDraft] = useState(false)
   const [showSave, setShowSave] = useState(false)
   const [saveBusy, setSaveBusy] = useState(false)
   const [changeDesc, setChangeDesc] = useState('')
@@ -220,6 +219,15 @@ function PfmeaFullPageContent() {
     uncheckColumnGroup,
     visibleColumns,
   } = usePfmeaColumnVisibility(userId)
+  const {
+    clearDirtyDraftPersisted,
+    markDirtyDraftPersisted,
+    persistedDirtyDraft,
+  } = usePfmeaDirtyDraftPersistence({
+    hasProject: !!project,
+    projectHasDraftRevision: !!project?.current_draft_revision_id,
+    projectId,
+  })
   const stickyMergedCellTop = usePfmeaStickyMergedCellTop(tableHeadRef, visibleColumns)
   const pendingCellValuesRef = useRef<Record<string, unknown>>({})
   const [, setPendingCellRenderVersion] = useState(0)
@@ -333,46 +341,7 @@ function PfmeaFullPageContent() {
     pendingCellValuesRef.current = nextPending
   }, [rows])
 
-  const dirtyDraftStorageKey = useMemo(
-    () => (projectId ? `${PFMEA_DIRTY_DRAFT_KEY_PREFIX}:${projectId}` : ''),
-    [projectId]
-  )
-
   const isDirty = dirtyPfmeaIds.length > 0 || deletedPfmeaIds.length > 0 || persistedDirtyDraft
-
-  useEffect(() => {
-    if (!dirtyDraftStorageKey || typeof window === 'undefined') {
-      setPersistedDirtyDraft(false)
-      return
-    }
-    try {
-      setPersistedDirtyDraft(window.sessionStorage.getItem(dirtyDraftStorageKey) === '1')
-    } catch {
-      setPersistedDirtyDraft(false)
-    }
-  }, [dirtyDraftStorageKey])
-
-  const markDirtyDraftPersisted = useCallback(() => {
-    setPersistedDirtyDraft(true)
-    if (!dirtyDraftStorageKey || typeof window === 'undefined') return
-    try {
-      window.sessionStorage.setItem(dirtyDraftStorageKey, '1')
-    } catch {}
-  }, [dirtyDraftStorageKey])
-
-  const clearDirtyDraftPersisted = useCallback(() => {
-    setPersistedDirtyDraft(false)
-    if (!dirtyDraftStorageKey || typeof window === 'undefined') return
-    try {
-      window.sessionStorage.removeItem(dirtyDraftStorageKey)
-    } catch {}
-  }, [dirtyDraftStorageKey])
-
-  useEffect(() => {
-    if (!project) return
-    if (project?.current_draft_revision_id) return
-    clearDirtyDraftPersisted()
-  }, [project, project?.current_draft_revision_id, clearDirtyDraftPersisted])
 
   const markPfmeaDirty = useCallback((id: string) => {
     setDirtyPfmeaIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
