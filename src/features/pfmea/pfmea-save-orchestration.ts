@@ -10,7 +10,7 @@ import {
   summarizePfmeaRowsForError,
 } from './pfmea-payload-utils'
 import { findEquivalentPfmeaRow, findEquivalentPublishedPfmeaRow } from './pfmea-row-match-utils'
-import { insertPfmeaHistoryFallback, type PfmeaRevisionPublishResult } from './pfmea-service'
+import { insertPfmeaHistoryFallback, persistPfmeaDirtyRevisionRows, type PfmeaRevisionPublishResult } from './pfmea-service'
 import type { PfmeaRow, ProjectView } from './pfmea-types'
 
 export type PfmeaEditorCommitTarget = {
@@ -244,6 +244,42 @@ export async function remapPfmeaSnapshotRowsToRevisionAfterSave(params: {
   }
 
   return mappedRows
+}
+
+export async function persistPfmeaDraftSnapshotAfterSave(params: {
+  applyPendingCellValues: (row: PfmeaRow) => PfmeaRow
+  computeDerivedForRow: (row: PfmeaRow) => Partial<PfmeaRow>
+  dirtyIds: Iterable<string>
+  groupIdsSupported: boolean | null
+  remapRowsToRevision: (revisionId: string, sourceRows: PfmeaRow[]) => Promise<PfmeaRow[]>
+  revisionId: string
+  sourceRows: PfmeaRow[]
+  supabase: SupabaseClient
+}) {
+  const dirtyIdsBeforeRemap = new Set(params.dirtyIds)
+  const snapshotRows = sortPfmeaRows(params.sourceRows)
+    .filter((row) => !isPlaceholderRowId(row.id))
+    .map((row) => {
+      const effectiveRow = params.applyPendingCellValues(row)
+      const derived = params.computeDerivedForRow(effectiveRow)
+      return {
+        ...effectiveRow,
+        ...derived,
+      } as PfmeaRow
+    })
+
+  if (snapshotRows.length === 0) return snapshotRows
+
+  const mappedSnapshotRows = await params.remapRowsToRevision(params.revisionId, snapshotRows)
+  await persistPfmeaDirtyRevisionRows<PfmeaRow>(params.supabase, {
+    dirtyIds: dirtyIdsBeforeRemap,
+    groupIdsSupported: params.groupIdsSupported,
+    mappedRows: mappedSnapshotRows,
+    revisionId: params.revisionId,
+    sourceRows: snapshotRows,
+  })
+
+  return mappedSnapshotRows
 }
 
 export async function completePfmeaPostPublish(params: {

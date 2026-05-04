@@ -95,6 +95,7 @@ import {
   completePfmeaPostPublish,
   ensurePublishedPfmeaIntegrityAfterSave,
   fetchAuthenticatedPfmeaSaveUserId,
+  persistPfmeaDraftSnapshotAfterSave,
   remapPfmeaSnapshotRowsToRevisionAfterSave,
   syncPublishedPfmeaRowMetadataAfterSave,
 } from '@/features/pfmea/pfmea-save-orchestration'
@@ -118,7 +119,6 @@ import {
   fetchPfmeaRowsForRevision,
   fetchPfmeaProjectView,
   fetchPfmeaRevisionHistory,
-  persistPfmeaDirtyRevisionRows,
   persistPfmeaRowOrderMetadata,
   publishPfmeaRevisionWithHistory,
   restorePfmeaRowsSnapshotToRevision,
@@ -1719,27 +1719,15 @@ useEffect(() => {
   }
 
   async function persistPfmeaDraftSnapshot(revisionId: string, sourceRows: PfmeaRow[]) {
-    const dirtyIdsBeforeRemap = new Set(dirtyPfmeaIds)
-    const snapshotRows = sortPfmeaRows(sourceRows)
-      .filter((row) => !isPlaceholderRowId(row.id))
-      .map((row) => {
-        const effectiveRow = applyPendingCellValues(row)
-        const derived = computePfmeaDerivedFromContext(effectiveRow).derived
-        return {
-          ...effectiveRow,
-          ...derived,
-        } as PfmeaRow
-      })
-
-    if (snapshotRows.length === 0) return snapshotRows
-
-    const mappedSnapshotRows = await remapPfmeaSnapshotRowsToRevision(revisionId, snapshotRows)
-    await persistPfmeaDirtyRevisionRows<PfmeaRow>(supabase, {
-      dirtyIds: dirtyIdsBeforeRemap,
+    const mappedSnapshotRows = await persistPfmeaDraftSnapshotAfterSave({
+      applyPendingCellValues,
+      computeDerivedForRow: (row) => computePfmeaDerivedFromContext(row).derived,
+      dirtyIds: dirtyPfmeaIds,
       groupIdsSupported: pfmeaGroupIdsSupportedRef.current,
-      mappedRows: mappedSnapshotRows,
+      remapRowsToRevision: remapPfmeaSnapshotRowsToRevision,
       revisionId,
-      sourceRows: snapshotRows,
+      sourceRows,
+      supabase,
     })
 
     rowsRef.current = mappedSnapshotRows
