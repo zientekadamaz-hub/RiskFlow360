@@ -37,9 +37,9 @@ import {
   type SeverityOption,
 } from '@/features/pfmea/pfmea-types'
 import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visibility'
+import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
-  MERGED_CELL_TOP_PADDING,
   TdRead,
 } from '@/features/pfmea/pfmea-merged-cell'
 import { riskColorForMatrixCell, riskColorFromRpnValue } from '@/lib/risk-engine'
@@ -211,7 +211,6 @@ function PfmeaFullPageContent() {
   const [highlightedMissingCells, setHighlightedMissingCells] = useState<string[] | null>(null)
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const tableHeadRef = useRef<HTMLTableSectionElement | null>(null)
-  const [stickyMergedCellTop, setStickyMergedCellTop] = useState(52)
   const {
     clearColumnGroup,
     columnFiltersOpen,
@@ -221,6 +220,7 @@ function PfmeaFullPageContent() {
     uncheckColumnGroup,
     visibleColumns,
   } = usePfmeaColumnVisibility(userId)
+  const stickyMergedCellTop = usePfmeaStickyMergedCellTop(tableHeadRef, visibleColumns)
   const pendingCellValuesRef = useRef<Record<string, unknown>>({})
   const [, setPendingCellRenderVersion] = useState(0)
   const rowHierarchyByIdRef = useRef<Map<string, PfmeaRowHierarchy>>(new Map())
@@ -468,26 +468,6 @@ useEffect(() => {
       alive = false
     }
   }, [projectId, userId])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const updateStickyMergedCellTop = () => {
-      const headerHeight = tableHeadRef.current?.getBoundingClientRect().height ?? 0
-      const next = Math.max(44, Math.ceil(headerHeight) + MERGED_CELL_TOP_PADDING)
-      setStickyMergedCellTop((current) => (current === next ? current : next))
-    }
-
-    updateStickyMergedCellTop()
-
-    const rafId = window.requestAnimationFrame(updateStickyMergedCellTop)
-    window.addEventListener('resize', updateStickyMergedCellTop)
-
-    return () => {
-      window.cancelAnimationFrame(rafId)
-      window.removeEventListener('resize', updateStickyMergedCellTop)
-    }
-  }, [visibleColumns])
 
   useEffect(() => {
     let alive = true
