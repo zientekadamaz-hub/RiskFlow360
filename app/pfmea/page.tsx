@@ -95,6 +95,7 @@ import { resolvePfmeaSaveDraftRevisionId } from '@/features/pfmea/pfmea-revision
 import {
   commitPfmeaEditorBeforeSave,
   completePfmeaPostPublish,
+  ensurePublishedPfmeaIntegrityAfterSave,
   fetchAuthenticatedPfmeaSaveUserId,
   syncPublishedPfmeaRowMetadataAfterSave,
 } from '@/features/pfmea/pfmea-save-orchestration'
@@ -1761,40 +1762,12 @@ useEffect(() => {
   }
 
   async function ensurePublishedPfmeaIntegrity(revisionId: string, sourceRows: PfmeaRow[]) {
-    const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
-    if (!revisionId || snapshotRows.length === 0) return null
-
-    const operationIds = getPfmeaRowOperationIds(snapshotRows)
-    if (operationIds.length === 0) return null
-
-    const checkSnapshot = async () => {
-      const publishedRows = await fetchPfmeaRowsForRevisionScope(revisionId, operationIds)
-      const usedIds = new Set<string>()
-      const missingRows = snapshotRows.filter((sourceRow) => {
-        const candidate = findEquivalentPfmeaRow(
-          publishedRows.filter((row) => !usedIds.has(row.id)),
-          sourceRow
-        )
-        if (!candidate) return true
-        usedIds.add(candidate.id)
-        return false
-      })
-      return { missingRows, publishedRows }
-    }
-
-    let { missingRows } = await checkSnapshot()
-    if (missingRows.length === 0) return null
-
-    await restorePfmeaSnapshotToRevision(revisionId, snapshotRows)
-    ;({ missingRows } = await checkSnapshot())
-
-    if (missingRows.length > 0) {
-      throw new Error(
-        `PFMEA publish integrity check failed for revision ${revisionId}. ${missingRows.length} row(s) are still missing or changed after automatic restore: ${summarizePfmeaRowsForError(missingRows)}.`
-      )
-    }
-
-    return 'PFMEA publish returned incomplete or changed data. The affected rows were automatically restored from a safety snapshot.'
+    return ensurePublishedPfmeaIntegrityAfterSave({
+      fetchRowsForRevisionScope: fetchPfmeaRowsForRevisionScope,
+      restoreSnapshotToRevision: restorePfmeaSnapshotToRevision,
+      revisionId,
+      sourceRows,
+    })
   }
 
   async function persistPfmeaDraftSnapshot(revisionId: string, sourceRows: PfmeaRow[]) {

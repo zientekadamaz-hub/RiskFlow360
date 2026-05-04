@@ -4,8 +4,12 @@ import { normalizeHistoryText } from './pfmea-display-utils'
 import { isPlaceholderRowId } from './pfmea-hierarchy-utils'
 import { getPfmeaRowOperationId, getPfmeaRowOperationIds, buildPfmeaStableOrderMetadata, sortPfmeaRows } from './pfmea-row-order-utils'
 import { parsePfmeaPublishResult } from './pfmea-publish-utils'
-import { buildPfmeaPublishedMetadataPatch, stripPfmeaGroupIdsFromPayload } from './pfmea-payload-utils'
-import { findEquivalentPublishedPfmeaRow } from './pfmea-row-match-utils'
+import {
+  buildPfmeaPublishedMetadataPatch,
+  stripPfmeaGroupIdsFromPayload,
+  summarizePfmeaRowsForError,
+} from './pfmea-payload-utils'
+import { findEquivalentPfmeaRow, findEquivalentPublishedPfmeaRow } from './pfmea-row-match-utils'
 import { insertPfmeaHistoryFallback, type PfmeaRevisionPublishResult } from './pfmea-service'
 import type { PfmeaRow, ProjectView } from './pfmea-types'
 
@@ -136,6 +140,48 @@ export async function syncPublishedPfmeaRowMetadataAfterSave(params: {
       if (result.error) throw result.error
     }
   }
+}
+
+export async function ensurePublishedPfmeaIntegrityAfterSave(params: {
+  fetchRowsForRevisionScope: (revisionId: string, operationIds?: string[]) => Promise<PfmeaRow[]>
+  restoreSnapshotToRevision: (revisionId: string, sourceRows: PfmeaRow[]) => Promise<PfmeaRow[]>
+  revisionId: string
+  sourceRows: PfmeaRow[]
+}) {
+  const snapshotRows = sortPfmeaRows(params.sourceRows).filter((row) => !isPlaceholderRowId(row.id))
+  if (!params.revisionId || snapshotRows.length === 0) return null
+
+  const operationIds = getPfmeaRowOperationIds(snapshotRows)
+  if (operationIds.length === 0) return null
+
+  const checkSnapshot = async () => {
+    const publishedRows = await params.fetchRowsForRevisionScope(params.revisionId, operationIds)
+    const usedIds = new Set<string>()
+    const missingRows = snapshotRows.filter((sourceRow) => {
+      const candidate = findEquivalentPfmeaRow(
+        publishedRows.filter((row) => !usedIds.has(row.id)),
+        sourceRow
+      )
+      if (!candidate) return true
+      usedIds.add(candidate.id)
+      return false
+    })
+    return { missingRows }
+  }
+
+  let { missingRows } = await checkSnapshot()
+  if (missingRows.length === 0) return null
+
+  await params.restoreSnapshotToRevision(params.revisionId, snapshotRows)
+  ;({ missingRows } = await checkSnapshot())
+
+  if (missingRows.length > 0) {
+    throw new Error(
+      `PFMEA publish integrity check failed for revision ${params.revisionId}. ${missingRows.length} row(s) are still missing or changed after automatic restore: ${summarizePfmeaRowsForError(missingRows)}.`
+    )
+  }
+
+  return 'PFMEA publish returned incomplete or changed data. The affected rows were automatically restored from a safety snapshot.'
 }
 
 export async function completePfmeaPostPublish(params: {
