@@ -27,6 +27,16 @@ import { PfmeaTableHeader } from '@/features/pfmea/pfmea-table-header'
 import { TdText } from '@/features/pfmea/pfmea-text-cell'
 import { PfmeaToolbar } from '@/features/pfmea/pfmea-toolbar'
 import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
+import {
+  type NewRowDraft,
+  type Operation,
+  type PfdDiagramRow,
+  type PfmeaEditorElement,
+  type PfmeaRow,
+  type ProjectView,
+  type SeverityEffectiveRow,
+  type SeverityOption,
+} from '@/features/pfmea/pfmea-types'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
   MERGED_CELL_TOP_PADDING,
@@ -125,7 +135,6 @@ import {
   type PfmeaRowOrderUpdate,
   type PfmeaEditSession,
   type PfmeaHistoryEntry,
-  type PfmeaProjectView,
 } from '@/features/pfmea/pfmea-service'
 import {
   SettingsBackdrop,
@@ -136,88 +145,6 @@ import {
   settingsProcessAccent,
 } from '@/components/rf-ui'
 
-/* ===================== TYPES ===================== */
-
-type ProjectView = PfmeaProjectView
-
-type Operation = {
-  id: string
-  project_id: string
-  operation_number: number | null
-  name: string
-  machine: string | null
-  operation: string | null
-  active?: boolean
-}
-
-type PfmeaRow = {
-  id: string
-  revision_id?: string | null
-  operation_id: string
-  row_no?: string | null
-  failure_mode_group_id?: string | null
-  failure_block_group_id?: string | null
-  action_plan_group_id?: string | null
-
-  failure_mode: string
-  effect: string
-  severity: number | string | null
-  characteristic: string
-  pcp: boolean | null
-  class: string | null
-  cause: string
-  occurrence: number | string | null
-  current_prevention: string
-  current_detection: string
-  detection: number | string | null
-
-  rpn: number | null
-  oxd: number | null
-
-  recommended_action: string
-  responsible: string
-  target_date: string | null
-  action_status: string | null
-
-  occurrence2: number | string | null
-  detection2: number | string | null
-
-  rpn2: number | null
-  oxd2: number | null
-
-  rpn_current: number | null
-  oxd_current: number | null
-
-  created_at: string
-  __sortIndex?: number
-
-  operations?: {
-    id: string
-    operation_number: number | null
-    name: string
-    machine: string | null
-    operation: string | null
-    project_id: string
-    active?: boolean
-  } | null
-}
-
-type NewRowDraft = { operation_id: string }
-type PfmeaEditorElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement
-type SeverityEffectiveRow = {
-  level: number
-  name?: string | null
-  description?: string | null
-  active: boolean
-}
-type SeverityOption = {
-  level: number
-  label: string
-  examples: string[]
-}
-type PfdDiagramRow = {
-  nodes?: Array<{ id?: string | null; data?: { kind?: string | null } | null }> | null
-}
 const PFMEA_VISIBLE_COLUMNS_KEY_PREFIX = '__PFMEA_VISIBLE_COLUMNS__'
 const PFMEA_DIRTY_DRAFT_KEY_PREFIX = '__PFMEA_DIRTY_DRAFT__'
 const EDIT_LOCK_HOURS = 48
