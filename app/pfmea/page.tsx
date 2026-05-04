@@ -38,6 +38,7 @@ import {
 } from '@/features/pfmea/pfmea-types'
 import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visibility'
 import { usePfmeaDirtyDraftPersistence } from '@/features/pfmea/use-pfmea-dirty-draft-persistence'
+import { usePfmeaPendingCellUpdateQueue } from '@/features/pfmea/use-pfmea-pending-cell-update-queue'
 import { usePfmeaPendingCellValues } from '@/features/pfmea/use-pfmea-pending-cell-values'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
@@ -252,7 +253,7 @@ function PfmeaFullPageContent() {
     transientFailureModeContinuationIdsRef,
     transientRecommendedActionContinuationIdsRef,
   } = usePfmeaTransientTracking()
-  const pendingCellUpdatePromisesRef = useRef<Set<Promise<void>>>(new Set())
+  const { flushPendingCellUpdates, runPendingCellUpdate } = usePfmeaPendingCellUpdateQueue()
   const pfmeaGroupIdsSupportedRef = useRef<boolean | null>(null)
   const previousEditRef = useRef<{ rowId: string; col: keyof PfmeaRow } | null>(null)
 
@@ -268,12 +269,6 @@ function PfmeaFullPageContent() {
     }
     refreshPendingCellRender()
   }, [clearAllPendingCellValues, clearPfmeaTransientTracking, refreshPendingCellRender])
-
-  const flushPendingCellUpdates = useCallback(async () => {
-    const pending = Array.from(pendingCellUpdatePromisesRef.current)
-    if (pending.length === 0) return
-    await Promise.allSettled(pending)
-  }, [])
 
   const isDirty = dirtyPfmeaIds.length > 0 || deletedPfmeaIds.length > 0 || persistedDirtyDraft
 
@@ -1818,12 +1813,7 @@ useEffect(() => {
       }
     })()
 
-    pendingCellUpdatePromisesRef.current.add(task)
-    try {
-      await task
-    } finally {
-      pendingCellUpdatePromisesRef.current.delete(task)
-    }
+    await runPendingCellUpdate(task)
   }
 
   const fetchPfmeaRowsForRevisionScope = useCallback(async (revisionId: string, operationIds?: string[]) => {
