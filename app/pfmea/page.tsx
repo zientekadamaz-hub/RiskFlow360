@@ -33,14 +33,13 @@ import {
   type PfmeaEditorElement,
   type PfmeaRow,
   type ProjectView,
-  type SeverityEffectiveRow,
-  type SeverityOption,
 } from '@/features/pfmea/pfmea-types'
 import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visibility'
 import { usePfmeaDirtyDraftPersistence } from '@/features/pfmea/use-pfmea-dirty-draft-persistence'
 import { usePfmeaPendingCellUpdateQueue } from '@/features/pfmea/use-pfmea-pending-cell-update-queue'
 import { usePfmeaPendingCellValues } from '@/features/pfmea/use-pfmea-pending-cell-values'
 import { usePfmeaRiskMatrixConfig } from '@/features/pfmea/use-pfmea-risk-matrix-config'
+import { usePfmeaScaleOptions } from '@/features/pfmea/use-pfmea-scale-options'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
@@ -58,7 +57,7 @@ import {
   isRecommendedActionContinuationEmpty,
   patchHasAnyValue,
 } from '@/features/pfmea/pfmea-continuation-utils'
-import { normalizeHistoryText, parseExamples, shortSeverityLabel } from '@/features/pfmea/pfmea-display-utils'
+import { normalizeHistoryText } from '@/features/pfmea/pfmea-display-utils'
 import { getPreviousRequiredFieldForActionPlan } from '@/features/pfmea/pfmea-action-validation-utils'
 import {
   buildPfmeaBlockMergeInfoByHierarchy,
@@ -165,9 +164,12 @@ function PfmeaFullPageContent() {
   const [draftRevisionIdOverride, setDraftRevisionIdOverride] = useState<string | null>(null)
   const [ops, setOps] = useState<Operation[]>([])
   const [rows, setRows] = useState<PfmeaRow[]>([])
-  const [severityOptions, setSeverityOptions] = useState<SeverityOption[]>([])
-  const [occurrenceOptions, setOccurrenceOptions] = useState<SeverityOption[]>([])
-  const [detectionOptions, setDetectionOptions] = useState<SeverityOption[]>([])
+  const {
+    detectionOptions,
+    loadScaleOptions,
+    occurrenceOptions,
+    severityOptions,
+  } = usePfmeaScaleOptions(projectId)
 
   const [draft, setDraft] = useState<NewRowDraft>({ operation_id: '' })
 
@@ -532,55 +534,6 @@ useEffect(() => {
       setSessionBusy(false)
     }
   }
-
-  const loadScaleOptions = useCallback(async () => {
-    if (!projectId) {
-      setSeverityOptions([])
-      setOccurrenceOptions([])
-      setDetectionOptions([])
-      return
-    }
-
-    const projectRes = await supabase
-      .from('projects')
-      .select('organization_id')
-      .eq('id', projectId)
-      .maybeSingle()
-
-    if (projectRes.error) throw projectRes.error
-
-    const orgId = (projectRes.data as { organization_id?: string | null } | null)?.organization_id ?? null
-    if (!orgId) {
-      setSeverityOptions([])
-      setOccurrenceOptions([])
-      setDetectionOptions([])
-      return
-    }
-
-    const [sevRes, occRes, detRes] = await Promise.all([
-      supabase.rpc('get_severity_effective', { p_org: orgId }),
-      supabase.rpc('get_occurrence_effective', { p_org: orgId }),
-      supabase.rpc('get_detection_effective', { p_org: orgId }),
-    ])
-
-    if (sevRes.error) throw sevRes.error
-    if (occRes.error) throw occRes.error
-    if (detRes.error) throw detRes.error
-
-    const toOptions = (rowsRaw: SeverityEffectiveRow[]) =>
-      rowsRaw
-        .filter((row) => row.active !== false && Number.isFinite(row.level))
-        .sort((a, b) => b.level - a.level)
-        .map((row) => ({
-          level: row.level,
-          label: shortSeverityLabel(row.name ?? null, row.description ?? null),
-          examples: parseExamples(row.description ?? null),
-        }))
-
-    setSeverityOptions(toOptions((sevRes.data ?? []) as SeverityEffectiveRow[]))
-    setOccurrenceOptions(toOptions((occRes.data ?? []) as SeverityEffectiveRow[]))
-    setDetectionOptions(toOptions((detRes.data ?? []) as SeverityEffectiveRow[]))
-  }, [projectId])
 
   /* ---------- helper: reload only project view ---------- */
   const loadProjectView = useCallback(async (options?: { syncDraftOverride?: boolean }) => {
