@@ -2967,7 +2967,7 @@ useEffect(() => {
 
                       {isColumnVisible('failure_mode') && failureModeSpan > 0 ? (
                         <TdText
-                          value={r.failure_mode}
+                          value={effectiveFailureModeOwnerRow.failure_mode}
                           editing={edit?.rowId === r.id && edit?.col === 'failure_mode'}
                           onStart={() => void startEditCell(r, 'failure_mode')}
                           onLiveChange={(v) => setPendingCellValue(r.id, 'failure_mode', v)}
@@ -3011,7 +3011,7 @@ useEffect(() => {
 
                       {isColumnVisible('characteristic') && failureModeSpan > 0 ? (
                         <TdText
-                          value={r.characteristic}
+                          value={effectiveFailureModeOwnerRow.characteristic}
                           editing={edit?.rowId === r.id && edit?.col === 'characteristic'}
                           onStart={() => void startEditCell(r, 'characteristic')}
                           onLiveChange={(v) => setPendingCellValue(r.id, 'characteristic', v)}
@@ -3046,7 +3046,7 @@ useEffect(() => {
 
                       {isColumnVisible('effect') && failureBlockSpan > 0 ? (
                         <TdText
-                          value={r.effect}
+                          value={effectiveFailureBlockOwnerRow.effect}
                           editing={edit?.rowId === r.id && edit?.col === 'effect'}
                           onStart={() => void startEditCell(r, 'effect')}
                           onLiveChange={(v) => setPendingCellValue(r.id, 'effect', v)}
@@ -3110,7 +3110,7 @@ useEffect(() => {
 
                       {isColumnVisible('cause') && actionPlanBlockSpan > 0 ? (
                         <TdText
-                          value={r.cause}
+                          value={effectiveActionPlanOwnerRow.cause}
                           editing={edit?.rowId === r.id && edit?.col === 'cause'}
                           onStart={() => void startEditCell(r, 'cause')}
                           onLiveChange={(v) => setPendingCellValue(r.id, 'cause', v)}
@@ -3174,7 +3174,7 @@ useEffect(() => {
 
                       {isColumnVisible('current_prev') && actionPlanBlockSpan > 0 ? (
                         <TdText
-                          value={r.current_prevention}
+                          value={effectiveActionPlanOwnerRow.current_prevention}
                           editing={edit?.rowId === r.id && edit?.col === 'current_prevention'}
                           onStart={() => void startEditCell(r, 'current_prevention')}
                           onLiveChange={(v) => setPendingCellValue(r.id, 'current_prevention', v)}
@@ -3194,7 +3194,7 @@ useEffect(() => {
 
                       {isColumnVisible('current_det') && actionPlanBlockSpan > 0 ? (
                         <TdText
-                          value={r.current_detection}
+                          value={effectiveActionPlanOwnerRow.current_detection}
                           editing={edit?.rowId === r.id && edit?.col === 'current_detection'}
                           onStart={() => void startEditCell(r, 'current_detection')}
                           onLiveChange={(v) => setPendingCellValue(r.id, 'current_detection', v)}
@@ -3257,7 +3257,7 @@ useEffect(() => {
 
                       {isColumnVisible('recommended_action') ? (
                         <TdText
-                          value={r.recommended_action}
+                          value={effectiveCurrentRow.recommended_action}
                           editing={edit?.rowId === r.id && edit?.col === 'recommended_action'}
                           onStart={() => runActionPlanStart('recommended_action')}
                           onLiveChange={(v) => {
@@ -3302,7 +3302,7 @@ useEffect(() => {
 
                       {isColumnVisible('responsible') ? (
                         <TdText
-                          value={r.responsible}
+                          value={effectiveCurrentRow.responsible}
                           editing={edit?.rowId === r.id && edit?.col === 'responsible'}
                           onStart={() => runActionPlanStart('responsible')}
                           onLiveChange={(v) => setPendingCellValue(r.id, 'responsible', v)}
@@ -3322,7 +3322,7 @@ useEffect(() => {
 
                       {isColumnVisible('target_date') ? (
                         <TdDate
-                          value={r.target_date}
+                          value={effectiveCurrentRow.target_date}
                           editing={edit?.rowId === r.id && edit?.col === 'target_date'}
                           onStart={() => runActionPlanStart('target_date')}
                           onLiveChange={(v) => setPendingCellValue(r.id, 'target_date', v)}

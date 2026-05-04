@@ -28,8 +28,21 @@ export function TdText(props: {
 }) {
   const [draftValue, setDraftValue] = useState<string | null>(null)
   const localRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
+  const initialEditValueRef = useRef(props.value ?? '')
+  const wasEditingRef = useRef(false)
   const { editorRef } = props
   const val = props.editing ? draftValue ?? props.value ?? '' : props.value ?? ''
+
+  useEffect(() => {
+    if (props.editing && !wasEditingRef.current) {
+      initialEditValueRef.current = props.value ?? ''
+      setDraftValue(props.value ?? '')
+    }
+    if (!props.editing && wasEditingRef.current) {
+      setDraftValue(null)
+    }
+    wasEditingRef.current = props.editing
+  }, [props.editing, props.value])
 
   useEffect(() => {
     if (!props.editing) return
@@ -136,7 +149,7 @@ export function TdText(props: {
                 onBlur={(e) => {
                   const nextVal = e.currentTarget.value
                   props.onLiveChange?.(nextVal)
-                  if (nextVal !== (props.value ?? '')) props.onCommit(nextVal)
+                  if (nextVal !== initialEditValueRef.current) props.onCommit(nextVal)
                   setDraftValue(null)
                   props.stopEdit()
                 }}
@@ -155,7 +168,7 @@ export function TdText(props: {
                 onBlur={(e) => {
                   const nextVal = e.currentTarget.value
                   props.onLiveChange?.(nextVal)
-                  if (nextVal !== (props.value ?? '')) props.onCommit(nextVal)
+                  if (nextVal !== initialEditValueRef.current) props.onCommit(nextVal)
                   setDraftValue(null)
                   props.stopEdit()
                 }}
