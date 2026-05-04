@@ -7,7 +7,6 @@ import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/custome
 import { isTimeoutError } from '@/lib/error-utils'
 import { CLASS_OPTIONS, TdClassSelect } from '@/features/pfmea/pfmea-class-select-cell'
 import {
-  DEFAULT_VISIBLE_COLUMNS,
   PFMEA_COLUMNS,
   PFMEA_COLUMNS_BY_ID,
   PFMEA_COLUMN_FILTER_GROUPS,
@@ -37,6 +36,7 @@ import {
   type SeverityEffectiveRow,
   type SeverityOption,
 } from '@/features/pfmea/pfmea-types'
+import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visibility'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
   MERGED_CELL_TOP_PADDING,
@@ -145,7 +145,6 @@ import {
   settingsProcessAccent,
 } from '@/components/rf-ui'
 
-const PFMEA_VISIBLE_COLUMNS_KEY_PREFIX = '__PFMEA_VISIBLE_COLUMNS__'
 const PFMEA_DIRTY_DRAFT_KEY_PREFIX = '__PFMEA_DIRTY_DRAFT__'
 const EDIT_LOCK_HOURS = 48
 const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
@@ -213,8 +212,15 @@ function PfmeaFullPageContent() {
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const tableHeadRef = useRef<HTMLTableSectionElement | null>(null)
   const [stickyMergedCellTop, setStickyMergedCellTop] = useState(52)
-  const [columnFiltersOpen, setColumnFiltersOpen] = useState(false)
-  const [visibleColumns, setVisibleColumns] = useState<Record<PfmeaColumnId, boolean>>(DEFAULT_VISIBLE_COLUMNS)
+  const {
+    clearColumnGroup,
+    columnFiltersOpen,
+    isColumnVisible,
+    setColumnFiltersOpen,
+    toggleColumnVisibility,
+    uncheckColumnGroup,
+    visibleColumns,
+  } = usePfmeaColumnVisibility(userId)
   const pendingCellValuesRef = useRef<Record<string, unknown>>({})
   const [, setPendingCellRenderVersion] = useState(0)
   const rowHierarchyByIdRef = useRef<Map<string, PfmeaRowHierarchy>>(new Map())
@@ -465,36 +471,6 @@ useEffect(() => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if (!userId) return
-    try {
-      const raw = window.localStorage.getItem(`${PFMEA_VISIBLE_COLUMNS_KEY_PREFIX}:${userId}`)
-      if (!raw) {
-        setVisibleColumns(DEFAULT_VISIBLE_COLUMNS)
-        return
-      }
-      const parsed = JSON.parse(raw) as Partial<Record<PfmeaColumnId, boolean>>
-      const next: Record<PfmeaColumnId, boolean> = { ...DEFAULT_VISIBLE_COLUMNS }
-      for (const col of PFMEA_COLUMNS) {
-        const value = parsed?.[col.id]
-        if (typeof value === 'boolean') next[col.id] = value
-      }
-      next.delete = true
-      setVisibleColumns(next)
-    } catch {
-      setVisibleColumns(DEFAULT_VISIBLE_COLUMNS)
-    }
-  }, [userId])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (!userId) return
-    try {
-      window.localStorage.setItem(`${PFMEA_VISIBLE_COLUMNS_KEY_PREFIX}:${userId}`, JSON.stringify(visibleColumns))
-    } catch {}
-  }, [userId, visibleColumns])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
 
     const updateStickyMergedCellTop = () => {
       const headerHeight = tableHeadRef.current?.getBoundingClientRect().height ?? 0
@@ -686,31 +662,6 @@ useEffect(() => {
       setSessionBusy(false)
     }
   }
-
-  const isColumnVisible = useCallback((id: PfmeaColumnId) => {
-    // Keep the delete column width reserved in both modes so row wrapping/height
-    // stays stable when toggling edit mode.
-    if (id === 'delete') return true
-    return visibleColumns[id] !== false
-  }, [visibleColumns])
-  const toggleColumnVisibility = useCallback((id: PfmeaColumnId, checked: boolean) => {
-    setVisibleColumns((prev) => ({ ...prev, [id]: checked }))
-  }, [])
-  const clearColumnGroup = useCallback((ids: PfmeaColumnId[]) => {
-    setVisibleColumns((prev) => {
-      const next = { ...prev }
-      for (const id of ids) next[id] = true
-      return next
-    })
-  }, [])
-  const uncheckColumnGroup = useCallback((ids: PfmeaColumnId[]) => {
-    setVisibleColumns((prev) => {
-      const next = { ...prev }
-      for (const id of ids) next[id] = false
-      next.delete = true
-      return next
-    })
-  }, [])
 
   /* ---------- load risk matrix (organization fallback to global) ---------- */
   const loadRiskMatrix = useCallback(async () => {
