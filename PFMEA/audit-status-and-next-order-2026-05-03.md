@@ -28,7 +28,7 @@ Nie jest to jeszcze koniec refaktoryzacji. Glowne otwarte obszary to: rotacja se
 | Header globalny | DONE | Prezentacja headera rozbita na mniejsze komponenty; logika auth/cache nadal centralnie w `AppHeader`. |
 | Error handling foundation | DONE / CONTINUE | `src/lib/error-utils.ts` istnieje i jest uzywany w kluczowych miejscach; pozostale legacy flow do przepiecia przy refaktorach. |
 | Accessibility foundation | PARTIAL | Header i standardowe dialogi poprawione; zostaje focus trap, custom select, tabele i wykresy. |
-| PFMEA helper extraction | PARTIAL / ADVANCED | Duza czesc czystej logiki jest w `src/features/pfmea/*-utils.ts`; dodatkowo `pfmea-service` obsluguje author/role/project view/history, edit session startup, draft ensure, pobieranie wierszy rewizji, restore snapshot, batch update dirty rows, row order persistence, publish RPC/history wrapper, fallback history insert i cleanup draft rows po publikacji. Rozpoczeto fizyczne odchudzanie UI: top summary, save revision modal, confirm dialog, revision history modal, toolbar/column filter, table header, delete cell, wspolne popup positioning helpers, merged cell helpers, `TdRead`, `TdText`, `TdScaleSelect`, `TdClassSelect`, `TdPcpToggle`, `TdDate`, `TdSelect`, column config, risk matrix config oraz wspolny `editorBase` sa wydzielone z `app/pfmea/page.tsx`. |
+| PFMEA helper extraction | PARTIAL / ADVANCED | Duza czesc czystej logiki jest w `src/features/pfmea/*-utils.ts`; dodatkowo `pfmea-service` obsluguje author/role/project view/history, edit session startup, draft ensure, pobieranie wierszy rewizji, restore snapshot, batch update dirty rows, row order persistence, publish RPC/history wrapper, fallback history insert i cleanup draft rows po publikacji. Rozpoczeto fizyczne odchudzanie UI: top summary, save revision modal, confirm dialog, revision history modal, toolbar/column filter, table header, delete cell, wspolne popup positioning helpers, merged cell helpers, `TdRead`, `TdText`, `TdScaleSelect`, `TdClassSelect`, `TdPcpToggle`, `TdDate`, `TdSelect`, column config, risk matrix config, page style constants oraz wspolny `editorBase` sa wydzielone z `app/pfmea/page.tsx`. |
 | PFMEA save timeout mitigation | DONE / MONITOR | Dirty rows, indeksy, timing instrumentation, lżejszy refresh i RPC publish/history wdrozone. Trzeba monitorowac realne czasy. |
 | PCP service layer | DONE FOUNDATION | `src/features/pcp/pcp-utils.ts` zawiera helpery, a `src/features/pcp/pcp-service.ts` zawiera bezpiecznie wydzielone operacje Supabase/danych. Strona PCP nadal trzyma UI i stan. |
 | PFD service/page separation | OPEN | Nadal wymaga osobnego etapu. |
@@ -61,7 +61,7 @@ Nie jest to jeszcze koniec refaktoryzacji. Glowne otwarte obszary to: rotacja se
 1. Zrotowac ujawnione sekrety Supabase i zaktualizowac lokalne/hostingowe env.
 2. Przygotowac osobna organizacje/projekt regresyjny i wlaczyc browser smoke tests.
 3. Przejsc do PFD service/session/publish separation, wzorujac sie na PCP service.
-4. Kontynuowac PFMEA cleanup: action button/style constants, a potem rozbicie stanu tabeli i save/publish orchestration.
+4. Kontynuowac PFMEA cleanup: rozbicie stanu tabeli i save/publish orchestration. Plik strony jest juz glownie kontenerem stanu, efektow i glownego renderu tabeli.
 5. Przed kazda kolejna migracja schema-changing wykonac swiezy Supabase CLI dump.
 6. Wlaczyc kolejne hardeningi Supabase/auth: leaked password protection, trwaly rate limit, ewentualne server routes dla wrazliwych RPC.
 

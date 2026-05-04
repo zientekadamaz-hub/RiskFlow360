@@ -27,6 +27,7 @@ import { PfmeaTableHeader } from '@/features/pfmea/pfmea-table-header'
 import { TdText } from '@/features/pfmea/pfmea-text-cell'
 import { PfmeaToolbar } from '@/features/pfmea/pfmea-toolbar'
 import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
+import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
   MERGED_CELL_TOP_PADDING,
   TdRead,
@@ -221,11 +222,6 @@ const PFMEA_VISIBLE_COLUMNS_KEY_PREFIX = '__PFMEA_VISIBLE_COLUMNS__'
 const PFMEA_DIRTY_DRAFT_KEY_PREFIX = '__PFMEA_DIRTY_DRAFT__'
 const EDIT_LOCK_HOURS = 48
 const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
-const SURFACE_RADIUS = 8
-const SURFACE_BG = 'rgba(255,255,255,0.08)'
-const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
-const SURFACE_TEXT = '#f8fafc'
-
 /* ===================== PFMEA PAGE ===================== */
 
 export default function PfmeaFullPage() {
@@ -4003,23 +3999,6 @@ useEffect(() => {
 }
 
 /* ===================== TD COMPONENTS ===================== */
-
-/* ===================== STYLES ===================== */
-
-const actionBtn: React.CSSProperties = {
-  padding: '6px 10px',
-  borderRadius: SURFACE_RADIUS,
-  border: `1px solid ${SURFACE_BORDER}`,
-  fontWeight: 650,
-  fontSize: 12,
-  color: SURFACE_TEXT,
-  textDecoration: 'none',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontFamily: 'inherit',
-  background: SURFACE_BG,
-}
 
 function PfmeaPageFallback() {
   return (
