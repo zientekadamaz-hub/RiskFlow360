@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { normalizeHistoryText } from './pfmea-display-utils'
+import { isPlaceholderRowId } from './pfmea-hierarchy-utils'
+import { getPfmeaRowOperationId, getPfmeaRowOperationIds, buildPfmeaStableOrderMetadata, sortPfmeaRows } from './pfmea-row-order-utils'
 import { parsePfmeaPublishResult } from './pfmea-publish-utils'
+import { buildPfmeaPublishedMetadataPatch, stripPfmeaGroupIdsFromPayload } from './pfmea-payload-utils'
+import { findEquivalentPublishedPfmeaRow } from './pfmea-row-match-utils'
 import { insertPfmeaHistoryFallback, type PfmeaRevisionPublishResult } from './pfmea-service'
 import type { PfmeaRow, ProjectView } from './pfmea-types'
 
@@ -29,6 +33,109 @@ export async function fetchAuthenticatedPfmeaSaveUserId(supabase: SupabaseClient
   const uid = sess?.session?.user?.id
   if (!uid) throw new Error('Not authenticated.')
   return uid
+}
+
+export async function syncPublishedPfmeaRowMetadataAfterSave(params: {
+  draftRevisionIdOverride: string | null
+  fetchRowsForRevisionScope: (revisionId: string, operationIds?: string[]) => Promise<PfmeaRow[]>
+  groupIdsSupported: boolean | null
+  revisionId: string
+  sourceRows: PfmeaRow[]
+  supabase: SupabaseClient
+  workingRevisionId: string | null
+}) {
+  const orderedSourceRows = sortPfmeaRows(params.sourceRows).filter(
+    (row) =>
+      !isPlaceholderRowId(row.id) &&
+      (!row.revision_id || row.revision_id === params.draftRevisionIdOverride || row.revision_id === params.workingRevisionId)
+  )
+  if (!params.revisionId || orderedSourceRows.length === 0) return
+
+  const publishedRows = await params.fetchRowsForRevisionScope(params.revisionId, getPfmeaRowOperationIds(orderedSourceRows))
+  if (publishedRows.length === 0) return
+
+  const sourceMeta = buildPfmeaStableOrderMetadata(orderedSourceRows)
+  const metadataBySourceId = new Map(sourceMeta.map((item) => [item.id, item] as const))
+  const updates: Array<{
+    id: string
+    patch: ReturnType<typeof buildPfmeaPublishedMetadataPatch>
+  }> = []
+
+  const unmatchedPublishedRows = [...publishedRows]
+  const matchedSourceIds = new Set<string>()
+
+  for (const sourceRow of orderedSourceRows) {
+    const matchedPublishedRow = findEquivalentPublishedPfmeaRow(unmatchedPublishedRows, sourceRow)
+    const meta = metadataBySourceId.get(sourceRow.id)
+    if (!matchedPublishedRow || !meta) continue
+
+    matchedSourceIds.add(sourceRow.id)
+    const matchedIndex = unmatchedPublishedRows.findIndex((row) => row.id === matchedPublishedRow.id)
+    if (matchedIndex >= 0) unmatchedPublishedRows.splice(matchedIndex, 1)
+
+    updates.push({
+      id: matchedPublishedRow.id,
+      patch: buildPfmeaPublishedMetadataPatch(meta),
+    })
+  }
+
+  const remainingSourceRows = orderedSourceRows.filter((row) => !matchedSourceIds.has(row.id))
+  if (remainingSourceRows.length > 0 && unmatchedPublishedRows.length > 0) {
+    const publishedByOperation = new Map<string, PfmeaRow[]>()
+    const sourceByOperation = new Map<string, PfmeaRow[]>()
+
+    for (const row of unmatchedPublishedRows) {
+      const operationId = getPfmeaRowOperationId(row)
+      if (!operationId) continue
+      if (!publishedByOperation.has(operationId)) publishedByOperation.set(operationId, [])
+      publishedByOperation.get(operationId)!.push(row)
+    }
+    for (const row of remainingSourceRows) {
+      const operationId = getPfmeaRowOperationId(row)
+      if (!operationId) continue
+      if (!sourceByOperation.has(operationId)) sourceByOperation.set(operationId, [])
+      sourceByOperation.get(operationId)!.push(row)
+    }
+
+    for (const [operationId, publishedGroup] of publishedByOperation.entries()) {
+      const sourceGroup = sourceByOperation.get(operationId) ?? []
+      const count = Math.min(publishedGroup.length, sourceGroup.length)
+      for (let index = 0; index < count; index += 1) {
+        const publishedRow = publishedGroup[index]
+        const sourceRow = sourceGroup[index]
+        const meta = metadataBySourceId.get(sourceRow.id)
+        if (!meta) continue
+        updates.push({
+          id: publishedRow.id,
+          patch: buildPfmeaPublishedMetadataPatch(meta),
+        })
+      }
+    }
+  }
+
+  if (updates.length === 0) return
+
+  const batchSize = 25
+  for (let index = 0; index < updates.length; index += batchSize) {
+    const batch = updates.slice(index, index + batchSize)
+    const results = await Promise.all(
+      batch.map((item) =>
+        params.supabase
+          .from('pfmea_rows')
+          .update(
+            params.groupIdsSupported === false
+              ? stripPfmeaGroupIdsFromPayload(item.patch as Record<string, unknown>)
+              : item.patch
+          )
+          .eq('id', item.id)
+          .eq('revision_id', params.revisionId)
+      )
+    )
+
+    for (const result of results) {
+      if (result.error) throw result.error
+    }
+  }
 }
 
 export async function completePfmeaPostPublish(params: {
