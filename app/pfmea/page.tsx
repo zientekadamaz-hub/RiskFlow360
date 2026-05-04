@@ -38,6 +38,7 @@ import {
 } from '@/features/pfmea/pfmea-types'
 import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visibility'
 import { usePfmeaDirtyDraftPersistence } from '@/features/pfmea/use-pfmea-dirty-draft-persistence'
+import { usePfmeaPendingCellValues } from '@/features/pfmea/use-pfmea-pending-cell-values'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
@@ -172,7 +173,6 @@ function PfmeaFullPageContent() {
   const [draftRevisionIdOverride, setDraftRevisionIdOverride] = useState<string | null>(null)
   const [ops, setOps] = useState<Operation[]>([])
   const [rows, setRows] = useState<PfmeaRow[]>([])
-  const rowsRef = useRef<PfmeaRow[]>([])
   const [severityOptions, setSeverityOptions] = useState<SeverityOption[]>([])
   const [occurrenceOptions, setOccurrenceOptions] = useState<SeverityOption[]>([])
   const [detectionOptions, setDetectionOptions] = useState<SeverityOption[]>([])
@@ -229,8 +229,16 @@ function PfmeaFullPageContent() {
     projectId,
   })
   const stickyMergedCellTop = usePfmeaStickyMergedCellTop(tableHeadRef, visibleColumns)
-  const pendingCellValuesRef = useRef<Record<string, unknown>>({})
-  const [, setPendingCellRenderVersion] = useState(0)
+  const {
+    applyPendingCellValues,
+    clearAllPendingCellValues,
+    clearPendingCellValue,
+    clearPendingCellValuesForRow,
+    clearPendingCellValuesForRows,
+    refreshPendingCellRender,
+    rowsRef,
+    setPendingCellValue,
+  } = usePfmeaPendingCellValues(rows)
   const rowHierarchyByIdRef = useRef<Map<string, PfmeaRowHierarchy>>(new Map())
   const forceRefreshExistingDraftFromOpenRef = useRef(false)
   const transientCauseContinuationIdsRef = useRef<Set<string>>(new Set())
@@ -242,32 +250,6 @@ function PfmeaFullPageContent() {
   const pfmeaGroupIdsSupportedRef = useRef<boolean | null>(null)
   const previousEditRef = useRef<{ rowId: string; col: keyof PfmeaRow } | null>(null)
 
-  const pendingCellKey = useCallback((rowId: string, col: keyof PfmeaRow) => `${rowId}::${String(col)}`, [])
-  const refreshPendingCellRender = useCallback(() => {
-    setPendingCellRenderVersion((prev) => prev + 1)
-  }, [])
-  const setPendingCellValue = useCallback((rowId: string, col: keyof PfmeaRow, value: unknown) => {
-    const key = pendingCellKey(rowId, col)
-    if (Object.is(pendingCellValuesRef.current[key], value)) return
-    pendingCellValuesRef.current[key] = value
-    refreshPendingCellRender()
-  }, [pendingCellKey, refreshPendingCellRender])
-  const clearPendingCellValue = useCallback((rowId: string, col: keyof PfmeaRow) => {
-    const key = pendingCellKey(rowId, col)
-    if (!(key in pendingCellValuesRef.current)) return
-    delete pendingCellValuesRef.current[key]
-    refreshPendingCellRender()
-  }, [pendingCellKey, refreshPendingCellRender])
-  const applyPendingCellValues = useCallback((row: PfmeaRow): PfmeaRow => {
-    let next = row
-    for (const [key, value] of Object.entries(pendingCellValuesRef.current)) {
-      const [rowId, col] = key.split('::') as [string, keyof PfmeaRow]
-      if (rowId !== row.id) continue
-      if (next === row) next = { ...row }
-      ;(next as any)[col] = value
-    }
-    return next
-  }, [])
   const clearRecommendedActionTransientIfFilled = useCallback((rowId: string, value: string | null | undefined) => {
     if (!transientRecommendedActionContinuationIdsRef.current.has(rowId)) return
     if (!(value ?? '').toString().trim()) return
@@ -302,14 +284,14 @@ function PfmeaFullPageContent() {
     setEdit(null)
     previousEditRef.current = null
     editorRef.current = null
-    pendingCellValuesRef.current = {}
+    clearAllPendingCellValues({ refresh: false })
     placeholderMaterializeRef.current = {}
     placeholderMaterializedIdRef.current = {}
     if (options?.clearTransient !== false) {
       clearPfmeaTransientTracking()
     }
     refreshPendingCellRender()
-  }, [clearPfmeaTransientTracking, refreshPendingCellRender])
+  }, [clearAllPendingCellValues, clearPfmeaTransientTracking, refreshPendingCellRender])
 
   const flushPendingTransientDeletes = useCallback(async () => {
     const pending = Object.values(pendingTransientDeletePromisesRef.current)
@@ -322,24 +304,6 @@ function PfmeaFullPageContent() {
     if (pending.length === 0) return
     await Promise.allSettled(pending)
   }, [])
-
-  useEffect(() => {
-    rowsRef.current = rows
-    const nextPending: Record<string, unknown> = {}
-    for (const [key, pendingValue] of Object.entries(pendingCellValuesRef.current)) {
-      const [rowId, col] = key.split('::') as [string, keyof PfmeaRow]
-      const row = rows.find((item) => item.id === rowId)
-      if (!row) {
-        nextPending[key] = pendingValue
-        continue
-      }
-      const actualValue = (row as any)[col]
-      if (String(actualValue ?? '') !== String(pendingValue ?? '')) {
-        nextPending[key] = pendingValue
-      }
-    }
-    pendingCellValuesRef.current = nextPending
-  }, [rows])
 
   const isDirty = dirtyPfmeaIds.length > 0 || deletedPfmeaIds.length > 0 || persistedDirtyDraft
 
@@ -869,7 +833,7 @@ useEffect(() => {
     forceRefreshExistingDraftFromOpenRef.current = false
     if (ensured) setDraftRevisionIdOverride(ensured)
     return ensured
-  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, project?.current_draft_revision_id, project?.status, loadProjectView, workingRevisionId, project?.current_open_revision_id, persistedDirtyDraft])
+  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, project?.current_draft_revision_id, project?.status, loadProjectView, workingRevisionId, project?.current_open_revision_id, persistedDirtyDraft, rowsRef])
 
   /* ---------- load project / operations / rows ---------- */
   const loadAll = useCallback(async (forceRevisionId?: string | null) => {
@@ -1020,7 +984,7 @@ useEffect(() => {
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     }
-  }, [projectId, isEditOwner, draftRevisionIdOverride, loadProjectView, loadRiskMatrix, loadScaleOptions, clearPfmeaTransientTracking, opFromUrl, draft.operation_id])
+  }, [projectId, isEditOwner, draftRevisionIdOverride, loadProjectView, loadRiskMatrix, loadScaleOptions, clearPfmeaTransientTracking, opFromUrl, draft.operation_id, rowsRef])
 
   useEffect(() => {
     if (moduleAccessState !== 'allowed') return
@@ -1103,9 +1067,7 @@ useEffect(() => {
     transientRecommendedActionContinuationIdsRef.current.delete(prev.rowId)
     transientFailureModeContinuationIdsRef.current.delete(prev.rowId)
     transientEffectContinuationIdsRef.current.delete(prev.rowId)
-    pendingCellValuesRef.current = Object.fromEntries(
-      Object.entries(pendingCellValuesRef.current).filter(([key]) => !key.startsWith(`${prev.rowId}::`))
-    )
+    clearPendingCellValuesForRow(prev.rowId)
     const nextRows = reindexPfmeaRows(rowsRef.current.filter((row) => row.id !== prev.rowId))
     rowsRef.current = nextRows
     setRows(nextRows)
@@ -1113,7 +1075,7 @@ useEffect(() => {
     void scheduleTransientRowDeletion(prev.rowId).catch((error: any) => {
       console.warn('Failed to delete empty transient PFMEA row:', error?.message ?? String(error))
     })
-  }, [edit, applyPendingCellValues, scheduleTransientRowDeletion])
+  }, [edit, applyPendingCellValues, clearPendingCellValuesForRow, rowsRef, scheduleTransientRowDeletion])
 
   const cleanupEmptyTransientRows = useCallback(async () => {
     const transientIds = new Set<string>([
@@ -1163,9 +1125,7 @@ useEffect(() => {
     transientEffectContinuationIdsRef.current = new Set(
       [...transientEffectContinuationIdsRef.current].filter((id) => !idsToDeleteSet.has(id))
     )
-    pendingCellValuesRef.current = Object.fromEntries(
-      Object.entries(pendingCellValuesRef.current).filter(([key]) => !idsToDelete.some((id) => key.startsWith(`${id}::`)))
-    )
+    clearPendingCellValuesForRows(idsToDelete)
 
     const nextRows = reindexPfmeaRows(rowsRef.current.filter((row) => !idsToDeleteSet.has(row.id)))
     rowsRef.current = nextRows
@@ -1177,7 +1137,7 @@ useEffect(() => {
     setEdit((prev) => (prev && idsToDeleteSet.has(prev.rowId) ? null : prev))
 
     return nextRows
-  }, [applyPendingCellValues])
+  }, [applyPendingCellValues, clearPendingCellValuesForRows, rowsRef])
 
   useEffect(() => {
     if (!expandedOperationId) return
@@ -1213,9 +1173,7 @@ useEffect(() => {
             transientRecommendedActionContinuationIdsRef.current.delete(id)
             transientFailureModeContinuationIdsRef.current.delete(id)
             transientEffectContinuationIdsRef.current.delete(id)
-            pendingCellValuesRef.current = Object.fromEntries(
-              Object.entries(pendingCellValuesRef.current).filter(([key]) => !key.startsWith(`${id}::`))
-            )
+            clearPendingCellValuesForRow(id)
             setRows((prev) => reindexPfmeaRows(prev.filter((row) => row.id !== id)))
             setDirtyPfmeaIds((prev) => prev.filter((x) => x !== id))
             setDeletedPfmeaIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
@@ -1787,10 +1745,7 @@ useEffect(() => {
         const mappedRow = findEquivalentPfmeaRow(rowsRef.current, rowForMapping)
         if (!mappedRow) throw new Error('Failed to map PFMEA row into the current draft revision.')
         targetRow = mappedRow
-        pendingCellValuesRef.current = Object.fromEntries(
-          Object.entries(pendingCellValuesRef.current).filter(([key]) => !key.startsWith(`${row.id}::`))
-        )
-        refreshPendingCellRender()
+        clearPendingCellValuesForRow(row.id, { refresh: true })
         setEdit((prev) => (prev && prev.rowId === row.id ? { ...prev, rowId: mappedRow.id } : prev))
       }
 
@@ -1816,10 +1771,7 @@ useEffect(() => {
 
         markPfmeaDirty(newId)
         placeholderMaterializedIdRef.current[row.id] = newId
-        pendingCellValuesRef.current = Object.fromEntries(
-          Object.entries(pendingCellValuesRef.current).filter(([key]) => !key.startsWith(`${row.id}::`))
-        )
-        refreshPendingCellRender()
+        clearPendingCellValuesForRow(row.id, { refresh: true })
         setRows((prev) => {
           if (prev.some((x) => x.id === newId)) return prev
           const nextRow = {
@@ -2369,10 +2321,7 @@ useEffect(() => {
         const createdAt = ((ins.data as { created_at?: string | null } | null)?.created_at ?? '').trim() || new Date().toISOString()
 
         markPfmeaDirty(newId)
-        pendingCellValuesRef.current = Object.fromEntries(
-          Object.entries(pendingCellValuesRef.current).filter(([key]) => !key.startsWith(`${row.id}::`))
-        )
-        refreshPendingCellRender()
+        clearPendingCellValuesForRow(row.id, { refresh: true })
         setRows((prev) => {
           if (prev.some((x) => x.id === newId)) return prev
           const nextRow = {
@@ -2396,7 +2345,7 @@ useEffect(() => {
         delete placeholderMaterializeRef.current[row.id]
       }
     },
-    [applyPendingCellValues, ensureDraftIfNeeded, refreshPendingCellRender, workingRevisionId, markPfmeaDirty]
+    [applyPendingCellValues, clearPendingCellValuesForRow, ensureDraftIfNeeded, workingRevisionId, markPfmeaDirty]
   )
 
   const startEditCell = useCallback(
@@ -2446,7 +2395,7 @@ useEffect(() => {
         created_at: row.created_at || new Date().toISOString(),
       } as PfmeaRow
     },
-    [applyPendingCellValues, draftRevisionIdOverride, ensureRowForEditing, workingRevisionId]
+    [applyPendingCellValues, draftRevisionIdOverride, ensureRowForEditing, rowsRef, workingRevisionId]
   )
 
   const loadRevisionHistory = useCallback(async () => {
@@ -2534,7 +2483,7 @@ useEffect(() => {
         return nextRows
       })
     },
-    []
+    [rowsRef]
   )
 
   const displayOps = useMemo(() => {
