@@ -72,8 +72,6 @@ import {
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
   buildPfmeaRowsWithStableOrderMetadata,
-  getPfmeaRowOperationId,
-  getPfmeaRowOperationIds,
   insertPfmeaRowAfterAnchor,
   insertPfmeaRowAtSortIndex,
   reindexPfmeaRows,
@@ -97,6 +95,7 @@ import {
   completePfmeaPostPublish,
   ensurePublishedPfmeaIntegrityAfterSave,
   fetchAuthenticatedPfmeaSaveUserId,
+  remapPfmeaSnapshotRowsToRevisionAfterSave,
   syncPublishedPfmeaRowMetadataAfterSave,
 } from '@/features/pfmea/pfmea-save-orchestration'
 import {
@@ -106,7 +105,6 @@ import {
   PFMEA_SELECT_FIELDS_LEGACY,
   isMissingPfmeaGroupIdColumnError,
   stripPfmeaGroupIdsFromPayload,
-  summarizePfmeaRowsForError,
 } from '@/features/pfmea/pfmea-payload-utils'
 import {
   cleanupPfmeaAfterSuccessfulPublish,
@@ -1694,61 +1692,11 @@ useEffect(() => {
   }, [])
 
   async function remapPfmeaSnapshotRowsToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
-    const snapshotRows = sortPfmeaRows(sourceRows).filter((row) => !isPlaceholderRowId(row.id))
-    if (!revisionId || snapshotRows.length === 0) return snapshotRows
-
-    const operationIds = getPfmeaRowOperationIds(snapshotRows)
-    const revisionRows = await fetchPfmeaRowsForRevisionScope(revisionId, operationIds)
-    const revisionRowsById = new Map(revisionRows.map((row) => [row.id, row] as const))
-    const usedIds = new Set<string>()
-    const missingRows: PfmeaRow[] = []
-
-    const mappedRows = snapshotRows
-      .map((sourceRow) => {
-        const directTarget = revisionRowsById.get(sourceRow.id)
-        if (directTarget && !usedIds.has(directTarget.id)) {
-          usedIds.add(directTarget.id)
-          return {
-            ...sourceRow,
-            id: directTarget.id,
-            revision_id: revisionId,
-            operation_id: getPfmeaRowOperationId(directTarget) || getPfmeaRowOperationId(sourceRow),
-            operations: directTarget.operations ?? sourceRow.operations,
-          } as PfmeaRow
-        }
-
-        const inferredRowNo = normalizePfmeaRowNo(sourceRow.row_no)
-        const rowForMapping =
-          inferredRowNo && inferredRowNo !== sourceRow.row_no ? ({ ...sourceRow, row_no: inferredRowNo } as PfmeaRow) : sourceRow
-
-        const candidate = findEquivalentPfmeaRow(
-          revisionRows.filter((row) => !usedIds.has(row.id)),
-          rowForMapping
-        )
-
-        if (!candidate) {
-          missingRows.push(sourceRow)
-          return null
-        }
-
-        usedIds.add(candidate.id)
-        return {
-          ...sourceRow,
-          id: candidate.id,
-          revision_id: revisionId,
-          operation_id: getPfmeaRowOperationId(candidate) || getPfmeaRowOperationId(sourceRow),
-          operations: candidate.operations ?? sourceRow.operations,
-        } as PfmeaRow
-      })
-      .filter(Boolean) as PfmeaRow[]
-
-    if (missingRows.length > 0) {
-      throw new Error(
-        `PFMEA draft integrity check failed. ${missingRows.length} row(s) could not be mapped into draft revision ${revisionId}: ${summarizePfmeaRowsForError(missingRows)}.`
-      )
-    }
-
-    return mappedRows
+    return remapPfmeaSnapshotRowsToRevisionAfterSave({
+      fetchRowsForRevisionScope: fetchPfmeaRowsForRevisionScope,
+      revisionId,
+      sourceRows,
+    })
   }
 
   async function restorePfmeaSnapshotToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
