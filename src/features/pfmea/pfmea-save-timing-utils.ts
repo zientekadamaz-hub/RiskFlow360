@@ -47,3 +47,28 @@ export function createPfmeaSaveTimer(now: NowFn = defaultNow) {
 export function formatPfmeaSaveTimings(entries: PfmeaSaveTimingEntry[]) {
   return entries.map((entry) => `${entry.label}: ${entry.ms} ms (${entry.elapsedMs} ms)`).join(' | ')
 }
+
+export function createPfmeaSaveTimingLogger(options?: {
+  exposeToWindow?: boolean
+  logger?: Pick<Console, 'info'>
+}) {
+  const timer = createPfmeaSaveTimer()
+  const logger = options?.logger ?? console
+  let logged = false
+
+  const log = (status: string) => {
+    if (logged) return
+    logged = true
+    const timings = timer.summary()
+    if (options?.exposeToWindow !== false && typeof window !== 'undefined') {
+      ;(window as Window & { __RF360_LAST_PFMEA_SAVE_TIMINGS?: PfmeaSaveTimingEntry[] }).__RF360_LAST_PFMEA_SAVE_TIMINGS = timings
+    }
+    logger.info(`PFMEA save timings (${status}): ${formatPfmeaSaveTimings(timings)}`, timings)
+  }
+
+  return {
+    log,
+    mark: timer.mark,
+    timer,
+  }
+}

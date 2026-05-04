@@ -26,7 +26,7 @@ function loadModule(relativePath) {
   return sandbox.module.exports
 }
 
-const { createPfmeaSaveTimer, formatPfmeaSaveTimings } = loadModule([
+const { createPfmeaSaveTimer, createPfmeaSaveTimingLogger, formatPfmeaSaveTimings } = loadModule([
   'src',
   'features',
   'pfmea',
@@ -48,5 +48,19 @@ assert.equal(JSON.stringify(summary), JSON.stringify([
   { label: 'total', ms: 9.9, elapsedMs: 50 },
 ]))
 assert.equal(formatPfmeaSaveTimings(summary), 'first: 25 ms (25 ms) | second: 15 ms (40.1 ms) | total: 9.9 ms (50 ms)')
+
+const infoCalls = []
+const timingLogger = createPfmeaSaveTimingLogger({
+  exposeToWindow: false,
+  logger: {
+    info: (...args) => infoCalls.push(args),
+  },
+})
+timingLogger.mark('queued')
+timingLogger.log('success')
+timingLogger.log('ignored')
+
+assert.equal(infoCalls.length, 1)
+assert.equal(infoCalls[0][0].startsWith('PFMEA save timings (success): queued:'), true)
 
 console.log('pfmea save timing utils smoke passed')

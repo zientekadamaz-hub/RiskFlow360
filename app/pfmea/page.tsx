@@ -57,7 +57,6 @@ import {
   isRecommendedActionContinuationEmpty,
   patchHasAnyValue,
 } from '@/features/pfmea/pfmea-continuation-utils'
-import { normalizeHistoryText } from '@/features/pfmea/pfmea-display-utils'
 import { getPreviousRequiredFieldForActionPlan } from '@/features/pfmea/pfmea-action-validation-utils'
 import {
   buildPfmeaBlockMergeInfoByHierarchy,
@@ -95,8 +94,9 @@ import {
 import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
 import { hydratePfmeaGroupIds } from '@/features/pfmea/pfmea-row-normalization-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
-import { createPfmeaSaveTimer, formatPfmeaSaveTimings } from '@/features/pfmea/pfmea-save-timing-utils'
-import { parsePfmeaPublishResult } from '@/features/pfmea/pfmea-publish-utils'
+import { createPfmeaSaveTimingLogger } from '@/features/pfmea/pfmea-save-timing-utils'
+import { resolvePfmeaSaveDraftRevisionId } from '@/features/pfmea/pfmea-revision-utils'
+import { completePfmeaPostPublish } from '@/features/pfmea/pfmea-save-orchestration'
 import {
   PFMEA_CLONE_FIELDS,
   PFMEA_CLONE_FIELDS_LEGACY,
@@ -119,7 +119,6 @@ import {
   fetchPfmeaRowsForRevision,
   fetchPfmeaProjectView,
   fetchPfmeaRevisionHistory,
-  insertPfmeaHistoryFallback,
   persistPfmeaDirtyRevisionRows,
   persistPfmeaRowOrderMetadata,
   publishPfmeaRevisionWithHistory,
@@ -1842,50 +1841,42 @@ useEffect(() => {
       return
     }
 
-    const saveTimer = createPfmeaSaveTimer()
-    let saveTimingsLogged = false
-    const logSaveTimings = (status: string) => {
-      if (saveTimingsLogged) return
-      saveTimingsLogged = true
-      const timings = saveTimer.summary()
-      if (typeof window !== 'undefined') {
-        ;(window as Window & { __RF360_LAST_PFMEA_SAVE_TIMINGS?: typeof timings }).__RF360_LAST_PFMEA_SAVE_TIMINGS = timings
-      }
-      console.info(`PFMEA save timings (${status}): ${formatPfmeaSaveTimings(timings)}`, timings)
-    }
+    const saveTiming = createPfmeaSaveTimingLogger()
 
     try {
       setSaveBusy(true)
       const { data: sess } = await supabase.auth.getSession()
-      saveTimer.mark('auth session')
+      saveTiming.mark('auth session')
       const uid = sess?.session?.user?.id
       if (!uid) throw new Error('Not authenticated.')
 
-      const draftRevisionId =
-        draftRevisionIdOverride ??
-        project?.current_draft_revision_id ??
-        (workingRevisionId && workingRevisionId !== project?.current_open_revision_id ? workingRevisionId : null)
+      const draftRevisionId = resolvePfmeaSaveDraftRevisionId({
+        currentDraftRevisionId: project?.current_draft_revision_id,
+        currentOpenRevisionId: project?.current_open_revision_id,
+        draftRevisionIdOverride,
+        workingRevisionId,
+      })
       if (!draftRevisionId) throw new Error('No draft revision found.')
 
       if (editorRef.current && typeof editorRef.current.blur === 'function') {
         editorRef.current.blur()
         await new Promise<void>((resolve) => setTimeout(resolve, 0))
       }
-      saveTimer.mark('editor commit')
+      saveTiming.mark('editor commit')
 
       await flushPendingCellUpdates()
-      saveTimer.mark('flush cell updates')
+      saveTiming.mark('flush cell updates')
       await flushPendingTransientDeletes()
-      saveTimer.mark('flush transient deletes')
+      saveTiming.mark('flush transient deletes')
       const cleanedRows = await cleanupEmptyTransientRows()
-      saveTimer.mark('cleanup empty transient rows')
+      saveTiming.mark('cleanup empty transient rows')
       const persistedRows = await persistPfmeaDraftSnapshot(draftRevisionId, cleanedRows)
-      saveTimer.mark('persist dirty draft rows')
+      saveTiming.mark('persist dirty draft rows')
       const persistedRowsForOrder = persistedRows.filter((row) => !row.revision_id || row.revision_id === draftRevisionId)
       const { orderedRows: orderedPersistedRows, updates: orderedPersistedUpdates } =
         buildPfmeaRowsWithStableOrderMetadata(persistedRowsForOrder)
       await persistPfmeaRowOrder(draftRevisionId, persistedRowsForOrder, orderedPersistedUpdates)
-      saveTimer.mark('persist row order metadata')
+      saveTiming.mark('persist row order metadata')
       rowsRef.current = orderedPersistedRows
       setRows(orderedPersistedRows)
 
@@ -1899,78 +1890,33 @@ useEffect(() => {
         riskCount: rowsSorted.length,
         userId: uid,
       })
-      const historyAlreadyInserted = publishResultWithHistory.historyAlreadyInserted
-      const data: unknown = publishResultWithHistory.data
       if (!publishResultWithHistory.usedFallback) {
-        saveTimer.mark('publish revision and history rpc')
+        saveTiming.mark('publish revision and history rpc')
       } else {
-        saveTimer.mark('publish revision rpc fallback')
+        saveTiming.mark('publish revision rpc fallback')
       }
 
-      const publishResult = parsePfmeaPublishResult(data)
-      let publishedRevisionId = publishResult.revisionId
-      let publishedOpenRevisionLabel = publishResult.revisionLabel
-      let integrityWarning: string | null = null
-      let revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
-      let postPublishWarning: string | null = null
-      try {
-        if (!publishedRevisionId) {
-          try {
-            const publishedView = await loadProjectView({ syncDraftOverride: false })
-            publishedRevisionId = publishedView.current_open_revision_id ?? null
-            publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
-          } catch {}
-          saveTimer.mark('resolve published project view')
-        } else {
-          try {
-            const publishedView = await loadProjectView({ syncDraftOverride: false })
-            publishedOpenRevisionLabel = publishedView.open_revision_label ?? null
-          } catch {}
-          saveTimer.mark('load published project view')
-        }
-
-        if (publishedRevisionId && publishedRevisionId !== draftRevisionId) {
-          try {
-            await syncPublishedPfmeaRowMetadata(publishedRevisionId, orderedPersistedRows)
-          } catch (syncError: any) {
-            console.warn('PFMEA published row metadata sync skipped:', syncError?.message ?? String(syncError))
-          }
-          saveTimer.mark('sync published row metadata')
-        } else {
-          saveTimer.mark('skip published row metadata sync')
-        }
-
-        if (publishedRevisionId && publishedRevisionId !== draftRevisionId && orderedPersistedRows.length > 0) {
-          integrityWarning = await ensurePublishedPfmeaIntegrity(publishedRevisionId, orderedPersistedRows)
-          saveTimer.mark('published integrity check')
-        } else {
-          saveTimer.mark('skip published integrity check')
-        }
-
-        revisionLabel = normalizeHistoryText(publishedOpenRevisionLabel) || '0.0.0'
-
-        if (!historyAlreadyInserted) {
-          const historyInsert = await insertPfmeaHistoryFallback(supabase, {
-            authorId: uid,
-            authorName: historyAuthor,
-            avgRpn: avgRpnValue,
-            changeDescription: desc,
-            projectId,
-            revisionLabel,
-            riskCount: rowsSorted.length,
-          })
-          saveTimer.mark('insert pfmea history fallback')
-          if (historyInsert.errorMessage) {
-            // Optional table; keep publish successful even if custom history insert is unavailable.
-            console.warn('PFMEA history insert skipped:', historyInsert.errorMessage)
-          }
-        } else {
-          saveTimer.mark('skip client history insert')
-        }
-      } catch (postPublishError: any) {
-        postPublishWarning = `PFMEA was published, but post-save verification did not finish cleanly. ${postPublishError?.message ?? String(postPublishError)}`
-        console.warn('PFMEA post-publish warning:', postPublishError?.message ?? String(postPublishError))
-      }
+      const {
+        data,
+        integrityWarning,
+        postPublishWarning,
+        publishedRevisionId,
+      } = await completePfmeaPostPublish({
+        avgRpn: avgRpnValue,
+        changeDescription: desc,
+        draftRevisionId,
+        ensurePublishedIntegrity: ensurePublishedPfmeaIntegrity,
+        historyAuthor,
+        mark: saveTiming.mark,
+        orderedPersistedRows,
+        projectId,
+        publishResultWithHistory,
+        reloadProjectView: () => loadProjectView({ syncDraftOverride: false }),
+        riskCount: rowsSorted.length,
+        supabase,
+        syncPublishedRowMetadata: syncPublishedPfmeaRowMetadata,
+        userId: uid,
+      })
 
       setShowSave(false)
       setChangeDesc('')
@@ -1981,14 +1927,14 @@ useEffect(() => {
       resetPfmeaEditRuntimeState()
       try {
         const draftRowsCleaned = await cleanupPfmeaDraftRowsAfterPublish(supabase, { draftRevisionId, publishedRevisionId })
-        if (draftRowsCleaned) saveTimer.mark('cleanup old draft rows')
+        if (draftRowsCleaned) saveTiming.mark('cleanup old draft rows')
       } catch (cleanupDraftError: any) {
         console.warn('PFMEA draft cleanup skipped:', cleanupDraftError?.message ?? String(cleanupDraftError))
-        if (draftRevisionId && publishedRevisionId && draftRevisionId !== publishedRevisionId) saveTimer.mark('cleanup old draft rows')
+        if (draftRevisionId && publishedRevisionId && draftRevisionId !== publishedRevisionId) saveTiming.mark('cleanup old draft rows')
       }
       if (projectId && userId) {
         await deletePfmeaEditSession(supabase, projectId, userId)
-        saveTimer.mark('cleanup edit session')
+        saveTiming.mark('cleanup edit session')
       }
       setEditSession(null)
       forceRefreshExistingDraftFromOpenRef.current = false
@@ -2000,18 +1946,18 @@ useEffect(() => {
       } catch (projectReloadError: any) {
         console.warn('PFMEA project view refresh skipped:', projectReloadError?.message ?? String(projectReloadError))
       }
-      saveTimer.mark('reload project view')
+      saveTiming.mark('reload project view')
       await loadRevisionHistory()
-      saveTimer.mark('reload revision history')
+      saveTiming.mark('reload revision history')
       if (integrityWarning) {
         setErr(integrityWarning)
       } else if (postPublishWarning) {
         setErr(postPublishWarning)
       }
-      logSaveTimings('success')
+      saveTiming.log('success')
     } catch (e: any) {
       console.error('PFMEA save failed:', e)
-      logSaveTimings('failed')
+      saveTiming.log('failed')
       setErr(
         isTimeoutError(e)
           ? 'PFMEA save timed out while the database was processing the revision. The save path has been optimized; please try again. If it repeats, contact an administrator.'

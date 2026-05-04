@@ -22,3 +22,16 @@ export function nextPfmeaRevisionLabel(label: string | null | undefined) {
   const c = Number.isFinite(pcp) ? pcp : 0
   return `${a}.${b + 1}.${c}`
 }
+
+export function resolvePfmeaSaveDraftRevisionId(params: {
+  currentDraftRevisionId?: string | null
+  currentOpenRevisionId?: string | null
+  draftRevisionIdOverride?: string | null
+  workingRevisionId?: string | null
+}) {
+  return (
+    params.draftRevisionIdOverride ??
+    params.currentDraftRevisionId ??
+    (params.workingRevisionId && params.workingRevisionId !== params.currentOpenRevisionId ? params.workingRevisionId : null)
+  )
+}
