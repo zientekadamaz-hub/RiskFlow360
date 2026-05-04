@@ -3,7 +3,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
-import { type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/matrixColors'
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 import { isTimeoutError } from '@/lib/error-utils'
 import { CLASS_OPTIONS, TdClassSelect } from '@/features/pfmea/pfmea-class-select-cell'
@@ -32,13 +31,19 @@ import {
   MERGED_CELL_TOP_PADDING,
   TdRead,
 } from '@/features/pfmea/pfmea-merged-cell'
-import {
-  clampRiskInt,
-  riskCellKey,
-  riskColorForMatrixCell,
-  riskColorFromRpnValue,
-} from '@/lib/risk-engine'
+import { riskColorForMatrixCell, riskColorFromRpnValue } from '@/lib/risk-engine'
 import { asInt1to10, calcRpn, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
+import {
+  GLOBAL_PROJECT_ID,
+  cellKey,
+  clampInt,
+  colorFill,
+  type DbCell,
+  type DbConfig,
+  type Mode,
+  type RiskColor,
+  type RpnThresholds,
+} from '@/features/pfmea/pfmea-risk-matrix-config'
 import {
   hasFailureModeContext,
   hasPfmeaTextValue,
@@ -198,26 +203,6 @@ type PfmeaRow = {
 
 type NewRowDraft = { operation_id: string }
 type PfmeaEditorElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement
-type Mode = 'manual' | 'rpn'
-type RiskColor = RiskMatrixColor
-
-type DbCell = {
-  organization_id?: string | null
-  project_id?: string | null
-  severity: number
-  do_value: number
-  color: RiskColor
-}
-
-type DbConfig = {
-  id: number
-  mode: Mode
-  rpn_green_max: number
-  rpn_yellow_max: number
-  rpn_orange_max: number
-}
-
-type RpnThresholds = { greenMax: number; yellowMax: number; orangeMax: number }
 type SeverityEffectiveRow = {
   level: number
   name?: string | null
@@ -240,25 +225,6 @@ const SURFACE_RADIUS = 8
 const SURFACE_BG = 'rgba(255,255,255,0.08)'
 const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
 const SURFACE_TEXT = '#f8fafc'
-
-/* ===================== RISK MATRIX (SUPABASE) ===================== */
-
-const GLOBAL_PROJECT_ID = '00000000-0000-0000-0000-000000000000'
-
-function cellKey(sev: number, doVal: number) {
-  return riskCellKey(sev, doVal)
-}
-
-function clampInt(v: number, min: number, max: number) {
-  return clampRiskInt(v, min, max)
-}
-
-function colorFill(c: RiskColor) {
-  if (c === 'red') return 'rgba(239,68,68,0.12)'
-  if (c === 'orange') return 'rgba(251,146,60,0.18)'
-  if (c === 'yellow') return 'rgba(250,204,21,0.22)'
-  return 'rgba(34,197,94,0.18)'
-}
 
 /* ===================== PFMEA PAGE ===================== */
 
