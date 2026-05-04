@@ -40,25 +40,15 @@ import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visi
 import { usePfmeaDirtyDraftPersistence } from '@/features/pfmea/use-pfmea-dirty-draft-persistence'
 import { usePfmeaPendingCellUpdateQueue } from '@/features/pfmea/use-pfmea-pending-cell-update-queue'
 import { usePfmeaPendingCellValues } from '@/features/pfmea/use-pfmea-pending-cell-values'
+import { usePfmeaRiskMatrixConfig } from '@/features/pfmea/use-pfmea-risk-matrix-config'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
   TdRead,
 } from '@/features/pfmea/pfmea-merged-cell'
-import { riskColorForMatrixCell, riskColorFromRpnValue } from '@/lib/risk-engine'
 import { asInt1to10, calcRpn, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
-import {
-  GLOBAL_PROJECT_ID,
-  cellKey,
-  clampInt,
-  colorFill,
-  type DbCell,
-  type DbConfig,
-  type Mode,
-  type RiskColor,
-  type RpnThresholds,
-} from '@/features/pfmea/pfmea-risk-matrix-config'
+import { colorFill, type RiskColor } from '@/features/pfmea/pfmea-risk-matrix-config'
 import {
   hasFailureModeContext,
   hasPfmeaTextValue,
@@ -187,9 +177,11 @@ function PfmeaFullPageContent() {
   const placeholderMaterializedIdRef = useRef<Partial<Record<string, string>>>({})
 
   // Risk matrix config
-  const [rmMode, setRmMode] = useState<Mode>('rpn')
-  const [rmRpn, setRmRpn] = useState<RpnThresholds>({ greenMax: 100, yellowMax: 168, orangeMax: 360 })
-  const [rmCells, setRmCells] = useState<Record<string, RiskColor>>({})
+  const {
+    getRiskColorFor,
+    getRiskColorForAverageRpn,
+    loadRiskMatrix,
+  } = usePfmeaRiskMatrixConfig(projectId)
 
   // ===== REVISION SAVE (dirty tracking) =====
   const [dirtyPfmeaIds, setDirtyPfmeaIds] = useState<string[]>([])
@@ -541,75 +533,6 @@ useEffect(() => {
     }
   }
 
-  /* ---------- load risk matrix (organization fallback to global) ---------- */
-  const loadRiskMatrix = useCallback(async () => {
-    const normalizeId = (value: unknown) => (value ?? '').toString().trim()
-    let organizationId = ''
-
-    if (projectId) {
-      const projectRes = await supabase
-        .from('projects')
-        .select('organization_id')
-        .eq('id', projectId)
-        .maybeSingle()
-
-      if (!projectRes.error) {
-        organizationId = normalizeId((projectRes.data as { organization_id?: string | null } | null)?.organization_id)
-      }
-    }
-
-    const cfg = organizationId
-      ? await supabase
-          .from('risk_matrix_config')
-          .select('id,mode,rpn_green_max,rpn_yellow_max,rpn_orange_max,organization_id')
-          .eq('organization_id', organizationId)
-          .maybeSingle()
-      : { data: null, error: null }
-
-    const fallbackCfg = cfg.error || !cfg.data
-      ? await supabase
-          .from('risk_matrix_config')
-          .select('id,mode,rpn_green_max,rpn_yellow_max,rpn_orange_max')
-          .eq('id', 1)
-          .maybeSingle()
-      : cfg
-
-    if (!fallbackCfg.error && fallbackCfg.data) {
-      const c = fallbackCfg.data as DbConfig
-      setRmMode(c.mode)
-      setRmRpn({
-        greenMax: clampInt(c.rpn_green_max, 1, 1000),
-        yellowMax: clampInt(c.rpn_yellow_max, 1, 1000),
-        orangeMax: clampInt(c.rpn_orange_max, 1, 1000),
-      })
-    }
-
-    let cellsRes: {
-      data: unknown[] | null
-      error: unknown
-    } = organizationId
-      ? await supabase
-          .from('risk_matrix_cells')
-          .select('organization_id,severity,do_value,color')
-          .eq('organization_id', organizationId)
-      : { data: null, error: null }
-
-    if (cellsRes.error || !cellsRes.data?.length) {
-      cellsRes = await supabase
-        .from('risk_matrix_cells')
-        .select('project_id,severity,do_value,color')
-        .eq('project_id', GLOBAL_PROJECT_ID)
-    }
-
-    if (!cellsRes.error) {
-      const map: Record<string, RiskColor> = {}
-      for (const row of (cellsRes.data ?? []) as unknown as DbCell[]) {
-        map[cellKey(row.severity, row.do_value)] = row.color
-      }
-      setRmCells(map)
-    }
-  }, [projectId])
-
   const loadScaleOptions = useCallback(async () => {
     if (!projectId) {
       setSeverityOptions([])
@@ -658,15 +581,6 @@ useEffect(() => {
     setOccurrenceOptions(toOptions((occRes.data ?? []) as SeverityEffectiveRow[]))
     setDetectionOptions(toOptions((detRes.data ?? []) as SeverityEffectiveRow[]))
   }, [projectId])
-
-  function getRiskColorFor(sev: number | null, doVal: number | null): RiskColor | null {
-    return riskColorForMatrixCell(sev, doVal, rmMode, rmRpn, rmCells) as RiskColor | null
-  }
-
-  const getRiskColorForAverageRpn = useCallback((value: number | null): RiskColor | null => {
-    if (value == null || !Number.isFinite(value)) return null
-    return riskColorFromRpnValue(value, rmRpn)
-  }, [rmRpn])
 
   /* ---------- helper: reload only project view ---------- */
   const loadProjectView = useCallback(async (options?: { syncDraftOverride?: boolean }) => {
@@ -2579,14 +2493,11 @@ useEffect(() => {
 
   const avgRpnSummary = useMemo(() => {
     const buckets: Record<RiskColor, number> = { green: 0, yellow: 0, orange: 0, red: 0 }
-    const resolveColor = (sev: number | null, doVal: number | null): RiskColor | null => {
-      return riskColorForMatrixCell(sev, doVal, rmMode, rmRpn, rmCells) as RiskColor | null
-    }
 
     const values = rowsSorted
       .map((r) => {
         const { currentRisk } = computePfmeaDerivedFromContext(r)
-        const c = resolveColor(currentRisk.sev, currentRisk.doVal)
+        const c = getRiskColorFor(currentRisk.sev, currentRisk.doVal)
         if (c) buckets[c] += 1
         return currentRisk.rpn
       })
@@ -2606,7 +2517,7 @@ useEffect(() => {
 
     return { avg, color, count: values.length, buckets }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowsSorted, rmMode, rmCells, rmRpn, getRiskColorForAverageRpn])
+  }, [rowsSorted, getRiskColorFor, getRiskColorForAverageRpn])
 
   const tableRowsMemo = useRef<PfmeaRow[]>([])
   useEffect(() => {
