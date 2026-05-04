@@ -40,6 +40,7 @@ import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visi
 import { usePfmeaDirtyDraftPersistence } from '@/features/pfmea/use-pfmea-dirty-draft-persistence'
 import { usePfmeaPendingCellValues } from '@/features/pfmea/use-pfmea-pending-cell-values'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
+import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
   TdRead,
@@ -241,44 +242,19 @@ function PfmeaFullPageContent() {
   } = usePfmeaPendingCellValues(rows)
   const rowHierarchyByIdRef = useRef<Map<string, PfmeaRowHierarchy>>(new Map())
   const forceRefreshExistingDraftFromOpenRef = useRef(false)
-  const transientCauseContinuationIdsRef = useRef<Set<string>>(new Set())
-  const transientRecommendedActionContinuationIdsRef = useRef<Set<string>>(new Set())
-  const transientFailureModeContinuationIdsRef = useRef<Set<string>>(new Set())
-  const transientEffectContinuationIdsRef = useRef<Set<string>>(new Set())
-  const pendingTransientDeletePromisesRef = useRef<Record<string, Promise<void>>>({})
+  const {
+    clearPfmeaTransientTracking,
+    clearRecommendedActionTransientIfFilled,
+    flushPendingTransientDeletes,
+    scheduleTransientRowDeletion,
+    transientCauseContinuationIdsRef,
+    transientEffectContinuationIdsRef,
+    transientFailureModeContinuationIdsRef,
+    transientRecommendedActionContinuationIdsRef,
+  } = usePfmeaTransientTracking()
   const pendingCellUpdatePromisesRef = useRef<Set<Promise<void>>>(new Set())
   const pfmeaGroupIdsSupportedRef = useRef<boolean | null>(null)
   const previousEditRef = useRef<{ rowId: string; col: keyof PfmeaRow } | null>(null)
-
-  const clearRecommendedActionTransientIfFilled = useCallback((rowId: string, value: string | null | undefined) => {
-    if (!transientRecommendedActionContinuationIdsRef.current.has(rowId)) return
-    if (!(value ?? '').toString().trim()) return
-    transientRecommendedActionContinuationIdsRef.current.delete(rowId)
-  }, [])
-
-  const scheduleTransientRowDeletion = useCallback((rowId: string) => {
-    const existing = pendingTransientDeletePromisesRef.current[rowId]
-    if (existing) return existing
-
-    const task = (async () => {
-      const res = await supabase.from('pfmea_rows').delete().eq('id', rowId)
-      if (res.error) throw res.error
-    })()
-
-    pendingTransientDeletePromisesRef.current[rowId] = task
-    task.finally(() => {
-      delete pendingTransientDeletePromisesRef.current[rowId]
-    })
-    return task
-  }, [])
-
-  const clearPfmeaTransientTracking = useCallback(() => {
-    transientCauseContinuationIdsRef.current.clear()
-    transientRecommendedActionContinuationIdsRef.current.clear()
-    transientFailureModeContinuationIdsRef.current.clear()
-    transientEffectContinuationIdsRef.current.clear()
-    pendingTransientDeletePromisesRef.current = {}
-  }, [])
 
   const resetPfmeaEditRuntimeState = useCallback((options?: { clearTransient?: boolean }) => {
     setEdit(null)
@@ -292,12 +268,6 @@ function PfmeaFullPageContent() {
     }
     refreshPendingCellRender()
   }, [clearAllPendingCellValues, clearPfmeaTransientTracking, refreshPendingCellRender])
-
-  const flushPendingTransientDeletes = useCallback(async () => {
-    const pending = Object.values(pendingTransientDeletePromisesRef.current)
-    if (pending.length === 0) return
-    await Promise.all(pending)
-  }, [])
 
   const flushPendingCellUpdates = useCallback(async () => {
     const pending = Array.from(pendingCellUpdatePromisesRef.current)
@@ -1075,7 +1045,17 @@ useEffect(() => {
     void scheduleTransientRowDeletion(prev.rowId).catch((error: any) => {
       console.warn('Failed to delete empty transient PFMEA row:', error?.message ?? String(error))
     })
-  }, [edit, applyPendingCellValues, clearPendingCellValuesForRow, rowsRef, scheduleTransientRowDeletion])
+  }, [
+    edit,
+    applyPendingCellValues,
+    clearPendingCellValuesForRow,
+    rowsRef,
+    scheduleTransientRowDeletion,
+    transientCauseContinuationIdsRef,
+    transientEffectContinuationIdsRef,
+    transientFailureModeContinuationIdsRef,
+    transientRecommendedActionContinuationIdsRef,
+  ])
 
   const cleanupEmptyTransientRows = useCallback(async () => {
     const transientIds = new Set<string>([
@@ -1137,7 +1117,15 @@ useEffect(() => {
     setEdit((prev) => (prev && idsToDeleteSet.has(prev.rowId) ? null : prev))
 
     return nextRows
-  }, [applyPendingCellValues, clearPendingCellValuesForRows, rowsRef])
+  }, [
+    applyPendingCellValues,
+    clearPendingCellValuesForRows,
+    rowsRef,
+    transientCauseContinuationIdsRef,
+    transientEffectContinuationIdsRef,
+    transientFailureModeContinuationIdsRef,
+    transientRecommendedActionContinuationIdsRef,
+  ])
 
   useEffect(() => {
     if (!expandedOperationId) return
