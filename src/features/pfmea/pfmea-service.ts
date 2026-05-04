@@ -608,6 +608,49 @@ export async function cleanupPfmeaDraftRowsAfterPublish(
   return true
 }
 
+export async function cleanupPfmeaAfterSuccessfulPublish(
+  supabase: SupabaseClient,
+  params: {
+    draftRevisionId: string | null
+    projectId: string | null
+    publishedRevisionId: string | null
+    userId: string | null
+  }
+) {
+  let draftRowsCleaned = false
+  let editSessionDeleted = false
+  let draftCleanupAttempted = false
+
+  try {
+    draftRowsCleaned = await cleanupPfmeaDraftRowsAfterPublish(supabase, {
+      draftRevisionId: params.draftRevisionId,
+      publishedRevisionId: params.publishedRevisionId,
+    })
+    draftCleanupAttempted = draftRowsCleaned
+  } catch (cleanupDraftError: unknown) {
+    console.warn(
+      'PFMEA draft cleanup skipped:',
+      (cleanupDraftError as { message?: string } | null)?.message ?? String(cleanupDraftError)
+    )
+    draftCleanupAttempted = !!(
+      params.draftRevisionId &&
+      params.publishedRevisionId &&
+      params.draftRevisionId !== params.publishedRevisionId
+    )
+  }
+
+  if (params.projectId && params.userId) {
+    await deletePfmeaEditSession(supabase, params.projectId, params.userId)
+    editSessionDeleted = true
+  }
+
+  return {
+    draftCleanupAttempted,
+    draftRowsCleaned,
+    editSessionDeleted,
+  }
+}
+
 export async function deletePfmeaRowsByRevision(supabase: SupabaseClient, revisionId: string) {
   const res = await supabase.from('pfmea_rows').delete().eq('revision_id', revisionId)
   if (res.error) throw res.error

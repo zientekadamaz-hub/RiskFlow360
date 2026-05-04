@@ -108,7 +108,7 @@ import {
   summarizePfmeaRowsForError,
 } from '@/features/pfmea/pfmea-payload-utils'
 import {
-  cleanupPfmeaDraftRowsAfterPublish,
+  cleanupPfmeaAfterSuccessfulPublish,
   deletePfmeaEditSession,
   deletePfmeaRowsByRevision,
   ensurePfmeaProcessDraft,
@@ -1925,17 +1925,14 @@ useEffect(() => {
       clearDirtyDraftPersisted()
       setDraftRevisionIdOverride(null)
       resetPfmeaEditRuntimeState()
-      try {
-        const draftRowsCleaned = await cleanupPfmeaDraftRowsAfterPublish(supabase, { draftRevisionId, publishedRevisionId })
-        if (draftRowsCleaned) saveTiming.mark('cleanup old draft rows')
-      } catch (cleanupDraftError: any) {
-        console.warn('PFMEA draft cleanup skipped:', cleanupDraftError?.message ?? String(cleanupDraftError))
-        if (draftRevisionId && publishedRevisionId && draftRevisionId !== publishedRevisionId) saveTiming.mark('cleanup old draft rows')
-      }
-      if (projectId && userId) {
-        await deletePfmeaEditSession(supabase, projectId, userId)
-        saveTiming.mark('cleanup edit session')
-      }
+      const cleanupResult = await cleanupPfmeaAfterSuccessfulPublish(supabase, {
+        draftRevisionId,
+        projectId,
+        publishedRevisionId,
+        userId,
+      })
+      if (cleanupResult.draftCleanupAttempted) saveTiming.mark('cleanup old draft rows')
+      if (cleanupResult.editSessionDeleted) saveTiming.mark('cleanup edit session')
       setEditSession(null)
       forceRefreshExistingDraftFromOpenRef.current = false
 
