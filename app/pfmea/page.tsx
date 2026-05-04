@@ -7,6 +7,15 @@ import { type RiskColor as RiskMatrixColor } from '../settings/risk-matrix/_lib/
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 import { isTimeoutError } from '@/lib/error-utils'
 import { CLASS_OPTIONS, TdClassSelect } from '@/features/pfmea/pfmea-class-select-cell'
+import {
+  DEFAULT_VISIBLE_COLUMNS,
+  PFMEA_COLUMNS,
+  PFMEA_COLUMNS_BY_ID,
+  PFMEA_COLUMN_FILTER_GROUPS,
+  PFMEA_EDITABLE_COLUMN_VISIBILITY,
+  PFMEA_EDITABLE_FIELDS,
+  type PfmeaColumnId,
+} from '@/features/pfmea/pfmea-columns'
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
 import { TdDate } from '@/features/pfmea/pfmea-date-cell'
 import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
@@ -223,33 +232,6 @@ type SeverityOption = {
 type PfdDiagramRow = {
   nodes?: Array<{ id?: string | null; data?: { kind?: string | null } | null }> | null
 }
-type PfmeaColumnId =
-  | 'id'
-  | 'station'
-  | 'operation'
-  | 'process_step'
-  | 'row_no'
-  | 'failure_mode'
-  | 'effect'
-  | 'sev'
-  | 'characteristic'
-  | 'pcp'
-  | 'class'
-  | 'cause'
-  | 'occ'
-  | 'current_prev'
-  | 'current_det'
-  | 'det'
-  | 'rpn'
-  | 'recommended_action'
-  | 'responsible'
-  | 'target_date'
-  | 'action_status'
-  | 'o2'
-  | 'd2'
-  | 'rpn2'
-  | 'delete'
-
 const PFMEA_VISIBLE_COLUMNS_KEY_PREFIX = '__PFMEA_VISIBLE_COLUMNS__'
 const PFMEA_DIRTY_DRAFT_KEY_PREFIX = '__PFMEA_DIRTY_DRAFT__'
 const EDIT_LOCK_HOURS = 48
@@ -258,157 +240,6 @@ const SURFACE_RADIUS = 8
 const SURFACE_BG = 'rgba(255,255,255,0.08)'
 const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
 const SURFACE_TEXT = '#f8fafc'
-
-const PFMEA_COLUMNS: Array<{ id: PfmeaColumnId; label: string; width: number }> = [
-  { id: 'id', label: 'ID#', width: 50 },
-  { id: 'station', label: 'STATION', width: 150 },
-  { id: 'operation', label: 'OPERATION', width: 150 },
-  { id: 'process_step', label: 'PROCESS STEP', width: 150 },
-  { id: 'failure_mode', label: 'FAILURE MODE', width: 180 },
-  { id: 'characteristic', label: 'CHARACTERISTIC', width: 180 },
-  { id: 'class', label: 'CLASS', width: 70 },
-  { id: 'effect', label: 'EFFECT', width: 180 },
-  { id: 'sev', label: 'SEV', width: 50 },
-  { id: 'cause', label: 'CAUSE', width: 180 },
-  { id: 'occ', label: 'OCC', width: 50 },
-  { id: 'current_prev', label: 'CURRENT CONTROLS (PREV)', width: 180 },
-  { id: 'current_det', label: 'CURRENT CONTROLS (DET)', width: 180 },
-  { id: 'det', label: 'DET', width: 50 },
-  { id: 'rpn', label: 'RPN', width: 60 },
-  { id: 'pcp', label: 'PCP', width: 72 },
-  { id: 'recommended_action', label: 'RECOMMENDED ACTION', width: 180 },
-  { id: 'responsible', label: 'RESPONSIBLE', width: 120 },
-  { id: 'target_date', label: 'TARGET DATE', width: 120 },
-  { id: 'action_status', label: 'ACTION STATUS', width: 120 },
-  { id: 'o2', label: 'OCC (AFTER)', width: 60 },
-  { id: 'd2', label: 'DET (AFTER)', width: 60 },
-  { id: 'rpn2', label: 'RPN (AFTER)', width: 60 },
-  { id: 'delete', label: 'DELETE', width: 50 },
-]
-
-const PFMEA_COLUMNS_BY_ID: Record<PfmeaColumnId, { id: PfmeaColumnId; label: string; width: number }> = PFMEA_COLUMNS.reduce(
-  (acc, col) => {
-    acc[col.id] = col
-    return acc
-  },
-  {} as Record<PfmeaColumnId, { id: PfmeaColumnId; label: string; width: number }>
-)
-
-const PFMEA_COLUMN_FILTER_GROUPS: Array<{ title: string; ids: PfmeaColumnId[] }> = [
-  {
-    title: 'Process Context',
-    ids: ['id', 'station', 'operation', 'process_step'],
-  },
-  {
-    title: 'Current Risk Analysis',
-    ids: ['failure_mode', 'characteristic', 'class', 'effect', 'sev', 'cause', 'occ', 'current_prev', 'current_det', 'det', 'rpn', 'pcp'],
-  },
-  {
-    title: 'Action Plan & Residual Risk',
-    ids: ['recommended_action', 'responsible', 'target_date', 'action_status', 'o2', 'd2', 'rpn2'],
-  },
-]
-
-const DEFAULT_VISIBLE_COLUMNS: Record<PfmeaColumnId, boolean> = {
-  id: true,
-  station: true,
-  operation: true,
-  process_step: true,
-  row_no: false,
-  failure_mode: true,
-  effect: true,
-  sev: true,
-  characteristic: true,
-  pcp: true,
-  class: true,
-  cause: true,
-  occ: true,
-  current_prev: true,
-  current_det: true,
-  det: true,
-  rpn: true,
-  recommended_action: true,
-  responsible: true,
-  target_date: true,
-  action_status: true,
-  o2: true,
-  d2: true,
-  rpn2: true,
-  delete: true,
-}
-
-const PFMEA_EDITABLE_COLUMN_VISIBILITY: Record<
-  | 'failure_mode'
-  | 'effect'
-  | 'severity'
-  | 'characteristic'
-  | 'class'
-  | 'cause'
-  | 'occurrence'
-  | 'current_prevention'
-  | 'current_detection'
-  | 'detection'
-  | 'recommended_action'
-  | 'responsible'
-  | 'target_date'
-  | 'action_status'
-  | 'occurrence2'
-  | 'detection2',
-  PfmeaColumnId
-> = {
-  failure_mode: 'failure_mode',
-  effect: 'effect',
-  severity: 'sev',
-  characteristic: 'characteristic',
-  class: 'class',
-  cause: 'cause',
-  occurrence: 'occ',
-  current_prevention: 'current_prev',
-  current_detection: 'current_det',
-  detection: 'det',
-  recommended_action: 'recommended_action',
-  responsible: 'responsible',
-  target_date: 'target_date',
-  action_status: 'action_status',
-  occurrence2: 'o2',
-  detection2: 'd2',
-}
-
-const PFMEA_EDITABLE_FIELDS: Array<
-  | 'failure_mode'
-  | 'effect'
-  | 'severity'
-  | 'characteristic'
-  | 'class'
-  | 'cause'
-  | 'occurrence'
-  | 'current_prevention'
-  | 'current_detection'
-  | 'detection'
-  | 'recommended_action'
-  | 'responsible'
-  | 'target_date'
-  | 'action_status'
-  | 'occurrence2'
-  | 'detection2'
-> = [
-  'failure_mode',
-  'effect',
-  'severity',
-  'characteristic',
-  'class',
-  'cause',
-  'occurrence',
-  'current_prevention',
-  'current_detection',
-  'detection',
-  'recommended_action',
-  'responsible',
-  'target_date',
-  'action_status',
-  'occurrence2',
-  'detection2',
-]
 
 /* ===================== RISK MATRIX (SUPABASE) ===================== */
 
