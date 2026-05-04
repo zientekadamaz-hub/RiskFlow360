@@ -5,12 +5,30 @@ import { parsePfmeaPublishResult } from './pfmea-publish-utils'
 import { insertPfmeaHistoryFallback, type PfmeaRevisionPublishResult } from './pfmea-service'
 import type { PfmeaRow, ProjectView } from './pfmea-types'
 
+export type PfmeaEditorCommitTarget = {
+  blur?: () => void
+} | null
+
 export type PfmeaPostPublishResult = {
   data: unknown
   integrityWarning: string | null
   postPublishWarning: string | null
   publishedRevisionId: string | null
   revisionLabel: string
+}
+
+export async function commitPfmeaEditorBeforeSave(editor: PfmeaEditorCommitTarget) {
+  if (editor && typeof editor.blur === 'function') {
+    editor.blur()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+}
+
+export async function fetchAuthenticatedPfmeaSaveUserId(supabase: SupabaseClient) {
+  const { data: sess } = await supabase.auth.getSession()
+  const uid = sess?.session?.user?.id
+  if (!uid) throw new Error('Not authenticated.')
+  return uid
 }
 
 export async function completePfmeaPostPublish(params: {

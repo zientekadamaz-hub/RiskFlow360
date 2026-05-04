@@ -96,7 +96,11 @@ import { hydratePfmeaGroupIds } from '@/features/pfmea/pfmea-row-normalization-u
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
 import { createPfmeaSaveTimingLogger } from '@/features/pfmea/pfmea-save-timing-utils'
 import { resolvePfmeaSaveDraftRevisionId } from '@/features/pfmea/pfmea-revision-utils'
-import { completePfmeaPostPublish } from '@/features/pfmea/pfmea-save-orchestration'
+import {
+  commitPfmeaEditorBeforeSave,
+  completePfmeaPostPublish,
+  fetchAuthenticatedPfmeaSaveUserId,
+} from '@/features/pfmea/pfmea-save-orchestration'
 import {
   PFMEA_CLONE_FIELDS,
   PFMEA_CLONE_FIELDS_LEGACY,
@@ -1845,10 +1849,8 @@ useEffect(() => {
 
     try {
       setSaveBusy(true)
-      const { data: sess } = await supabase.auth.getSession()
+      const uid = await fetchAuthenticatedPfmeaSaveUserId(supabase)
       saveTiming.mark('auth session')
-      const uid = sess?.session?.user?.id
-      if (!uid) throw new Error('Not authenticated.')
 
       const draftRevisionId = resolvePfmeaSaveDraftRevisionId({
         currentDraftRevisionId: project?.current_draft_revision_id,
@@ -1858,10 +1860,7 @@ useEffect(() => {
       })
       if (!draftRevisionId) throw new Error('No draft revision found.')
 
-      if (editorRef.current && typeof editorRef.current.blur === 'function') {
-        editorRef.current.blur()
-        await new Promise<void>((resolve) => setTimeout(resolve, 0))
-      }
+      await commitPfmeaEditorBeforeSave(editorRef.current)
       saveTiming.mark('editor commit')
 
       await flushPendingCellUpdates()
