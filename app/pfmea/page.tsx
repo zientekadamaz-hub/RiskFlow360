@@ -1297,13 +1297,42 @@ useEffect(() => {
     return effectiveRow
   }
 
+  const resolveContinuationRowsForRevision = useCallback(
+    async (row: PfmeaRow, anchorRow: PfmeaRow, revisionId: string) => {
+      const rowAlreadyCurrent = row.revision_id === revisionId && rowsRef.current.some((item) => item.id === row.id)
+      const anchorAlreadyCurrent = anchorRow.revision_id === revisionId && rowsRef.current.some((item) => item.id === anchorRow.id)
+      if (rowAlreadyCurrent && anchorAlreadyCurrent) return { row, anchorRow }
+
+      await loadAll(revisionId)
+
+      const mapRow = (source: PfmeaRow) => {
+        if (source.revision_id === revisionId) {
+          const direct = rowsRef.current.find((item) => item.id === source.id)
+          if (direct) return direct
+        }
+
+        const inferredRowNo = normalizePfmeaRowNo(source.row_no) ?? rowHierarchyByIdRef.current.get(source.id)?.rowLabel ?? null
+        const sourceForMapping =
+          inferredRowNo && inferredRowNo !== source.row_no ? ({ ...source, row_no: inferredRowNo } as PfmeaRow) : source
+        const mapped = findEquivalentPfmeaRow(rowsRef.current, sourceForMapping)
+        if (!mapped) throw new Error('Failed to map PFMEA row into the current draft revision.')
+        return mapped
+      }
+
+      return {
+        anchorRow: mapRow(anchorRow),
+        row: mapRow(row),
+      }
+    },
+    [loadAll, rowsRef]
+  )
+
   async function addCauseContinuationRow(row: PfmeaRow, anchorRow: PfmeaRow = row) {
     if (readOnly || isPlaceholderRowId(row.id)) return
     setErr('')
 
     try {
       const effectiveRow = applyPendingCellValues(row)
-      const sourceRow = getCauseContinuationSourceRow(row)
       if (!hasPfmeaTextValue(effectiveRow.cause)) {
         setEdit({ rowId: row.id, col: 'cause' })
         return
@@ -1313,23 +1342,25 @@ useEffect(() => {
       const finalRev = revId ?? workingRevisionId
       if (!finalRev) throw new Error('No working revision found.')
 
-      const opId = row.operation_id || row.operations?.id || null
-      const insertedCreatedAt = getInsertedCreatedAtForAnchor(anchorRow)
+      const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
+      const targetSourceRow = getCauseContinuationSourceRow(targetRow)
+      const opId = targetRow.operation_id || targetRow.operations?.id || null
+      const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
 
       const payload = {
         ...makeEmptyPfmeaPayload(
-          row.operation_id,
+          targetRow.operation_id,
           finalRev,
           createPfmeaGroupIds({
-            failure_mode_group_id: sourceRow.failure_mode_group_id ?? undefined,
-            failure_block_group_id: sourceRow.failure_block_group_id ?? undefined,
+            failure_mode_group_id: targetSourceRow.failure_mode_group_id ?? undefined,
+            failure_block_group_id: targetSourceRow.failure_block_group_id ?? undefined,
           })
         ),
-        failure_mode: sourceRow.failure_mode,
-        effect: sourceRow.effect,
-        severity: asInt1to10(sourceRow.severity),
-        characteristic: sourceRow.characteristic,
-        class: normalizeClassValue(sourceRow.class),
+        failure_mode: targetSourceRow.failure_mode,
+        effect: targetSourceRow.effect,
+        severity: asInt1to10(targetSourceRow.severity),
+        characteristic: targetSourceRow.characteristic,
+        class: normalizeClassValue(targetSourceRow.class),
         created_at: insertedCreatedAt,
       }
 
@@ -1348,14 +1379,16 @@ useEffect(() => {
       setExpandedOperationId(opId)
       setRows((prev) => {
         const nextRow = {
-          ...sourceRow,
+          ...targetSourceRow,
           ...payload,
           id: newId,
           revision_id: finalRev,
           created_at: insertedCreatedAt,
-          __sortIndex: anchorRow.__sortIndex,
+          __sortIndex: targetAnchorRow.__sortIndex,
         } as PfmeaRow
-        return insertPfmeaRowAfterAnchor(prev, anchorRow.id, nextRow)
+        const nextRows = insertPfmeaRowAfterAnchor(prev, targetAnchorRow.id, nextRow)
+        rowsRef.current = nextRows
+        return nextRows
       })
       setEdit({ rowId: newId, col: 'cause' })
     } catch (e: any) {
@@ -1372,11 +1405,12 @@ useEffect(() => {
       const finalRev = revId ?? workingRevisionId
       if (!finalRev) throw new Error('No working revision found.')
 
-      const opId = row.operation_id || row.operations?.id || null
-      const insertedCreatedAt = getInsertedCreatedAtForAnchor(anchorRow)
+      const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
+      const opId = targetRow.operation_id || targetRow.operations?.id || null
+      const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
 
       const payload = {
-        ...makeEmptyPfmeaPayload(row.operation_id, finalRev),
+        ...makeEmptyPfmeaPayload(targetRow.operation_id, finalRev),
         created_at: insertedCreatedAt,
       }
 
@@ -1395,14 +1429,16 @@ useEffect(() => {
       setExpandedOperationId(opId)
       setRows((prev) => {
         const nextRow = {
-          ...row,
+          ...targetRow,
           ...payload,
           id: newId,
           revision_id: finalRev,
           created_at: insertedCreatedAt,
-          __sortIndex: anchorRow.__sortIndex,
+          __sortIndex: targetAnchorRow.__sortIndex,
         } as PfmeaRow
-        return insertPfmeaRowAfterAnchor(prev, anchorRow.id, nextRow)
+        const nextRows = insertPfmeaRowAfterAnchor(prev, targetAnchorRow.id, nextRow)
+        rowsRef.current = nextRows
+        return nextRows
       })
       setEdit({ rowId: newId, col: 'failure_mode' })
     } catch (e: any) {
@@ -1425,20 +1461,22 @@ useEffect(() => {
       const finalRev = revId ?? workingRevisionId
       if (!finalRev) throw new Error('No working revision found.')
 
-      const opId = row.operation_id || row.operations?.id || null
-      const insertedCreatedAt = getInsertedCreatedAtForAnchor(anchorRow)
+      const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
+      const targetEffectiveRow = applyPendingCellValues(targetRow)
+      const opId = targetRow.operation_id || targetRow.operations?.id || null
+      const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
 
       const payload = {
         ...makeEmptyPfmeaPayload(
-          row.operation_id,
+          targetRow.operation_id,
           finalRev,
           createPfmeaGroupIds({
-            failure_mode_group_id: effectiveRow.failure_mode_group_id ?? undefined,
+            failure_mode_group_id: targetEffectiveRow.failure_mode_group_id ?? undefined,
           })
         ),
-        failure_mode: effectiveRow.failure_mode,
-        characteristic: effectiveRow.characteristic,
-        class: normalizeClassValue(effectiveRow.class),
+        failure_mode: targetEffectiveRow.failure_mode,
+        characteristic: targetEffectiveRow.characteristic,
+        class: normalizeClassValue(targetEffectiveRow.class),
         created_at: insertedCreatedAt,
       }
 
@@ -1457,14 +1495,16 @@ useEffect(() => {
       setExpandedOperationId(opId)
       setRows((prev) => {
         const nextRow = {
-          ...row,
+          ...targetRow,
           ...payload,
           id: newId,
           revision_id: finalRev,
           created_at: insertedCreatedAt,
-          __sortIndex: anchorRow.__sortIndex,
+          __sortIndex: targetAnchorRow.__sortIndex,
         } as PfmeaRow
-        return insertPfmeaRowAfterAnchor(prev, anchorRow.id, nextRow)
+        const nextRows = insertPfmeaRowAfterAnchor(prev, targetAnchorRow.id, nextRow)
+        rowsRef.current = nextRows
+        return nextRows
       })
       setEdit({ rowId: newId, col: 'effect' })
     } catch (e: any) {
@@ -1478,7 +1518,6 @@ useEffect(() => {
 
     try {
       const effectiveRow = applyPendingCellValues(row)
-      const sourceRow = getRecommendedActionContinuationSourceRow(row)
       if (!hasPfmeaTextValue(effectiveRow.recommended_action)) {
         setEdit({ rowId: row.id, col: 'recommended_action' })
         return
@@ -1488,31 +1527,33 @@ useEffect(() => {
       const finalRev = revId ?? workingRevisionId
       if (!finalRev) throw new Error('No working revision found.')
 
-      const opId = row.operation_id || row.operations?.id || null
-      const insertedCreatedAt = getInsertedCreatedAtForAnchor(anchorRow)
+      const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
+      const targetSourceRow = getRecommendedActionContinuationSourceRow(targetRow)
+      const opId = targetRow.operation_id || targetRow.operations?.id || null
+      const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
 
       const payload = {
         ...makeEmptyPfmeaPayload(
-          row.operation_id,
+          targetRow.operation_id,
           finalRev,
           createPfmeaGroupIds({
-            failure_mode_group_id: sourceRow.failure_mode_group_id ?? undefined,
-            failure_block_group_id: sourceRow.failure_block_group_id ?? undefined,
-            action_plan_group_id: sourceRow.action_plan_group_id ?? undefined,
+            failure_mode_group_id: targetSourceRow.failure_mode_group_id ?? undefined,
+            failure_block_group_id: targetSourceRow.failure_block_group_id ?? undefined,
+            action_plan_group_id: targetSourceRow.action_plan_group_id ?? undefined,
           })
         ),
-        failure_mode: sourceRow.failure_mode,
-        effect: sourceRow.effect,
-        severity: asInt1to10(sourceRow.severity),
-        characteristic: sourceRow.characteristic,
-        class: normalizeClassValue(sourceRow.class),
-        cause: sourceRow.cause,
-        occurrence: asInt1to10(sourceRow.occurrence),
-        current_prevention: sourceRow.current_prevention,
-        current_detection: sourceRow.current_detection,
-        detection: asInt1to10(sourceRow.detection),
+        failure_mode: targetSourceRow.failure_mode,
+        effect: targetSourceRow.effect,
+        severity: asInt1to10(targetSourceRow.severity),
+        characteristic: targetSourceRow.characteristic,
+        class: normalizeClassValue(targetSourceRow.class),
+        cause: targetSourceRow.cause,
+        occurrence: asInt1to10(targetSourceRow.occurrence),
+        current_prevention: targetSourceRow.current_prevention,
+        current_detection: targetSourceRow.current_detection,
+        detection: asInt1to10(targetSourceRow.detection),
         ...computeDerived({
-          ...sourceRow,
+          ...targetSourceRow,
           recommended_action: '',
           responsible: '',
           target_date: null,
@@ -1538,14 +1579,16 @@ useEffect(() => {
       setExpandedOperationId(opId)
       setRows((prev) => {
         const nextRow = {
-          ...sourceRow,
+          ...targetSourceRow,
           ...payload,
           id: newId,
           revision_id: finalRev,
           created_at: insertedCreatedAt,
-          __sortIndex: anchorRow.__sortIndex,
+          __sortIndex: targetAnchorRow.__sortIndex,
         } as PfmeaRow
-        return insertPfmeaRowAfterAnchor(prev, anchorRow.id, nextRow)
+        const nextRows = insertPfmeaRowAfterAnchor(prev, targetAnchorRow.id, nextRow)
+        rowsRef.current = nextRows
+        return nextRows
       })
       setEdit({ rowId: newId, col: 'recommended_action' })
     } catch (e: any) {
