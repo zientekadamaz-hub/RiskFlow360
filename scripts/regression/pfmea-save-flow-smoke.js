@@ -16,6 +16,7 @@ const expectedPrePublishOrder = [
   'preparePfmeaDraftRowsForPublish',
   'publishPfmeaRevisionForSave',
   'cleanupPfmeaSuccessfulSaveAfterPublish',
+  'completePfmeaSuccessfulSaveReload',
 ]
 
 const expectedDraftPreparationOrder = [
@@ -57,8 +58,18 @@ const expectedSuccessfulCleanupOrder = [
 
 const expectedReloadOrder = [
   'cleanupPfmeaSuccessfulSaveAfterPublish',
+  'completePfmeaSuccessfulSaveReload',
+]
+
+const expectedSuccessfulReloadOrder = [
+  'completePfmeaSuccessfulSaveReload',
+  'Published PFMEA revision id',
+  'loadProjectView()',
   'reload project view',
+  'loadRevisionHistory()',
   'reload revision history',
+  'integrityWarning',
+  'postPublishWarning',
 ]
 
 let cursor = -1
@@ -108,6 +119,15 @@ for (const marker of expectedReloadOrder) {
   const nextIndex = saveSource.indexOf(marker, cursor + 1)
   assert.notEqual(nextIndex, -1, `Missing PFMEA save reload marker: ${marker}`)
   assert.ok(nextIndex > cursor, `PFMEA save reload marker is out of order: ${marker}`)
+  cursor = nextIndex
+}
+
+cursor = postPublishSource.indexOf('completePfmeaSuccessfulSaveReload')
+assert.notEqual(cursor, -1, 'PFMEA successful reload helper must exist.')
+for (const marker of expectedSuccessfulReloadOrder.slice(1)) {
+  const nextIndex = postPublishSource.indexOf(marker, cursor + 1)
+  assert.notEqual(nextIndex, -1, `Missing PFMEA successful reload marker: ${marker}`)
+  assert.ok(nextIndex > cursor, `PFMEA successful reload marker is out of order: ${marker}`)
   cursor = nextIndex
 }
 

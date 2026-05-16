@@ -528,3 +528,38 @@ export async function cleanupPfmeaSuccessfulSaveAfterPublish(params: {
 
   return cleanupResult
 }
+
+export function pfmeaSaveErrorMessage(error: unknown) {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return String(error)
+}
+
+export async function completePfmeaSuccessfulSaveReload(params: {
+  data: unknown
+  integrityWarning: string | null
+  loadProjectView: () => Promise<ProjectView>
+  loadRevisionHistory: () => Promise<void>
+  mark: (label: string) => void
+  postPublishWarning: string | null
+  setErr: (value: string) => void
+}) {
+  if (params.data) console.log('Published PFMEA revision id:', params.data)
+
+  try {
+    await params.loadProjectView()
+  } catch (projectReloadError: unknown) {
+    console.warn('PFMEA project view refresh skipped:', pfmeaSaveErrorMessage(projectReloadError))
+  }
+  params.mark('reload project view')
+
+  await params.loadRevisionHistory()
+  params.mark('reload revision history')
+
+  if (params.integrityWarning) {
+    params.setErr(params.integrityWarning)
+  } else if (params.postPublishWarning) {
+    params.setErr(params.postPublishWarning)
+  }
+}

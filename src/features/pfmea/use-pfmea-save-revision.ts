@@ -7,8 +7,10 @@ import { resolvePfmeaSaveDraftRevisionId } from './pfmea-revision-utils'
 import { createPfmeaSaveTimingLogger } from './pfmea-save-timing-utils'
 import {
   cleanupPfmeaSuccessfulSaveAfterPublish,
+  completePfmeaSuccessfulSaveReload,
   ensurePublishedPfmeaIntegrityAfterSave,
   fetchAuthenticatedPfmeaSaveUserId,
+  pfmeaSaveErrorMessage,
   preparePfmeaDraftRowsForPublish,
   persistPfmeaDraftSnapshotAfterSave,
   publishPfmeaRevisionForSave,
@@ -62,13 +64,6 @@ export type UsePfmeaSaveRevisionParams = {
   supabase: SupabaseClient
   userId: string | null
   workingRevisionId: string | null
-}
-
-function errorMessage(error: unknown) {
-  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-    return error.message
-  }
-  return String(error)
 }
 
 export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
@@ -220,21 +215,15 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
         userId: params.userId,
       })
 
-      if (data) console.log('Published PFMEA revision id:', data)
-
-      try {
-        await params.loadProjectView({ syncDraftOverride: false })
-      } catch (projectReloadError: unknown) {
-        console.warn('PFMEA project view refresh skipped:', errorMessage(projectReloadError))
-      }
-      saveTiming.mark('reload project view')
-      await params.loadRevisionHistory()
-      saveTiming.mark('reload revision history')
-      if (integrityWarning) {
-        params.setErr(integrityWarning)
-      } else if (postPublishWarning) {
-        params.setErr(postPublishWarning)
-      }
+      await completePfmeaSuccessfulSaveReload({
+        data,
+        integrityWarning,
+        loadProjectView: () => params.loadProjectView({ syncDraftOverride: false }),
+        loadRevisionHistory: params.loadRevisionHistory,
+        mark: saveTiming.mark,
+        postPublishWarning,
+        setErr: params.setErr,
+      })
       saveTiming.log('success')
     } catch (error: unknown) {
       console.error('PFMEA save failed:', error)
@@ -242,7 +231,7 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
       params.setErr(
         isTimeoutError(error)
           ? 'PFMEA save timed out while the database was processing the revision. The save path has been optimized; please try again. If it repeats, contact an administrator.'
-          : errorMessage(error)
+          : pfmeaSaveErrorMessage(error)
       )
     } finally {
       params.setSaveBusy(false)
