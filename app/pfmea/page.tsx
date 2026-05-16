@@ -33,6 +33,7 @@ import {
 } from '@/features/pfmea/pfmea-types'
 import { usePfmeaColumnVisibility } from '@/features/pfmea/use-pfmea-column-visibility'
 import { usePfmeaDirtyDraftPersistence } from '@/features/pfmea/use-pfmea-dirty-draft-persistence'
+import { usePfmeaEditSessionActions } from '@/features/pfmea/use-pfmea-edit-session-actions'
 import { usePfmeaPendingCellUpdateQueue } from '@/features/pfmea/use-pfmea-pending-cell-update-queue'
 import { usePfmeaPendingCellValues } from '@/features/pfmea/use-pfmea-pending-cell-values'
 import { usePfmeaRiskMatrixConfig } from '@/features/pfmea/use-pfmea-risk-matrix-config'
@@ -86,18 +87,11 @@ import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pf
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
 import { usePfmeaSaveRevision } from '@/features/pfmea/use-pfmea-save-revision'
 import {
-  PFMEA_CLONE_FIELDS,
-  PFMEA_CLONE_FIELDS_LEGACY,
-  isMissingPfmeaGroupIdColumnError,
   stripPfmeaGroupIdsFromPayload,
 } from '@/features/pfmea/pfmea-payload-utils'
 import {
-  deletePfmeaEditSession,
-  deletePfmeaRowsByRevision,
-  fetchPfmeaCurrentDraftRevisionId,
   fetchPfmeaRevisionHistory,
   persistPfmeaRowOrderMetadata,
-  startPfmeaEditSession,
   type PfmeaRowOrderUpdate,
   type PfmeaHistoryEntry,
 } from '@/features/pfmea/pfmea-service'
@@ -309,129 +303,33 @@ function PfmeaFullPageContent() {
     loadProjectView,
   } = usePfmeaRevisionController(revisionControllerParams)
 
-  async function startEditSession() {
-    if (!projectId || !userId || isObsolete) return
-    setSessionBusy(true)
-    setErr('')
-    resetPfmeaEditRuntimeState()
-    try {
-      const sessionStart = await startPfmeaEditSession(supabase, {
-        draftRevisionIdOverride,
-        editLockMs: EDIT_LOCK_MS,
-        hasExistingDraftRevision: !!(project?.current_draft_revision_id ?? draftRevisionIdOverride),
-        isChampion,
-        nowMs: sessionNow,
-        projectId,
-        userId,
-      })
-
-      if (sessionStart.blocked) {
-        setErr(sessionStart.message)
-        forceRefreshExistingDraftFromOpenRef.current = false
-        return
-      }
-
-      forceRefreshExistingDraftFromOpenRef.current = sessionStart.shouldRefreshExistingDraftFromOpen
-      if (sessionStart.draftRowsDeleted) {
-        setDraftRevisionIdOverride(null)
-        setDirtyPfmeaIds([])
-        setDeletedPfmeaIds([])
-        clearDirtyDraftPersisted()
-      }
-
-      const refreshedView = sessionStart.projectView
-      setProject(refreshedView as any)
-
-      const refreshedDraftRevisionId = sessionStart.draftRevisionId
-      const refreshedOpenRevisionId = sessionStart.openRevisionId
-
-      const hydrateDraftRowsFromOpen = async () => {
-        if (!refreshedDraftRevisionId || !refreshedOpenRevisionId || refreshedDraftRevisionId === refreshedOpenRevisionId) return
-
-        await deletePfmeaRowsByRevision(supabase, refreshedDraftRevisionId)
-
-        const loadSourceRows = async () => {
-          const sourceSelect =
-            pfmeaGroupIdsSupportedRef.current === false ? PFMEA_CLONE_FIELDS_LEGACY.join(',') : PFMEA_CLONE_FIELDS.join(',')
-
-          let sourceRowsRes = await supabase
-            .from('pfmea_rows')
-            .select(sourceSelect)
-            .eq('revision_id', refreshedOpenRevisionId)
-            .order('created_at', { ascending: true })
-            .order('id', { ascending: true })
-
-          if (sourceRowsRes.error && isMissingPfmeaGroupIdColumnError(sourceRowsRes.error)) {
-            pfmeaGroupIdsSupportedRef.current = false
-            sourceRowsRes = await supabase
-              .from('pfmea_rows')
-              .select(PFMEA_CLONE_FIELDS_LEGACY.join(','))
-              .eq('revision_id', refreshedOpenRevisionId)
-              .order('created_at', { ascending: true })
-              .order('id', { ascending: true })
-          } else if (!sourceRowsRes.error && pfmeaGroupIdsSupportedRef.current !== false) {
-            pfmeaGroupIdsSupportedRef.current = true
-          }
-
-          if (sourceRowsRes.error) throw sourceRowsRes.error
-          return (sourceRowsRes.data ?? []) as Array<Partial<PfmeaRow>>
-        }
-
-        const sourceRows = await loadSourceRows()
-        if (sourceRows.length === 0) return
-
-        const clonePayload = sourceRows.map((sourceRow) => {
-          const clonedRow = { revision_id: refreshedDraftRevisionId } as Partial<PfmeaRow> & { revision_id: string }
-          for (const field of PFMEA_CLONE_FIELDS) {
-            ;(clonedRow as any)[field] = sourceRow[field] ?? null
-          }
-          return clonedRow
-        })
-
-        const insertPayload =
-          pfmeaGroupIdsSupportedRef.current === false
-            ? clonePayload.map((row) => stripPfmeaGroupIdsFromPayload(row as Record<string, unknown>))
-            : clonePayload
-
-        const cloneInsertRes = await supabase.from('pfmea_rows').insert(insertPayload)
-        if (cloneInsertRes.error) throw cloneInsertRes.error
-      }
-
-      await hydrateDraftRowsFromOpen()
-      if (refreshedDraftRevisionId) {
-        setDraftRevisionIdOverride(refreshedDraftRevisionId)
-      }
-
-      await loadEditSession()
-      await loadAll(refreshedDraftRevisionId ?? refreshedOpenRevisionId)
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    } finally {
-      setSessionBusy(false)
-    }
-  }
-
-  async function discardDraftAndCloseSession() {
-    if (!projectId || !userId || !isEditOwner) return
-    setSessionBusy(true)
-    setErr('')
-    resetPfmeaEditRuntimeState()
-    try {
-      const draftId = await fetchPfmeaCurrentDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
-      if (draftId) await deletePfmeaRowsByRevision(supabase, draftId)
-      await deletePfmeaEditSession(supabase, projectId, userId)
-      setDraftRevisionIdOverride(null)
-      setDirtyPfmeaIds([])
-      setDeletedPfmeaIds([])
-      clearDirtyDraftPersisted()
-      await loadEditSession()
-      await loadAll()
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    } finally {
-      setSessionBusy(false)
-    }
-  }
+  const {
+    discardDraftAndCloseSession,
+    startEditSession,
+  } = usePfmeaEditSessionActions({
+    clearDirtyDraftPersisted,
+    draftRevisionIdOverride,
+    editLockMs: EDIT_LOCK_MS,
+    forceRefreshExistingDraftFromOpenRef,
+    isChampion,
+    isEditOwner,
+    isObsolete,
+    loadAll,
+    loadEditSession,
+    pfmeaGroupIdsSupportedRef,
+    project,
+    projectId,
+    resetPfmeaEditRuntimeState,
+    sessionNow,
+    setDeletedPfmeaIds,
+    setDirtyPfmeaIds,
+    setDraftRevisionIdOverride,
+    setErr,
+    setProject,
+    setSessionBusy,
+    supabase,
+    userId,
+  })
 
   useEffect(() => {
     if (moduleAccessState !== 'allowed') return
