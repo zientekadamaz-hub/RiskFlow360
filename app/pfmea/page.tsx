@@ -97,6 +97,11 @@ import {
   buildPfmeaRecommendedActionContinuationInsertPayload,
 } from '@/features/pfmea/pfmea-row-insert-payload-utils'
 import { getEmptyPfmeaTransientRowIds, isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
+import {
+  buildPfmeaOperationMergeInfo,
+  findPfmeaMergeOwnerRow,
+  resolvePfmeaBlockEndAnchorRow,
+} from '@/features/pfmea/pfmea-table-merge-utils'
 import { usePfmeaSaveRevision } from '@/features/pfmea/use-pfmea-save-revision'
 import {
   stripPfmeaGroupIdsFromPayload,
@@ -1483,29 +1488,7 @@ function PfmeaFullPageContent() {
 
   // ROWSPAN MAP: scalanie dla 4 pierwszych kolumn
   const mergeInfo = useMemo(() => {
-    const spans = tableRows.map(() => ({ span: 0, end: 0 }))
-
-    const keyOf = (r: PfmeaRow) => {
-      const opKey = r.operation_id ?? r.operations?.id ?? ''
-      const opNo = r.operations?.operation_number ?? ''
-      const station = r.operations?.machine ?? ''
-      const operationName = r.operations?.operation ?? ''
-      const step = r.operations?.name ?? ''
-      return `${opKey}|${opNo}|${station}|${operationName}|${step}`
-    }
-
-    let i = 0
-    while (i < tableRows.length) {
-      const k = keyOf(tableRows[i])
-      let j = i + 1
-      while (j < tableRows.length && keyOf(tableRows[j]) === k) j++
-
-      const runLen = j - i
-      for (let k = i; k < j; k += 1) spans[k] = { span: k === i ? runLen : 0, end: j - 1 }
-      i = j
-    }
-
-    return spans
+    return buildPfmeaOperationMergeInfo(tableRows)
   }, [tableRows])
 
   const failureModeMergeInfo = useMemo(() => {
@@ -1519,11 +1502,6 @@ function PfmeaFullPageContent() {
   const actionPlanBlockMergeInfo = useMemo(() => {
     return buildPfmeaBlockMergeInfoByHierarchy(tableRows, rowHierarchy, (item) => item.causeBlockKey)
   }, [rowHierarchy, tableRows])
-
-  function resolveBlockEndAnchorRow(rowIndex: number, mergeInfo: Array<{ span: number; end: number }>) {
-    const endIndex = mergeInfo[rowIndex]?.end ?? rowIndex
-    return tableRows[endIndex] ?? tableRows[rowIndex] ?? null
-  }
 
   const visibleColumnDefs = useMemo(() => PFMEA_COLUMNS.filter((col) => isColumnVisible(col.id)), [isColumnVisible])
   const widthOf = useCallback(
@@ -1983,16 +1961,9 @@ function PfmeaFullPageContent() {
 
                   const risk1 = getRiskColorFor(a1.sev, a1.doVal)
                   const risk2 = getRiskColorFor(a2.sev, a2.doVal)
-                  const findMergeOwnerRow = (mergeInfo: Array<{ span: number; end: number }>) => {
-                    for (let i = rowIndex; i >= 0; i -= 1) {
-                      const item = mergeInfo[i]
-                      if ((item?.span ?? 0) > 0 && (item?.end ?? -1) >= rowIndex) return tableRows[i] ?? r
-                    }
-                    return r
-                  }
-                  const failureModeOwnerRow = findMergeOwnerRow(failureModeMergeInfo)
-                  const failureBlockOwnerRow = findMergeOwnerRow(failureBlockMergeInfo)
-                  const actionPlanOwnerRow = findMergeOwnerRow(actionPlanBlockMergeInfo)
+                  const failureModeOwnerRow = findPfmeaMergeOwnerRow(tableRows, rowIndex, failureModeMergeInfo) ?? r
+                  const failureBlockOwnerRow = findPfmeaMergeOwnerRow(tableRows, rowIndex, failureBlockMergeInfo) ?? r
+                  const actionPlanOwnerRow = findPfmeaMergeOwnerRow(tableRows, rowIndex, actionPlanBlockMergeInfo) ?? r
                   const effectiveCurrentRow = applyPendingCellValues(r)
                   const canAddFailureModeRow = hasPfmeaTextValue(applyPendingCellValues(failureModeOwnerRow).failure_mode)
                   const canAddEffectRow = hasPfmeaTextValue(applyPendingCellValues(failureBlockOwnerRow).effect)
@@ -2134,7 +2105,7 @@ function PfmeaFullPageContent() {
                                       })()
                                       return
                                     }
-                                    const anchorRow = resolveBlockEndAnchorRow(rowIndex, failureModeMergeInfo) ?? r
+                                    const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, failureModeMergeInfo) ?? r
                                     void addFailureModeContinuationRow(r, anchorRow)
                                   },
                                 }
@@ -2213,7 +2184,7 @@ function PfmeaFullPageContent() {
                                       })()
                                       return
                                     }
-                                    const anchorRow = resolveBlockEndAnchorRow(rowIndex, failureBlockMergeInfo) ?? r
+                                    const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, failureBlockMergeInfo) ?? r
                                     void addEffectContinuationRow(failureModeOwnerRow, anchorRow)
                                   },
                                 }
@@ -2276,7 +2247,7 @@ function PfmeaFullPageContent() {
                                       })()
                                       return
                                     }
-                                    const anchorRow = resolveBlockEndAnchorRow(rowIndex, actionPlanBlockMergeInfo) ?? r
+                                    const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, actionPlanBlockMergeInfo) ?? r
                                     const sourceRow = getFailureBlockSourceRowAtIndex(rowIndex) ?? failureBlockOwnerRow
                                     void addCauseContinuationRow(sourceRow, anchorRow)
                                   },
