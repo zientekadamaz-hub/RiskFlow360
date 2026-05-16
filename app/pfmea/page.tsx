@@ -18,11 +18,11 @@ import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
 import { PfmeaFailureEffectCells } from '@/features/pfmea/pfmea-failure-effect-cells'
 import { PfmeaFailureModeCells } from '@/features/pfmea/pfmea-failure-mode-cells'
 import { PfmeaOperationCells } from '@/features/pfmea/pfmea-operation-cells'
+import { PfmeaRecommendedActionCells } from '@/features/pfmea/pfmea-recommended-action-cells'
 import { PfmeaResidualRiskCells } from '@/features/pfmea/pfmea-residual-risk-cells'
 import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
 import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
 import { PfmeaTableShell } from '@/features/pfmea/pfmea-table-shell'
-import { TdText } from '@/features/pfmea/pfmea-text-cell'
 import { PfmeaToolbar } from '@/features/pfmea/pfmea-toolbar'
 import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
 import {
@@ -2013,50 +2013,51 @@ function PfmeaFullPageContent() {
                         riskRpnStyle={riskRpnStyle}
                       />
 
-                      {isColumnVisible('recommended_action') ? (
-                        <TdText
-                          value={effectiveCurrentRow.recommended_action}
-                          editing={edit?.rowId === r.id && edit?.col === 'recommended_action'}
-                          onStart={() => runActionPlanStart('recommended_action')}
-                          onLiveChange={(v) => {
-                            setPendingCellValue(r.id, 'recommended_action', v)
-                            clearRecommendedActionTransientIfFilled(r.id, v)
-                          }}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'recommended_action', v)
-                            clearRecommendedActionTransientIfFilled(r.id, v)
-                            updateCellWithDerived(r, { recommended_action: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('recommended_action'), true)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          sideAction={
-                            canAddRecommendedActionRow
-                              ? {
-                                  title: 'Add recommended action row',
-                                  label: '+',
-                                  onClick: () => {
-                                    if (isPlaceholder) {
-                                      void (async () => {
-                                        try {
-                                          const materializedRow = await materializePlaceholderRowForAdd(r)
-                                          await addRecommendedActionContinuationRow(materializedRow, materializedRow)
-                                        } catch (e: any) {
-                                          setErr(e?.message ?? String(e))
-                                        }
-                                      })()
-                                      return
-                                    }
-                                    void addRecommendedActionContinuationRow(r, r)
-                                  },
-                                }
-                              : undefined
-                          }
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('recommended_action')}
-                          cellKey="recommended_action"
-                        />
-                      ) : null}
+                      <PfmeaRecommendedActionCells
+                        disabled={readOnly}
+                        edit={edit}
+                        editorRef={editorRef}
+                        effectiveCurrentRow={effectiveCurrentRow}
+                        isColumnVisible={isColumnVisible}
+                        isMissingHighlighted={isMissingHighlighted}
+                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
+                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
+                        }
+                        onCommit={(value) => {
+                          setPendingCellValue(r.id, 'recommended_action', value)
+                          clearRecommendedActionTransientIfFilled(r.id, value)
+                          updateCellWithDerived(r, { recommended_action: value })
+                        }}
+                        onLiveChange={(value) => {
+                          setPendingCellValue(r.id, 'recommended_action', value)
+                          clearRecommendedActionTransientIfFilled(r.id, value)
+                        }}
+                        onStart={() => runActionPlanStart('recommended_action')}
+                        recommendedActionSideAction={
+                          canAddRecommendedActionRow
+                            ? {
+                                title: 'Add recommended action row',
+                                label: '+',
+                                onClick: () => {
+                                  if (isPlaceholder) {
+                                    void (async () => {
+                                      try {
+                                        const materializedRow = await materializePlaceholderRowForAdd(r)
+                                        await addRecommendedActionContinuationRow(materializedRow, materializedRow)
+                                      } catch (e: any) {
+                                        setErr(e?.message ?? String(e))
+                                      }
+                                    })()
+                                    return
+                                  }
+                                  void addRecommendedActionContinuationRow(r, r)
+                                },
+                              }
+                            : undefined
+                        }
+                        rowId={r.id}
+                        stopEdit={() => setEdit(null)}
+                      />
 
                       <PfmeaActionClosureCells
                         disabled={readOnly}
