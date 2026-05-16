@@ -46,7 +46,7 @@ import {
   TdRead,
 } from '@/features/pfmea/pfmea-merged-cell'
 import { asInt1to10, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
-import { colorFill, type RiskColor } from '@/features/pfmea/pfmea-risk-matrix-config'
+import { colorFill } from '@/features/pfmea/pfmea-risk-matrix-config'
 import {
   hasFailureModeContext,
   hasPfmeaTextValue,
@@ -96,6 +96,7 @@ import {
   buildPfmeaRecommendedActionContinuationInsertPayload,
 } from '@/features/pfmea/pfmea-row-insert-payload-utils'
 import { getEmptyPfmeaTransientRowIds, isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
+import { computePfmeaAverageRpnSummary } from '@/features/pfmea/pfmea-summary-utils'
 import {
   buildPfmeaOperationMergeInfo,
   findPfmeaMergeOwnerRow,
@@ -1335,30 +1336,12 @@ function PfmeaFullPageContent() {
   }, [displayOps, rowsSorted, workingRevisionId])
 
   const avgRpnSummary = useMemo(() => {
-    const buckets: Record<RiskColor, number> = { green: 0, yellow: 0, orange: 0, red: 0 }
-
-    const values = rowsSorted
-      .map((r) => {
-        const { currentRisk } = computePfmeaDerivedFromContext(r)
-        const c = getRiskColorFor(currentRisk.sev, currentRisk.doVal)
-        if (c) buckets[c] += 1
-        return currentRisk.rpn
-      })
-      .filter((v): v is number => v != null && Number.isFinite(v))
-
-    if (values.length === 0) {
-      return {
-        avg: null as number | null,
-        color: null as RiskColor | null,
-        count: 0,
-        buckets,
-      }
-    }
-
-    const avg = values.reduce((acc, x) => acc + x, 0) / values.length
-    const color = getRiskColorForAverageRpn(avg) ?? 'red'
-
-    return { avg, color, count: values.length, buckets }
+    return computePfmeaAverageRpnSummary(
+      rowsSorted,
+      (row) => computePfmeaDerivedFromContext(row).currentRisk,
+      getRiskColorFor,
+      getRiskColorForAverageRpn
+    )
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowsSorted, getRiskColorFor, getRiskColorForAverageRpn])
 
