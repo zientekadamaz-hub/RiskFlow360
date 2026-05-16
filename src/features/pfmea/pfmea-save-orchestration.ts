@@ -2,7 +2,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { normalizeHistoryText } from './pfmea-display-utils'
 import { isPlaceholderRowId, normalizePfmeaRowNo } from './pfmea-hierarchy-utils'
-import { getPfmeaRowOperationId, getPfmeaRowOperationIds, buildPfmeaStableOrderMetadata, sortPfmeaRows } from './pfmea-row-order-utils'
+import {
+  buildPfmeaRowsWithStableOrderMetadata,
+  getPfmeaRowOperationId,
+  getPfmeaRowOperationIds,
+  buildPfmeaStableOrderMetadata,
+  sortPfmeaRows,
+} from './pfmea-row-order-utils'
 import { parsePfmeaPublishResult } from './pfmea-publish-utils'
 import {
   buildPfmeaPublishedMetadataPatch,
@@ -15,6 +21,7 @@ import {
   insertPfmeaHistoryFallback,
   persistPfmeaDirtyRevisionRows,
   type PfmeaEditSession,
+  type PfmeaRowOrderUpdate,
   type PfmeaRevisionPublishResult,
 } from './pfmea-service'
 import type { PfmeaRow, ProjectView } from './pfmea-types'
@@ -40,6 +47,12 @@ type PfmeaSaveCleanupResult = {
   draftRowsCleaned: boolean
   editSessionDeleted: boolean
 }
+
+export type PersistPfmeaRowOrderForSave = (
+  revisionId: string,
+  sourceRows?: PfmeaRow[],
+  preparedUpdates?: PfmeaRowOrderUpdate[]
+) => Promise<void>
 
 export async function commitPfmeaEditorBeforeSave(editor: PfmeaEditorCommitTarget) {
   if (editor && typeof editor.blur === 'function') {
@@ -296,6 +309,42 @@ export async function persistPfmeaDraftSnapshotAfterSave(params: {
   })
 
   return mappedSnapshotRows
+}
+
+export async function preparePfmeaDraftRowsForPublish(params: {
+  cleanupEmptyTransientRows: () => Promise<PfmeaRow[]>
+  draftRevisionId: string
+  editor: PfmeaEditorCommitTarget
+  flushPendingCellUpdates: () => Promise<void>
+  flushPendingTransientDeletes: () => Promise<void>
+  mark: (label: string) => void
+  persistPfmeaDraftSnapshot: (revisionId: string, sourceRows: PfmeaRow[]) => Promise<PfmeaRow[]>
+  persistPfmeaRowOrder: PersistPfmeaRowOrderForSave
+  rowsRef: CurrentRef<PfmeaRow[]>
+  setRows: (rows: PfmeaRow[]) => void
+}) {
+  await commitPfmeaEditorBeforeSave(params.editor)
+  params.mark('editor commit')
+
+  await params.flushPendingCellUpdates()
+  params.mark('flush cell updates')
+  await params.flushPendingTransientDeletes()
+  params.mark('flush transient deletes')
+  const cleanedRows = await params.cleanupEmptyTransientRows()
+  params.mark('cleanup empty transient rows')
+  const persistedRows = await params.persistPfmeaDraftSnapshot(params.draftRevisionId, cleanedRows)
+  params.mark('persist dirty draft rows')
+  const persistedRowsForOrder = persistedRows.filter((row) => !row.revision_id || row.revision_id === params.draftRevisionId)
+  const { orderedRows: orderedPersistedRows, updates: orderedPersistedUpdates } =
+    buildPfmeaRowsWithStableOrderMetadata(persistedRowsForOrder)
+  await params.persistPfmeaRowOrder(params.draftRevisionId, persistedRowsForOrder, orderedPersistedUpdates)
+  params.mark('persist row order metadata')
+  params.rowsRef.current = orderedPersistedRows
+  params.setRows(orderedPersistedRows)
+
+  return {
+    orderedPersistedRows,
+  }
 }
 
 export async function completePfmeaPostPublish(params: {

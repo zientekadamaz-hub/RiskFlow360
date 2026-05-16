@@ -13,13 +13,18 @@ const source = `${saveSource}\n${postPublishSource}`
 
 const expectedPrePublishOrder = [
   'auth session',
+  'preparePfmeaDraftRowsForPublish',
+  'publish revision',
+]
+
+const expectedDraftPreparationOrder = [
+  'preparePfmeaDraftRowsForPublish',
   'editor commit',
   'flush cell updates',
   'flush transient deletes',
   'cleanup empty transient rows',
   'persist dirty draft rows',
   'persist row order metadata',
-  'publish revision',
 ]
 
 const expectedPostPublishOrder = [
@@ -54,6 +59,14 @@ for (const marker of expectedPrePublishOrder) {
   const nextIndex = saveSource.indexOf(marker, cursor + 1)
   assert.notEqual(nextIndex, -1, `Missing PFMEA save flow marker: ${marker}`)
   assert.ok(nextIndex > cursor, `PFMEA save flow marker is out of order: ${marker}`)
+  cursor = nextIndex
+}
+
+cursor = -1
+for (const marker of expectedDraftPreparationOrder) {
+  const nextIndex = postPublishSource.indexOf(marker, cursor + 1)
+  assert.notEqual(nextIndex, -1, `Missing PFMEA draft preparation marker: ${marker}`)
+  assert.ok(nextIndex > cursor, `PFMEA draft preparation marker is out of order: ${marker}`)
   cursor = nextIndex
 }
 

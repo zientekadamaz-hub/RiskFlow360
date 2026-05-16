@@ -3,34 +3,28 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { isTimeoutError } from '@/lib/error-utils'
 import { hydratePfmeaGroupIds } from './pfmea-row-normalization-utils'
-import { buildPfmeaRowsWithStableOrderMetadata } from './pfmea-row-order-utils'
 import { resolvePfmeaSaveDraftRevisionId } from './pfmea-revision-utils'
 import { createPfmeaSaveTimingLogger } from './pfmea-save-timing-utils'
 import {
-  commitPfmeaEditorBeforeSave,
   cleanupPfmeaSuccessfulSaveAfterPublish,
   completePfmeaPostPublish,
   ensurePublishedPfmeaIntegrityAfterSave,
   fetchAuthenticatedPfmeaSaveUserId,
+  preparePfmeaDraftRowsForPublish,
   persistPfmeaDraftSnapshotAfterSave,
   remapPfmeaSnapshotRowsToRevisionAfterSave,
   syncPublishedPfmeaRowMetadataAfterSave,
+  type PersistPfmeaRowOrderForSave,
 } from './pfmea-save-orchestration'
 import {
   fetchPfmeaRowsForRevision,
   publishPfmeaRevisionWithHistory,
   restorePfmeaRowsSnapshotToRevision,
   type PfmeaEditSession,
-  type PfmeaRowOrderUpdate,
 } from './pfmea-service'
 import type { PfmeaEditorElement, PfmeaRow, ProjectView } from './pfmea-types'
 
 type LoadProjectView = (options?: { syncDraftOverride?: boolean }) => Promise<ProjectView>
-type PersistPfmeaRowOrder = (
-  revisionId: string,
-  sourceRows?: PfmeaRow[],
-  preparedUpdates?: PfmeaRowOrderUpdate[]
-) => Promise<void>
 
 export type UsePfmeaSaveRevisionParams = {
   applyPendingCellValues: (row: PfmeaRow) => PfmeaRow
@@ -50,7 +44,7 @@ export type UsePfmeaSaveRevisionParams = {
   isDirty: boolean
   loadProjectView: LoadProjectView
   loadRevisionHistory: () => Promise<void>
-  persistPfmeaRowOrder: PersistPfmeaRowOrder
+  persistPfmeaRowOrder: PersistPfmeaRowOrderForSave
   project: ProjectView | null
   projectId: string
   resetPfmeaEditRuntimeState: () => void
@@ -175,24 +169,18 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
       })
       if (!draftRevisionId) throw new Error('No draft revision found.')
 
-      await commitPfmeaEditorBeforeSave(params.editorRef.current)
-      saveTiming.mark('editor commit')
-
-      await params.flushPendingCellUpdates()
-      saveTiming.mark('flush cell updates')
-      await params.flushPendingTransientDeletes()
-      saveTiming.mark('flush transient deletes')
-      const cleanedRows = await params.cleanupEmptyTransientRows()
-      saveTiming.mark('cleanup empty transient rows')
-      const persistedRows = await persistPfmeaDraftSnapshot(draftRevisionId, cleanedRows)
-      saveTiming.mark('persist dirty draft rows')
-      const persistedRowsForOrder = persistedRows.filter((row) => !row.revision_id || row.revision_id === draftRevisionId)
-      const { orderedRows: orderedPersistedRows, updates: orderedPersistedUpdates } =
-        buildPfmeaRowsWithStableOrderMetadata(persistedRowsForOrder)
-      await params.persistPfmeaRowOrder(draftRevisionId, persistedRowsForOrder, orderedPersistedUpdates)
-      saveTiming.mark('persist row order metadata')
-      params.rowsRef.current = orderedPersistedRows
-      params.setRows(orderedPersistedRows)
+      const { orderedPersistedRows } = await preparePfmeaDraftRowsForPublish({
+        cleanupEmptyTransientRows: params.cleanupEmptyTransientRows,
+        draftRevisionId,
+        editor: params.editorRef.current,
+        flushPendingCellUpdates: params.flushPendingCellUpdates,
+        flushPendingTransientDeletes: params.flushPendingTransientDeletes,
+        mark: saveTiming.mark,
+        persistPfmeaDraftSnapshot,
+        persistPfmeaRowOrder: params.persistPfmeaRowOrder,
+        rowsRef: params.rowsRef,
+        setRows: params.setRows,
+      })
 
       const historyAuthor = params.currentAuthorName || 'Unknown user'
       const publishResultWithHistory = await publishPfmeaRevisionWithHistory(params.supabase, {
