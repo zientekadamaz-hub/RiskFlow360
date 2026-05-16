@@ -64,7 +64,6 @@ import {
 import {
   buildPfmeaBlockMergeInfoByHierarchy,
   buildPfmeaHierarchy,
-  createPfmeaGroupIds,
   isPlaceholderRowId,
   normalizePfmeaRowNo,
   pickPfmeaGroupIds,
@@ -91,6 +90,12 @@ import {
 import { findEquivalentPfmeaRow } from '@/features/pfmea/pfmea-row-match-utils'
 import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
+import {
+  buildPfmeaCauseContinuationInsertPayload,
+  buildPfmeaEffectContinuationInsertPayload,
+  buildPfmeaFailureModeContinuationInsertPayload,
+  buildPfmeaRecommendedActionContinuationInsertPayload,
+} from '@/features/pfmea/pfmea-row-insert-payload-utils'
 import { getEmptyPfmeaTransientRowIds, isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
 import { usePfmeaSaveRevision } from '@/features/pfmea/use-pfmea-save-revision'
 import {
@@ -693,22 +698,7 @@ function PfmeaFullPageContent() {
       const opId = targetRow.operation_id || targetRow.operations?.id || null
       const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
 
-      const payload = {
-        ...makeEmptyPfmeaPayload(
-          targetRow.operation_id,
-          finalRev,
-          createPfmeaGroupIds({
-            failure_mode_group_id: targetSourceRow.failure_mode_group_id ?? undefined,
-            failure_block_group_id: targetSourceRow.failure_block_group_id ?? undefined,
-          })
-        ),
-        failure_mode: targetSourceRow.failure_mode,
-        effect: targetSourceRow.effect,
-        severity: asInt1to10(targetSourceRow.severity),
-        characteristic: targetSourceRow.characteristic,
-        class: normalizeClassValue(targetSourceRow.class),
-        created_at: insertedCreatedAt,
-      }
+      const payload = buildPfmeaCauseContinuationInsertPayload(targetRow, targetSourceRow, finalRev, insertedCreatedAt)
 
       const insertRes = await supabase
         .from('pfmea_rows')
@@ -751,10 +741,7 @@ function PfmeaFullPageContent() {
       const opId = targetRow.operation_id || targetRow.operations?.id || null
       const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
 
-      const payload = {
-        ...makeEmptyPfmeaPayload(targetRow.operation_id, finalRev),
-        created_at: insertedCreatedAt,
-      }
+      const payload = buildPfmeaFailureModeContinuationInsertPayload(targetRow, finalRev, insertedCreatedAt)
 
       const insertRes = await supabase
         .from('pfmea_rows')
@@ -804,19 +791,7 @@ function PfmeaFullPageContent() {
       const opId = targetRow.operation_id || targetRow.operations?.id || null
       const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
 
-      const payload = {
-        ...makeEmptyPfmeaPayload(
-          targetRow.operation_id,
-          finalRev,
-          createPfmeaGroupIds({
-            failure_mode_group_id: targetEffectiveRow.failure_mode_group_id ?? undefined,
-          })
-        ),
-        failure_mode: targetEffectiveRow.failure_mode,
-        characteristic: targetEffectiveRow.characteristic,
-        class: normalizeClassValue(targetEffectiveRow.class),
-        created_at: insertedCreatedAt,
-      }
+      const payload = buildPfmeaEffectContinuationInsertPayload(targetRow, targetEffectiveRow, finalRev, insertedCreatedAt)
 
       const insertRes = await supabase
         .from('pfmea_rows')
@@ -866,37 +841,7 @@ function PfmeaFullPageContent() {
       const opId = targetRow.operation_id || targetRow.operations?.id || null
       const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
 
-      const payload = {
-        ...makeEmptyPfmeaPayload(
-          targetRow.operation_id,
-          finalRev,
-          createPfmeaGroupIds({
-            failure_mode_group_id: targetSourceRow.failure_mode_group_id ?? undefined,
-            failure_block_group_id: targetSourceRow.failure_block_group_id ?? undefined,
-            action_plan_group_id: targetSourceRow.action_plan_group_id ?? undefined,
-          })
-        ),
-        failure_mode: targetSourceRow.failure_mode,
-        effect: targetSourceRow.effect,
-        severity: asInt1to10(targetSourceRow.severity),
-        characteristic: targetSourceRow.characteristic,
-        class: normalizeClassValue(targetSourceRow.class),
-        cause: targetSourceRow.cause,
-        occurrence: asInt1to10(targetSourceRow.occurrence),
-        current_prevention: targetSourceRow.current_prevention,
-        current_detection: targetSourceRow.current_detection,
-        detection: asInt1to10(targetSourceRow.detection),
-        ...computeDerived({
-          ...targetSourceRow,
-          recommended_action: '',
-          responsible: '',
-          target_date: null,
-          action_status: '',
-          occurrence2: null,
-          detection2: null,
-        } as PfmeaRow),
-        created_at: insertedCreatedAt,
-      }
+      const payload = buildPfmeaRecommendedActionContinuationInsertPayload(targetRow, targetSourceRow, finalRev, insertedCreatedAt)
 
       const insertRes = await supabase
         .from('pfmea_rows')
