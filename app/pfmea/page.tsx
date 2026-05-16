@@ -91,6 +91,7 @@ import {
 import { findEquivalentPfmeaRow } from '@/features/pfmea/pfmea-row-match-utils'
 import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
+import { getEmptyPfmeaTransientRowIds, isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
 import { usePfmeaSaveRevision } from '@/features/pfmea/use-pfmea-save-revision'
 import {
   stripPfmeaGroupIdsFromPayload,
@@ -363,23 +364,17 @@ function PfmeaFullPageContent() {
     previousEditRef.current = edit
     if (!prev) return
     if (edit && edit.rowId === prev.rowId) return
-    const isCauseTransient = transientCauseContinuationIdsRef.current.has(prev.rowId)
-    const isRecommendedActionTransient = transientRecommendedActionContinuationIdsRef.current.has(prev.rowId)
-    const isFailureModeTransient = transientFailureModeContinuationIdsRef.current.has(prev.rowId)
-    const isEffectTransient = transientEffectContinuationIdsRef.current.has(prev.rowId)
-    if (!isCauseTransient && !isRecommendedActionTransient && !isFailureModeTransient && !isEffectTransient) return
+    const transientSets = {
+      causeContinuationIds: transientCauseContinuationIdsRef.current,
+      recommendedActionContinuationIds: transientRecommendedActionContinuationIdsRef.current,
+      failureModeContinuationIds: transientFailureModeContinuationIdsRef.current,
+      effectContinuationIds: transientEffectContinuationIdsRef.current,
+    }
 
     const transientRow = rowsRef.current.find((row) => row.id === prev.rowId)
     if (!transientRow) return
     const effectiveTransientRow = applyPendingCellValues(transientRow)
-    const shouldDelete = isCauseTransient
-      ? isCauseContinuationEmpty(effectiveTransientRow)
-      : isRecommendedActionTransient
-        ? isRecommendedActionContinuationEmpty(effectiveTransientRow)
-        : isFailureModeTransient
-          ? isFailureModeContinuationEmpty(effectiveTransientRow)
-          : isEffectContinuationEmpty(effectiveTransientRow)
-    if (!shouldDelete) return
+    if (!isPfmeaTransientRowEmpty(prev.rowId, effectiveTransientRow, transientSets)) return
 
     transientCauseContinuationIdsRef.current.delete(prev.rowId)
     transientRecommendedActionContinuationIdsRef.current.delete(prev.rowId)
@@ -406,32 +401,16 @@ function PfmeaFullPageContent() {
   ])
 
   const cleanupEmptyTransientRows = useCallback(async () => {
-    const transientIds = new Set<string>([
-      ...transientCauseContinuationIdsRef.current,
-      ...transientRecommendedActionContinuationIdsRef.current,
-      ...transientFailureModeContinuationIdsRef.current,
-      ...transientEffectContinuationIdsRef.current,
-    ])
-    if (transientIds.size === 0) return rowsRef.current
-
-    const rowsById = new Map(rowsRef.current.map((row) => [row.id, row] as const))
-    const idsToDelete: string[] = []
-
-    for (const id of transientIds) {
-      const row = rowsById.get(id)
-      if (!row) continue
-      const effectiveRow = applyPendingCellValues(row)
-      const shouldDelete = transientCauseContinuationIdsRef.current.has(id)
-        ? isCauseContinuationEmpty(effectiveRow)
-        : transientRecommendedActionContinuationIdsRef.current.has(id)
-          ? isRecommendedActionContinuationEmpty(effectiveRow)
-          : transientFailureModeContinuationIdsRef.current.has(id)
-            ? isFailureModeContinuationEmpty(effectiveRow)
-            : transientEffectContinuationIdsRef.current.has(id)
-              ? isEffectContinuationEmpty(effectiveRow)
-              : false
-      if (shouldDelete) idsToDelete.push(id)
-    }
+    const idsToDelete = getEmptyPfmeaTransientRowIds(
+      rowsRef.current,
+      {
+        causeContinuationIds: transientCauseContinuationIdsRef.current,
+        recommendedActionContinuationIds: transientRecommendedActionContinuationIdsRef.current,
+        failureModeContinuationIds: transientFailureModeContinuationIdsRef.current,
+        effectContinuationIds: transientEffectContinuationIdsRef.current,
+      },
+      applyPendingCellValues
+    )
 
     if (idsToDelete.length === 0) return rowsRef.current
 
