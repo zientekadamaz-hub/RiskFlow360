@@ -46,7 +46,6 @@ import {
   TdRead,
 } from '@/features/pfmea/pfmea-merged-cell'
 import { asInt1to10, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
-import { colorFill } from '@/features/pfmea/pfmea-risk-matrix-config'
 import {
   hasFailureModeContext,
   hasPfmeaTextValue,
@@ -60,7 +59,6 @@ import {
   buildPfmeaActionPlanValidationRow,
   getPfmeaMissingActionPlanHighlightKeys,
   getPreviousRequiredFieldForActionPlan,
-  isPfmeaCellHighlighted,
 } from '@/features/pfmea/pfmea-action-validation-utils'
 import {
   buildPfmeaBlockMergeInfoByHierarchy,
@@ -77,7 +75,6 @@ import {
   reindexPfmeaRows,
   sortPfmeaRows,
 } from '@/features/pfmea/pfmea-row-order-utils'
-import { getPfmeaPcpAutoReasons, isPfmeaSelectedForPcp } from '@/features/pfmea/pfmea-pcp-utils'
 import {
   computePfmeaDerivedFromContext as computePfmeaDerivedFromRowContext,
   getPfmeaCauseContinuationSourceRow,
@@ -102,9 +99,9 @@ import {
 } from '@/features/pfmea/pfmea-transient-row-utils'
 import { computePfmeaAverageRpnSummary } from '@/features/pfmea/pfmea-summary-utils'
 import { buildPfmeaDisplayOperations, buildPfmeaTableRows } from '@/features/pfmea/pfmea-visible-rows-utils'
+import { buildPfmeaTableRowModel } from '@/features/pfmea/pfmea-table-row-model'
 import {
   buildPfmeaOperationMergeInfo,
-  findPfmeaMergeOwnerRow,
   resolvePfmeaBlockEndAnchorRow,
 } from '@/features/pfmea/pfmea-table-merge-utils'
 import {
@@ -1771,37 +1768,54 @@ function PfmeaFullPageContent() {
         >
           <tbody>
             {tableRows.map((r, rowIndex) => {
-                  const opNo = r.operations?.operation_number ?? null
-                  const station = r.operations?.machine ?? ''
-                  const operationName = r.operations?.operation ?? ''
-                  const step = r.operations?.name ?? ''
-                  const isPlaceholder = isPlaceholderRowId(r.id)
-
-                  const { currentRisk: a1, residualRisk: a2 } = computePfmeaDerivedFromContext(r)
-
-                  const risk1 = getRiskColorFor(a1.sev, a1.doVal)
-                  const risk2 = getRiskColorFor(a2.sev, a2.doVal)
-                  const failureModeOwnerRow = findPfmeaMergeOwnerRow(tableRows, rowIndex, failureModeMergeInfo) ?? r
-                  const failureBlockOwnerRow = findPfmeaMergeOwnerRow(tableRows, rowIndex, failureBlockMergeInfo) ?? r
-                  const actionPlanOwnerRow = findPfmeaMergeOwnerRow(tableRows, rowIndex, actionPlanBlockMergeInfo) ?? r
-                  const effectiveCurrentRow = applyPendingCellValues(r)
-                  const canAddFailureModeRow = hasPfmeaTextValue(applyPendingCellValues(failureModeOwnerRow).failure_mode)
-                  const canAddEffectRow = hasPfmeaTextValue(applyPendingCellValues(failureBlockOwnerRow).effect)
-                  const canAddCauseRow = hasPfmeaTextValue(applyPendingCellValues(actionPlanOwnerRow).cause)
-                  const canAddRecommendedActionRow = hasPfmeaTextValue(effectiveCurrentRow.recommended_action)
-                  const latestRowForHighlights = applyPendingCellValues(rowsRef.current.find((rowItem) => rowItem.id === r.id) ?? r)
-                  const effectiveFailureModeOwnerRow = applyPendingCellValues(failureModeOwnerRow)
-                  const effectiveFailureBlockOwnerRow = applyPendingCellValues(failureBlockOwnerRow)
-                  const effectiveActionPlanOwnerRow = applyPendingCellValues(actionPlanOwnerRow)
-                  const effectivePcpSourceRow = {
-                    ...effectiveCurrentRow,
-                    class: normalizeClassValue(effectiveFailureModeOwnerRow.class),
-                    severity: asInt1to10(effectiveFailureBlockOwnerRow.severity),
-                  } as PfmeaRow
-                  const pcpAutoReasons = getPfmeaPcpAutoReasons(effectivePcpSourceRow, risk1)
-                  const pcpChecked = isPfmeaSelectedForPcp(effectivePcpSourceRow, risk1)
-                  const pcpDisabled = readOnly || isPlaceholder || !hasFailureModeContext(effectiveFailureModeOwnerRow)
-                  const isMissingHighlighted = (col: keyof PfmeaRow) => isPfmeaCellHighlighted(highlightedMissingCells, r.id, col)
+                  const {
+                    actionPlanBlockSpan,
+                    actionPlanOwnerRow,
+                    canAddCauseRow,
+                    canAddEffectRow,
+                    canAddFailureModeRow,
+                    canAddRecommendedActionRow,
+                    currentRisk: a1,
+                    effectiveActionPlanOwnerRow,
+                    effectiveCurrentRow,
+                    effectiveFailureBlockOwnerRow,
+                    effectiveFailureModeOwnerRow,
+                    failureBlockOwnerRow,
+                    failureBlockSpan,
+                    failureModeOwnerRow,
+                    failureModeSpan,
+                    groupStart,
+                    isMissingHighlighted,
+                    isPlaceholder,
+                    latestRowForHighlights,
+                    operationName,
+                    opNo,
+                    pcpAutoReasons,
+                    pcpChecked,
+                    pcpDisabled,
+                    residualRisk: a2,
+                    riskRpn2Style,
+                    riskRpnStyle,
+                    rowNumber,
+                    span,
+                    station,
+                    step,
+                  } = buildPfmeaTableRowModel({
+                    actionPlanBlockMergeInfo,
+                    applyPendingCellValues,
+                    computeDerivedFromContext: computePfmeaDerivedFromContext,
+                    failureBlockMergeInfo,
+                    failureModeMergeInfo,
+                    getRiskColorFor,
+                    highlightedMissingCells,
+                    mergeInfo,
+                    readOnly,
+                    row: r,
+                    rowHierarchyById,
+                    rowIndex,
+                    sourceRows: rowsRef.current,
+                    tableRows,
+                  })
                   const runActionPlanStart = (targetCol: keyof PfmeaRow) => {
                     window.setTimeout(() => {
                       const latestRow = latestRowForHighlights
@@ -1828,29 +1842,6 @@ function PfmeaFullPageContent() {
                       setHighlightedMissingCells(highlightKeys)
                     }, 0)
                   }
-
-                  const riskRpnStyle: React.CSSProperties = {
-                    ...(risk1 ? { background: colorFill(risk1) } : {}),
-                    color: '#e1e5ec',
-                    fontSize: 16,
-                    fontWeight: 700,
-                  }
-                  const riskRpn2Style: React.CSSProperties = {
-                    ...(risk2 ? { background: colorFill(risk2) } : {}),
-                    color: '#e1e5ec',
-                    fontSize: 16,
-                    fontWeight: 700,
-                  }
-
-                  const prevOpNo = rowIndex > 0 ? tableRows[rowIndex - 1]?.operations?.operation_number ?? null : null
-                  const isFirstOfMergedRun = mergeInfo[rowIndex]?.span > 0
-                  const groupStart = isFirstOfMergedRun && rowIndex > 0 && opNo != null && prevOpNo != null && opNo !== prevOpNo
-
-                  const span = mergeInfo[rowIndex]?.span ?? 0
-                  const failureModeSpan = failureModeMergeInfo[rowIndex]?.span ?? 0
-                  const failureBlockSpan = failureBlockMergeInfo[rowIndex]?.span ?? 0
-                  const actionPlanBlockSpan = actionPlanBlockMergeInfo[rowIndex]?.span ?? 0
-                  const rowNumber = rowHierarchyById.get(r.id)?.rowLabel
 
                   return (
                     <tr
