@@ -94,6 +94,25 @@ const secondCauseRow = {
   created_at: '2026-05-16T10:00:01.000Z',
 }
 
+const secondActionRow = {
+  ...completeRiskRow,
+  id: 'row-2a',
+  row_no: '10.1.1.1.2',
+  effect: '',
+  severity: null,
+  cause: '',
+  occurrence: null,
+  current_prevention: '',
+  current_detection: '',
+  detection: null,
+  recommended_action: 'Action for same cause',
+  responsible: 'Owner',
+  action_status: 'CLOSED',
+  occurrence2: 2,
+  detection2: 3,
+  created_at: '2026-05-16T10:00:01.500Z',
+}
+
 const otherBlockRow = {
   ...completeRiskRow,
   id: 'row-3',
@@ -108,7 +127,7 @@ const otherBlockRow = {
   created_at: '2026-05-16T10:00:02.000Z',
 }
 
-const rows = [completeRiskRow, secondCauseRow, otherBlockRow]
+const rows = [completeRiskRow, secondActionRow, secondCauseRow, otherBlockRow]
 const applyPending = (row) => row
 
 const causeSource = getPfmeaCauseContinuationSourceRow(secondCauseRow, rows, applyPending)
@@ -117,11 +136,11 @@ assert.equal(causeSource.severity, 9)
 assert.equal(causeSource.cause, 'Second cause')
 assert.equal(causeSource.detection, 8)
 
-const actionSource = getPfmeaRecommendedActionContinuationSourceRow(secondCauseRow, rows, applyPending)
+const actionSource = getPfmeaRecommendedActionContinuationSourceRow(secondActionRow, rows, applyPending)
 assert.equal(actionSource.effect, 'Reduced insulation strength')
 assert.equal(actionSource.severity, 9)
-assert.equal(actionSource.cause, 'Second cause')
-assert.equal(actionSource.recommended_action, 'Action for second cause')
+assert.equal(actionSource.cause, 'Degassing skipped')
+assert.equal(actionSource.recommended_action, 'Action for same cause')
 
 const derived = computePfmeaDerivedFromContext(secondCauseRow, rows, applyPending)
 assert.equal(derived.currentRisk.rpn, 576)
@@ -135,7 +154,7 @@ assertJsonEqual(derived.derived, {
   oxd_current: 6,
 })
 
-const failureBlockSource = getPfmeaFailureBlockSourceRowAtIndex(1, rows, applyPending)
+const failureBlockSource = getPfmeaFailureBlockSourceRowAtIndex(2, rows, applyPending)
 assert.equal(failureBlockSource.id, 'row-1')
 
 console.log('pfmea row context utils smoke passed')
