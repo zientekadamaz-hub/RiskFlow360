@@ -46,7 +46,7 @@ import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-
 import {
   TdRead,
 } from '@/features/pfmea/pfmea-merged-cell'
-import { asInt1to10, calcRpn, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
+import { asInt1to10, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
 import { colorFill, type RiskColor } from '@/features/pfmea/pfmea-risk-matrix-config'
 import {
   hasFailureModeContext,
@@ -66,11 +66,8 @@ import {
   buildPfmeaHierarchy,
   createPfmeaGroupIds,
   isPlaceholderRowId,
-  normalizePfmeaGroupId,
   normalizePfmeaRowNo,
-  parsePfmeaRowNo,
   pickPfmeaGroupIds,
-  samePfmeaGroupValue,
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
@@ -85,6 +82,12 @@ import {
   opGroupKeyFromRow,
   opQualityScore,
 } from '@/features/pfmea/pfmea-operation-utils'
+import {
+  computePfmeaDerivedFromContext as computePfmeaDerivedFromRowContext,
+  getPfmeaCauseContinuationSourceRow,
+  getPfmeaFailureBlockSourceRowAtIndex,
+  getPfmeaRecommendedActionContinuationSourceRow,
+} from '@/features/pfmea/pfmea-row-context-utils'
 import { findEquivalentPfmeaRow } from '@/features/pfmea/pfmea-row-match-utils'
 import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
@@ -646,157 +649,19 @@ function PfmeaFullPageContent() {
   }
 
   function getCauseContinuationSourceRow(row: PfmeaRow) {
-    const effectiveRow = applyPendingCellValues(row)
-    if ((effectiveRow.effect ?? '').trim() && asInt1to10(effectiveRow.severity) != null) return effectiveRow
-
-    const opId = effectiveRow.operation_id || effectiveRow.operations?.id || null
-    const failureMode = (effectiveRow.failure_mode ?? '').trim()
-    const failureModeGroupId = normalizePfmeaGroupId(effectiveRow.failure_mode_group_id)
-    const failureBlockGroupId = normalizePfmeaGroupId(effectiveRow.failure_block_group_id)
-    const failureBlockKey = parsePfmeaRowNo(effectiveRow.row_no)?.failureBlockKey ?? null
-    const visibleRows = tableRows.filter((item) => {
-      if (isPlaceholderRowId(item.id)) return false
-      return (item.operation_id || item.operations?.id || null) === opId
-    })
-
-    const rowIndex = visibleRows.findIndex((item) => item.id === row.id)
-    if (rowIndex < 0) return effectiveRow
-
-    for (let i = rowIndex - 1; i >= 0; i -= 1) {
-      const candidate = applyPendingCellValues(visibleRows[i])
-      if (failureModeGroupId) {
-        if (!samePfmeaGroupValue(candidate.failure_mode_group_id, failureModeGroupId)) break
-      } else if ((candidate.failure_mode ?? '').trim() !== failureMode) {
-        break
-      }
-      if (failureBlockGroupId) {
-        if (!samePfmeaGroupValue(candidate.failure_block_group_id, failureBlockGroupId)) break
-      } else if (failureBlockKey && parsePfmeaRowNo(candidate.row_no)?.failureBlockKey !== failureBlockKey) {
-        break
-      }
-      if ((candidate.effect ?? '').trim() && asInt1to10(candidate.severity) != null) {
-        return {
-          ...candidate,
-          cause: effectiveRow.cause,
-          occurrence: effectiveRow.occurrence,
-          current_prevention: effectiveRow.current_prevention,
-          current_detection: effectiveRow.current_detection,
-          detection: effectiveRow.detection,
-        }
-      }
-    }
-
-    return effectiveRow
+    return getPfmeaCauseContinuationSourceRow(row, tableRows, applyPendingCellValues)
   }
 
   function getRecommendedActionContinuationSourceRow(row: PfmeaRow) {
-    const effectiveRow = applyPendingCellValues(row)
-    const hasCurrentRiskBlock =
-      !!(effectiveRow.effect ?? '').trim() &&
-      asInt1to10(effectiveRow.severity) != null &&
-      !!(effectiveRow.cause ?? '').trim() &&
-      asInt1to10(effectiveRow.occurrence) != null &&
-      !!(effectiveRow.current_prevention ?? '').trim() &&
-      !!(effectiveRow.current_detection ?? '').trim() &&
-      asInt1to10(effectiveRow.detection) != null
-
-    if (hasCurrentRiskBlock) return effectiveRow
-
-    const opId = effectiveRow.operation_id || effectiveRow.operations?.id || null
-    const failureMode = (effectiveRow.failure_mode ?? '').trim()
-    const failureModeGroupId = normalizePfmeaGroupId(effectiveRow.failure_mode_group_id)
-    const failureBlockGroupId = normalizePfmeaGroupId(effectiveRow.failure_block_group_id)
-    const actionPlanGroupId = normalizePfmeaGroupId(effectiveRow.action_plan_group_id)
-    const visibleRows = tableRows.filter((item) => {
-      if (isPlaceholderRowId(item.id)) return false
-      return (item.operation_id || item.operations?.id || null) === opId
-    })
-
-    const rowIndex = visibleRows.findIndex((item) => item.id === row.id)
-    if (rowIndex < 0) return effectiveRow
-
-    for (let i = rowIndex - 1; i >= 0; i -= 1) {
-      const candidate = applyPendingCellValues(visibleRows[i])
-      if (failureModeGroupId) {
-        if (!samePfmeaGroupValue(candidate.failure_mode_group_id, failureModeGroupId)) break
-      } else if ((candidate.failure_mode ?? '').trim() !== failureMode) {
-        break
-      }
-      if (failureBlockGroupId && !samePfmeaGroupValue(candidate.failure_block_group_id, failureBlockGroupId)) break
-      if (actionPlanGroupId && !samePfmeaGroupValue(candidate.action_plan_group_id, actionPlanGroupId)) break
-
-      const candidateHasCurrentRiskBlock =
-        !!(candidate.effect ?? '').trim() &&
-        asInt1to10(candidate.severity) != null &&
-        !!(candidate.cause ?? '').trim() &&
-        asInt1to10(candidate.occurrence) != null &&
-        !!(candidate.current_prevention ?? '').trim() &&
-        !!(candidate.current_detection ?? '').trim() &&
-        asInt1to10(candidate.detection) != null
-
-      if (candidateHasCurrentRiskBlock) {
-        return {
-          ...candidate,
-          recommended_action: effectiveRow.recommended_action,
-          responsible: effectiveRow.responsible,
-          target_date: effectiveRow.target_date,
-          action_status: effectiveRow.action_status,
-          occurrence2: effectiveRow.occurrence2,
-          detection2: effectiveRow.detection2,
-        }
-      }
-    }
-
-    return effectiveRow
+    return getPfmeaRecommendedActionContinuationSourceRow(row, tableRows, applyPendingCellValues)
   }
 
   function computePfmeaDerivedFromContext(row: PfmeaRow) {
-    const effectiveRow = applyPendingCellValues(row)
-    const currentRiskRow = getCauseContinuationSourceRow(effectiveRow)
-    const currentRisk = calcRpn(currentRiskRow.severity, currentRiskRow.occurrence, currentRiskRow.detection)
-    const residualRisk = calcRpn(currentRiskRow.severity, effectiveRow.occurrence2, effectiveRow.detection2)
-    const isClosed = (effectiveRow.action_status ?? '').toUpperCase() === 'CLOSED'
-
-    return {
-      currentRisk,
-      residualRisk,
-      derived: {
-        rpn: currentRisk.rpn ?? null,
-        oxd: currentRisk.doVal ?? null,
-        rpn2: residualRisk.rpn ?? null,
-        oxd2: residualRisk.doVal ?? null,
-        rpn_current: (isClosed ? residualRisk.rpn : currentRisk.rpn) ?? null,
-        oxd_current: (isClosed ? residualRisk.doVal : currentRisk.doVal) ?? null,
-      } as Pick<PfmeaRow, 'rpn' | 'oxd' | 'rpn2' | 'oxd2' | 'rpn_current' | 'oxd_current'>,
-    }
+    return computePfmeaDerivedFromRowContext(row, tableRows, applyPendingCellValues)
   }
 
   function getFailureBlockSourceRowAtIndex(rowIndex: number) {
-    const effectiveRow = applyPendingCellValues(tableRows[rowIndex] ?? ({} as PfmeaRow))
-    if ((effectiveRow.effect ?? '').trim() && asInt1to10(effectiveRow.severity) != null) return effectiveRow
-
-    const opId = effectiveRow.operation_id || effectiveRow.operations?.id || null
-    const failureMode = (effectiveRow.failure_mode ?? '').trim()
-    const failureModeGroupId = normalizePfmeaGroupId(effectiveRow.failure_mode_group_id)
-    const failureBlockGroupId = normalizePfmeaGroupId(effectiveRow.failure_block_group_id)
-    const failureBlockKey = parsePfmeaRowNo(effectiveRow.row_no)?.failureBlockKey ?? null
-    for (let i = rowIndex - 1; i >= 0; i -= 1) {
-      const candidate = applyPendingCellValues(tableRows[i] ?? ({} as PfmeaRow))
-      if ((candidate.operation_id || candidate.operations?.id || null) !== opId) break
-      if (failureModeGroupId) {
-        if (!samePfmeaGroupValue(candidate.failure_mode_group_id, failureModeGroupId)) break
-      } else if ((candidate.failure_mode ?? '').trim() !== failureMode) {
-        break
-      }
-      if (failureBlockGroupId) {
-        if (!samePfmeaGroupValue(candidate.failure_block_group_id, failureBlockGroupId)) break
-      } else if (failureBlockKey && parsePfmeaRowNo(candidate.row_no)?.failureBlockKey !== failureBlockKey) {
-        break
-      }
-      if ((candidate.effect ?? '').trim() && asInt1to10(candidate.severity) != null) return candidate
-    }
-
-    return effectiveRow
+    return getPfmeaFailureBlockSourceRowAtIndex(rowIndex, tableRows, applyPendingCellValues)
   }
 
   const resolveContinuationRowsForRevision = useCallback(
