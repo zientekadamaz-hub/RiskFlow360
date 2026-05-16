@@ -1638,12 +1638,18 @@ function PfmeaFullPageContent() {
           appearance: none !important;
         }
 
+        .pfmeaRow {
+          height: var(--pfmea-row-height, 56px);
+        }
+
         .pfmeaTd {
           padding:
             var(--pfmea-td-pad-top, 10px)
             10px
             var(--pfmea-td-pad-bottom, 10px)
             10px !important;
+          box-sizing: border-box;
+          height: var(--pfmea-row-height, 56px);
           vertical-align: middle;
           background: rgba(255,255,255,0.03);
           color: #e1e5ec;
@@ -1712,9 +1718,25 @@ function PfmeaFullPageContent() {
         .pfmeaTextCellShell {
           position: relative;
           width: 100%;
+          min-height: calc(var(--pfmea-row-height, 56px) - var(--pfmea-td-pad-top, 10px) - var(--pfmea-td-pad-bottom, 10px));
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         .pfmeaTextCellContent {
           width: 100%;
+          min-height: calc(var(--pfmea-row-height, 56px) - var(--pfmea-td-pad-top, 10px) - var(--pfmea-td-pad-bottom, 10px));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .pfmeaTextCellContent > span {
+          display: block;
+          width: 100%;
+        }
+        .pfmeaTextCellContent .pfmeaEditor {
+          min-height: calc(var(--pfmea-row-height, 56px) - var(--pfmea-td-pad-top, 10px) - var(--pfmea-td-pad-bottom, 10px)) !important;
+          display: block;
         }
         .pfmeaTextCellShell.hasSideAction .pfmeaTextCellContent {
           padding-left: 34px;
