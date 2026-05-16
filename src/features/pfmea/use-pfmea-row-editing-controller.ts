@@ -2,11 +2,17 @@ import { useCallback } from 'react'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { patchHasAnyValue } from './pfmea-continuation-utils'
+import { hasFailureModeContext, hasPfmeaTextValue, patchHasAnyValue } from './pfmea-continuation-utils'
 import { buildPfmeaPendingEditablePatch, buildPfmeaPlaceholderInsertPayload, normalizePfmeaEditablePatch } from './pfmea-cell-edit-utils'
 import { isPlaceholderRowId, normalizePfmeaRowNo, type PfmeaRowHierarchy } from './pfmea-hierarchy-utils'
 import { stripPfmeaGroupIdsFromPayload } from './pfmea-payload-utils'
 import { findEquivalentPfmeaRow } from './pfmea-row-match-utils'
+import {
+  buildPfmeaCauseContinuationInsertPayload,
+  buildPfmeaEffectContinuationInsertPayload,
+  buildPfmeaFailureModeContinuationInsertPayload,
+  buildPfmeaRecommendedActionContinuationInsertPayload,
+} from './pfmea-row-insert-payload-utils'
 import { insertPfmeaRowAtSortIndex } from './pfmea-row-order-utils'
 import { getPfmeaTransientRowKind, isPfmeaTransientRowEmpty } from './pfmea-transient-row-utils'
 import type { PfmeaRow, ProjectView } from './pfmea-types'
@@ -14,6 +20,11 @@ import type { PfmeaRow, ProjectView } from './pfmea-types'
 export type PfmeaEditCell = { rowId: string; col: keyof PfmeaRow } | null
 
 type ClearPendingCellValuesForRow = (rowId: string, options?: { refresh?: boolean }) => void
+type ResolveContinuationRowsForRevision = (
+  row: PfmeaRow,
+  anchorRow: PfmeaRow,
+  revisionId: string
+) => Promise<{ row: PfmeaRow; anchorRow: PfmeaRow }>
 
 function errorMessage(error: unknown) {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
@@ -28,6 +39,10 @@ export type UsePfmeaRowEditingControllerParams = {
   computeDerivedForRow: (row: PfmeaRow) => Partial<PfmeaRow>
   draftRevisionIdOverride: string | null
   ensureDraftIfNeeded: () => Promise<string | null>
+  commitInsertedPfmeaRow: (finalRevisionId: string, anchorRowId: string, nextRow: PfmeaRow) => PfmeaRow[]
+  getCauseContinuationSourceRow: (row: PfmeaRow) => PfmeaRow
+  getInsertedCreatedAtForAnchor: (anchorRow: PfmeaRow) => string
+  getRecommendedActionContinuationSourceRow: (row: PfmeaRow) => PfmeaRow
   loadAll: (forceRevisionId?: string | null) => Promise<void>
   markPfmeaDirty: (id: string) => void
   pfmeaGroupIdsSupportedRef: MutableRefObject<boolean | null>
@@ -38,6 +53,7 @@ export type UsePfmeaRowEditingControllerParams = {
   rowHierarchyByIdRef: MutableRefObject<Map<string, PfmeaRowHierarchy>>
   rowsRef: MutableRefObject<PfmeaRow[]>
   runPendingCellUpdate: (task: Promise<void>) => Promise<void>
+  resolveContinuationRowsForRevision: ResolveContinuationRowsForRevision
   setEdit: Dispatch<SetStateAction<PfmeaEditCell>>
   setErr: Dispatch<SetStateAction<string>>
   setExpandedOperationId: Dispatch<SetStateAction<string | null>>
@@ -55,8 +71,12 @@ export function usePfmeaRowEditingController(params: UsePfmeaRowEditingControlle
     applyPendingCellValues,
     clearPendingCellValuesForRow,
     computeDerivedForRow,
+    commitInsertedPfmeaRow,
     draftRevisionIdOverride,
     ensureDraftIfNeeded,
+    getCauseContinuationSourceRow,
+    getInsertedCreatedAtForAnchor,
+    getRecommendedActionContinuationSourceRow,
     loadAll,
     markPfmeaDirty,
     pfmeaGroupIdsSupportedRef,
@@ -67,6 +87,7 @@ export function usePfmeaRowEditingController(params: UsePfmeaRowEditingControlle
     rowHierarchyByIdRef,
     rowsRef,
     runPendingCellUpdate,
+    resolveContinuationRowsForRevision,
     setEdit,
     setErr,
     setExpandedOperationId,
@@ -343,7 +364,281 @@ export function usePfmeaRowEditingController(params: UsePfmeaRowEditingControlle
     [applyPendingCellValues, draftRevisionIdOverride, ensureRowForEditing, rowsRef, workingRevisionId]
   )
 
+  const addCauseContinuationRow = useCallback(
+    async (row: PfmeaRow, anchorRow: PfmeaRow = row) => {
+      if (readOnly || isPlaceholderRowId(row.id)) return
+      setErr('')
+
+      try {
+        const effectiveRow = applyPendingCellValues(row)
+        if (!hasPfmeaTextValue(effectiveRow.cause)) {
+          setEdit({ rowId: row.id, col: 'cause' })
+          return
+        }
+
+        const revId = await ensureDraftIfNeeded()
+        const finalRev = revId ?? workingRevisionId
+        if (!finalRev) throw new Error('No working revision found.')
+
+        const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
+        const targetSourceRow = getCauseContinuationSourceRow(targetRow)
+        const opId = targetRow.operation_id || targetRow.operations?.id || null
+        const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
+        const payload = buildPfmeaCauseContinuationInsertPayload(targetRow, targetSourceRow, finalRev, insertedCreatedAt)
+
+        const insertRes = await supabase
+          .from('pfmea_rows')
+          .insert([
+            pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload,
+          ])
+          .select('id')
+          .single()
+        if (insertRes.error) throw insertRes.error
+
+        const newId = insertRes.data?.id
+        if (!newId) throw new Error('Failed to create PFMEA row.')
+
+        markPfmeaDirty(newId)
+        transientCauseContinuationIdsRef.current.add(newId)
+        setExpandedOperationId(opId)
+        const nextRow = {
+          ...targetSourceRow,
+          ...payload,
+          id: newId,
+          revision_id: finalRev,
+          created_at: insertedCreatedAt,
+          __sortIndex: targetAnchorRow.__sortIndex,
+        } as PfmeaRow
+        commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
+        setEdit({ rowId: newId, col: 'cause' })
+      } catch (e: unknown) {
+        setErr(errorMessage(e))
+      }
+    },
+    [
+      applyPendingCellValues,
+      commitInsertedPfmeaRow,
+      ensureDraftIfNeeded,
+      getCauseContinuationSourceRow,
+      getInsertedCreatedAtForAnchor,
+      markPfmeaDirty,
+      pfmeaGroupIdsSupportedRef,
+      readOnly,
+      resolveContinuationRowsForRevision,
+      setEdit,
+      setErr,
+      setExpandedOperationId,
+      supabase,
+      transientCauseContinuationIdsRef,
+      workingRevisionId,
+    ]
+  )
+
+  const addFailureModeContinuationRow = useCallback(
+    async (row: PfmeaRow, anchorRow: PfmeaRow = row) => {
+      if (readOnly || isPlaceholderRowId(row.id)) return
+      setErr('')
+
+      try {
+        const revId = await ensureDraftIfNeeded()
+        const finalRev = revId ?? workingRevisionId
+        if (!finalRev) throw new Error('No working revision found.')
+
+        const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
+        const opId = targetRow.operation_id || targetRow.operations?.id || null
+        const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
+        const payload = buildPfmeaFailureModeContinuationInsertPayload(targetRow, finalRev, insertedCreatedAt)
+
+        const insertRes = await supabase
+          .from('pfmea_rows')
+          .insert([
+            pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload,
+          ])
+          .select('id')
+          .single()
+        if (insertRes.error) throw insertRes.error
+
+        const newId = insertRes.data?.id
+        if (!newId) throw new Error('Failed to create PFMEA row.')
+
+        markPfmeaDirty(newId)
+        transientFailureModeContinuationIdsRef.current.add(newId)
+        setExpandedOperationId(opId)
+        const nextRow = {
+          ...targetRow,
+          ...payload,
+          id: newId,
+          revision_id: finalRev,
+          created_at: insertedCreatedAt,
+          __sortIndex: targetAnchorRow.__sortIndex,
+        } as PfmeaRow
+        commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
+        setEdit({ rowId: newId, col: 'failure_mode' })
+      } catch (e: unknown) {
+        setErr(errorMessage(e))
+      }
+    },
+    [
+      commitInsertedPfmeaRow,
+      ensureDraftIfNeeded,
+      getInsertedCreatedAtForAnchor,
+      markPfmeaDirty,
+      pfmeaGroupIdsSupportedRef,
+      readOnly,
+      resolveContinuationRowsForRevision,
+      setEdit,
+      setErr,
+      setExpandedOperationId,
+      supabase,
+      transientFailureModeContinuationIdsRef,
+      workingRevisionId,
+    ]
+  )
+
+  const addEffectContinuationRow = useCallback(
+    async (row: PfmeaRow, anchorRow: PfmeaRow = row) => {
+      if (readOnly || isPlaceholderRowId(row.id)) return
+      setErr('')
+
+      try {
+        const effectiveRow = applyPendingCellValues(row)
+        if (!hasFailureModeContext(effectiveRow)) {
+          setEdit({ rowId: row.id, col: 'failure_mode' })
+          return
+        }
+
+        const revId = await ensureDraftIfNeeded()
+        const finalRev = revId ?? workingRevisionId
+        if (!finalRev) throw new Error('No working revision found.')
+
+        const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
+        const targetEffectiveRow = applyPendingCellValues(targetRow)
+        const opId = targetRow.operation_id || targetRow.operations?.id || null
+        const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
+        const payload = buildPfmeaEffectContinuationInsertPayload(targetRow, targetEffectiveRow, finalRev, insertedCreatedAt)
+
+        const insertRes = await supabase
+          .from('pfmea_rows')
+          .insert([
+            pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload,
+          ])
+          .select('id')
+          .single()
+        if (insertRes.error) throw insertRes.error
+
+        const newId = insertRes.data?.id
+        if (!newId) throw new Error('Failed to create PFMEA row.')
+
+        markPfmeaDirty(newId)
+        transientEffectContinuationIdsRef.current.add(newId)
+        setExpandedOperationId(opId)
+        const nextRow = {
+          ...targetRow,
+          ...payload,
+          id: newId,
+          revision_id: finalRev,
+          created_at: insertedCreatedAt,
+          __sortIndex: targetAnchorRow.__sortIndex,
+        } as PfmeaRow
+        commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
+        setEdit({ rowId: newId, col: 'effect' })
+      } catch (e: unknown) {
+        setErr(errorMessage(e))
+      }
+    },
+    [
+      applyPendingCellValues,
+      commitInsertedPfmeaRow,
+      ensureDraftIfNeeded,
+      getInsertedCreatedAtForAnchor,
+      markPfmeaDirty,
+      pfmeaGroupIdsSupportedRef,
+      readOnly,
+      resolveContinuationRowsForRevision,
+      setEdit,
+      setErr,
+      setExpandedOperationId,
+      supabase,
+      transientEffectContinuationIdsRef,
+      workingRevisionId,
+    ]
+  )
+
+  const addRecommendedActionContinuationRow = useCallback(
+    async (row: PfmeaRow, anchorRow: PfmeaRow = row) => {
+      if (readOnly || isPlaceholderRowId(row.id)) return
+      setErr('')
+
+      try {
+        const effectiveRow = applyPendingCellValues(row)
+        if (!hasPfmeaTextValue(effectiveRow.recommended_action)) {
+          setEdit({ rowId: row.id, col: 'recommended_action' })
+          return
+        }
+
+        const revId = await ensureDraftIfNeeded()
+        const finalRev = revId ?? workingRevisionId
+        if (!finalRev) throw new Error('No working revision found.')
+
+        const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
+        const targetSourceRow = getRecommendedActionContinuationSourceRow(targetRow)
+        const opId = targetRow.operation_id || targetRow.operations?.id || null
+        const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
+        const payload = buildPfmeaRecommendedActionContinuationInsertPayload(targetRow, targetSourceRow, finalRev, insertedCreatedAt)
+
+        const insertRes = await supabase
+          .from('pfmea_rows')
+          .insert([
+            pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload,
+          ])
+          .select('id')
+          .single()
+        if (insertRes.error) throw insertRes.error
+
+        const newId = insertRes.data?.id
+        if (!newId) throw new Error('Failed to create PFMEA row.')
+
+        markPfmeaDirty(newId)
+        transientRecommendedActionContinuationIdsRef.current.add(newId)
+        setExpandedOperationId(opId)
+        const nextRow = {
+          ...targetSourceRow,
+          ...payload,
+          id: newId,
+          revision_id: finalRev,
+          created_at: insertedCreatedAt,
+          __sortIndex: targetAnchorRow.__sortIndex,
+        } as PfmeaRow
+        commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
+        setEdit({ rowId: newId, col: 'recommended_action' })
+      } catch (e: unknown) {
+        setErr(errorMessage(e))
+      }
+    },
+    [
+      applyPendingCellValues,
+      commitInsertedPfmeaRow,
+      ensureDraftIfNeeded,
+      getInsertedCreatedAtForAnchor,
+      getRecommendedActionContinuationSourceRow,
+      markPfmeaDirty,
+      pfmeaGroupIdsSupportedRef,
+      readOnly,
+      resolveContinuationRowsForRevision,
+      setEdit,
+      setErr,
+      setExpandedOperationId,
+      supabase,
+      transientRecommendedActionContinuationIdsRef,
+      workingRevisionId,
+    ]
+  )
+
   return {
+    addCauseContinuationRow,
+    addEffectContinuationRow,
+    addFailureModeContinuationRow,
+    addRecommendedActionContinuationRow,
     ensureRowForEditing,
     materializePlaceholderRowForAdd,
     startEditCell,
