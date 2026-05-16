@@ -4,7 +4,6 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
-import { isTimeoutError } from '@/lib/error-utils'
 import { CLASS_OPTIONS, TdClassSelect } from '@/features/pfmea/pfmea-class-select-cell'
 import {
   PFMEA_COLUMNS,
@@ -71,7 +70,6 @@ import {
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
-  buildPfmeaRowsWithStableOrderMetadata,
   insertPfmeaRowAfterAnchor,
   insertPfmeaRowAtSortIndex,
   reindexPfmeaRows,
@@ -88,17 +86,7 @@ import { findEquivalentPfmeaRow } from '@/features/pfmea/pfmea-row-match-utils'
 import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
 import { hydratePfmeaGroupIds } from '@/features/pfmea/pfmea-row-normalization-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
-import { createPfmeaSaveTimingLogger } from '@/features/pfmea/pfmea-save-timing-utils'
-import { resolvePfmeaSaveDraftRevisionId } from '@/features/pfmea/pfmea-revision-utils'
-import {
-  commitPfmeaEditorBeforeSave,
-  completePfmeaPostPublish,
-  ensurePublishedPfmeaIntegrityAfterSave,
-  fetchAuthenticatedPfmeaSaveUserId,
-  persistPfmeaDraftSnapshotAfterSave,
-  remapPfmeaSnapshotRowsToRevisionAfterSave,
-  syncPublishedPfmeaRowMetadataAfterSave,
-} from '@/features/pfmea/pfmea-save-orchestration'
+import { usePfmeaSaveRevision } from '@/features/pfmea/use-pfmea-save-revision'
 import {
   PFMEA_CLONE_FIELDS,
   PFMEA_CLONE_FIELDS_LEGACY,
@@ -108,7 +96,6 @@ import {
   stripPfmeaGroupIdsFromPayload,
 } from '@/features/pfmea/pfmea-payload-utils'
 import {
-  cleanupPfmeaAfterSuccessfulPublish,
   deletePfmeaEditSession,
   deletePfmeaRowsByRevision,
   ensurePfmeaProcessDraft,
@@ -116,12 +103,9 @@ import {
   fetchPfmeaCurrentDraftRevisionId,
   fetchPfmeaEditSession,
   fetchPfmeaProjectRole,
-  fetchPfmeaRowsForRevision,
   fetchPfmeaProjectView,
   fetchPfmeaRevisionHistory,
   persistPfmeaRowOrderMetadata,
-  publishPfmeaRevisionWithHistory,
-  restorePfmeaRowsSnapshotToRevision,
   startPfmeaEditSession,
   type PfmeaRowOrderUpdate,
   type PfmeaEditSession,
@@ -1724,209 +1708,6 @@ useEffect(() => {
     await runPendingCellUpdate(task)
   }
 
-  const fetchPfmeaRowsForRevisionScope = useCallback(async (revisionId: string, operationIds?: string[]) => {
-    const result = await fetchPfmeaRowsForRevision<PfmeaRow>(supabase, {
-      groupIdsSupported: pfmeaGroupIdsSupportedRef.current,
-      operationIds,
-      revisionId,
-    })
-    pfmeaGroupIdsSupportedRef.current = result.groupIdsSupported
-    return hydratePfmeaGroupIds(result.rows)
-  }, [])
-
-  async function remapPfmeaSnapshotRowsToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
-    return remapPfmeaSnapshotRowsToRevisionAfterSave({
-      fetchRowsForRevisionScope: fetchPfmeaRowsForRevisionScope,
-      revisionId,
-      sourceRows,
-    })
-  }
-
-  async function restorePfmeaSnapshotToRevision(revisionId: string, sourceRows: PfmeaRow[]) {
-    const result = await restorePfmeaRowsSnapshotToRevision<PfmeaRow>(supabase, {
-      groupIdsSupported: pfmeaGroupIdsSupportedRef.current,
-      revisionId,
-      sourceRows,
-    })
-    pfmeaGroupIdsSupportedRef.current = result.groupIdsSupported
-    return hydratePfmeaGroupIds(result.rows)
-  }
-
-  async function ensurePublishedPfmeaIntegrity(revisionId: string, sourceRows: PfmeaRow[]) {
-    return ensurePublishedPfmeaIntegrityAfterSave({
-      fetchRowsForRevisionScope: fetchPfmeaRowsForRevisionScope,
-      restoreSnapshotToRevision: restorePfmeaSnapshotToRevision,
-      revisionId,
-      sourceRows,
-    })
-  }
-
-  async function persistPfmeaDraftSnapshot(revisionId: string, sourceRows: PfmeaRow[]) {
-    const mappedSnapshotRows = await persistPfmeaDraftSnapshotAfterSave({
-      applyPendingCellValues,
-      computeDerivedForRow: (row) => computePfmeaDerivedFromContext(row).derived,
-      dirtyIds: dirtyPfmeaIds,
-      groupIdsSupported: pfmeaGroupIdsSupportedRef.current,
-      remapRowsToRevision: remapPfmeaSnapshotRowsToRevision,
-      revisionId,
-      sourceRows,
-      supabase,
-    })
-
-    rowsRef.current = mappedSnapshotRows
-    setRows(mappedSnapshotRows)
-    return mappedSnapshotRows
-  }
-
-  async function handleSaveRevision() {
-    if (saveBusy) return
-    setErr('')
-
-    if (!isDirty) {
-      setShowSave(false)
-      return
-    }
-
-    const desc = changeDesc.trim()
-    if (!desc) {
-      setErr('Change description is required.')
-      return
-    }
-
-    const saveTiming = createPfmeaSaveTimingLogger()
-
-    try {
-      setSaveBusy(true)
-      const uid = await fetchAuthenticatedPfmeaSaveUserId(supabase)
-      saveTiming.mark('auth session')
-
-      const draftRevisionId = resolvePfmeaSaveDraftRevisionId({
-        currentDraftRevisionId: project?.current_draft_revision_id,
-        currentOpenRevisionId: project?.current_open_revision_id,
-        draftRevisionIdOverride,
-        workingRevisionId,
-      })
-      if (!draftRevisionId) throw new Error('No draft revision found.')
-
-      await commitPfmeaEditorBeforeSave(editorRef.current)
-      saveTiming.mark('editor commit')
-
-      await flushPendingCellUpdates()
-      saveTiming.mark('flush cell updates')
-      await flushPendingTransientDeletes()
-      saveTiming.mark('flush transient deletes')
-      const cleanedRows = await cleanupEmptyTransientRows()
-      saveTiming.mark('cleanup empty transient rows')
-      const persistedRows = await persistPfmeaDraftSnapshot(draftRevisionId, cleanedRows)
-      saveTiming.mark('persist dirty draft rows')
-      const persistedRowsForOrder = persistedRows.filter((row) => !row.revision_id || row.revision_id === draftRevisionId)
-      const { orderedRows: orderedPersistedRows, updates: orderedPersistedUpdates } =
-        buildPfmeaRowsWithStableOrderMetadata(persistedRowsForOrder)
-      await persistPfmeaRowOrder(draftRevisionId, persistedRowsForOrder, orderedPersistedUpdates)
-      saveTiming.mark('persist row order metadata')
-      rowsRef.current = orderedPersistedRows
-      setRows(orderedPersistedRows)
-
-      const avgRpnValue = avgRpnSummary.avg == null ? null : Math.round(avgRpnSummary.avg * 100) / 100
-      const historyAuthor = currentAuthorName || 'Unknown user'
-      const publishResultWithHistory = await publishPfmeaRevisionWithHistory(supabase, {
-        authorName: historyAuthor,
-        avgRpn: avgRpnValue,
-        changeDescription: desc,
-        projectId,
-        riskCount: rowsSorted.length,
-        userId: uid,
-      })
-      if (!publishResultWithHistory.usedFallback) {
-        saveTiming.mark('publish revision and history rpc')
-      } else {
-        saveTiming.mark('publish revision rpc fallback')
-      }
-
-      const {
-        data,
-        integrityWarning,
-        postPublishWarning,
-        publishedRevisionId,
-      } = await completePfmeaPostPublish({
-        avgRpn: avgRpnValue,
-        changeDescription: desc,
-        draftRevisionId,
-        ensurePublishedIntegrity: ensurePublishedPfmeaIntegrity,
-        historyAuthor,
-        mark: saveTiming.mark,
-        orderedPersistedRows,
-        projectId,
-        publishResultWithHistory,
-        reloadProjectView: () => loadProjectView({ syncDraftOverride: false }),
-        riskCount: rowsSorted.length,
-        supabase,
-        syncPublishedRowMetadata: syncPublishedPfmeaRowMetadata,
-        userId: uid,
-      })
-
-      setShowSave(false)
-      setChangeDesc('')
-      setDirtyPfmeaIds([])
-      setDeletedPfmeaIds([])
-      clearDirtyDraftPersisted()
-      setDraftRevisionIdOverride(null)
-      resetPfmeaEditRuntimeState()
-      const cleanupResult = await cleanupPfmeaAfterSuccessfulPublish(supabase, {
-        draftRevisionId,
-        projectId,
-        publishedRevisionId,
-        userId,
-      })
-      if (cleanupResult.draftCleanupAttempted) saveTiming.mark('cleanup old draft rows')
-      if (cleanupResult.editSessionDeleted) saveTiming.mark('cleanup edit session')
-      setEditSession(null)
-      forceRefreshExistingDraftFromOpenRef.current = false
-
-      if (data) console.log('Published PFMEA revision id:', data)
-
-      try {
-        await loadProjectView({ syncDraftOverride: false })
-      } catch (projectReloadError: any) {
-        console.warn('PFMEA project view refresh skipped:', projectReloadError?.message ?? String(projectReloadError))
-      }
-      saveTiming.mark('reload project view')
-      await loadRevisionHistory()
-      saveTiming.mark('reload revision history')
-      if (integrityWarning) {
-        setErr(integrityWarning)
-      } else if (postPublishWarning) {
-        setErr(postPublishWarning)
-      }
-      saveTiming.log('success')
-    } catch (e: any) {
-      console.error('PFMEA save failed:', e)
-      saveTiming.log('failed')
-      setErr(
-        isTimeoutError(e)
-          ? 'PFMEA save timed out while the database was processing the revision. The save path has been optimized; please try again. If it repeats, contact an administrator.'
-          : e?.message ?? String(e)
-      )
-    } finally {
-      setSaveBusy(false)
-    }
-  }
-
-  const syncPublishedPfmeaRowMetadata = useCallback(
-    async (revisionId: string, sourceRows: PfmeaRow[]) => {
-      await syncPublishedPfmeaRowMetadataAfterSave({
-        draftRevisionIdOverride,
-        fetchRowsForRevisionScope: fetchPfmeaRowsForRevisionScope,
-        groupIdsSupported: pfmeaGroupIdsSupportedRef.current,
-        revisionId,
-        sourceRows,
-        supabase,
-        workingRevisionId,
-      })
-    },
-    [draftRevisionIdOverride, workingRevisionId, fetchPfmeaRowsForRevisionScope]
-  )
-
   const ensureRowForEditing = useCallback(
     async (row: PfmeaRow) => {
       if (!isPlaceholderRowId(row.id)) return row.id
@@ -2280,6 +2061,45 @@ useEffect(() => {
     return { avg, color, count: values.length, buckets }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowsSorted, getRiskColorFor, getRiskColorForAverageRpn])
+
+  const { handleSaveRevision } = usePfmeaSaveRevision({
+    applyPendingCellValues,
+    avgRpn: avgRpnSummary.avg == null ? null : Math.round(avgRpnSummary.avg * 100) / 100,
+    changeDesc,
+    cleanupEmptyTransientRows,
+    clearDirtyDraftPersisted,
+    computeDerivedForRow: (row) => computePfmeaDerivedFromContext(row).derived,
+    currentAuthorName,
+    dirtyPfmeaIds,
+    draftRevisionIdOverride,
+    editorRef,
+    flushPendingCellUpdates,
+    flushPendingTransientDeletes,
+    forceRefreshExistingDraftFromOpenRef,
+    groupIdsSupportedRef: pfmeaGroupIdsSupportedRef,
+    isDirty,
+    loadProjectView,
+    loadRevisionHistory,
+    persistPfmeaRowOrder,
+    project,
+    projectId,
+    resetPfmeaEditRuntimeState,
+    riskCount: rowsSorted.length,
+    rowsRef,
+    saveBusy,
+    setChangeDesc,
+    setDeletedPfmeaIds,
+    setDirtyPfmeaIds,
+    setDraftRevisionIdOverride,
+    setEditSession,
+    setErr,
+    setRows,
+    setSaveBusy,
+    setShowSave,
+    supabase,
+    userId,
+    workingRevisionId,
+  })
 
   const tableRowsMemo = useRef<PfmeaRow[]>([])
   useEffect(() => {
