@@ -41,6 +41,16 @@ export function insertPfmeaRowAfterAnchor<T extends PfmeaOrderRow>(prev: T[], an
   return reindexPfmeaRows(next)
 }
 
+export function insertPfmeaRowAfterAnchorWithFallback<T extends PfmeaOrderRow>(
+  prev: T[],
+  fallback: T[],
+  anchorRowId: string,
+  nextRow: T
+) {
+  const baseRows = prev.some((item) => item.id === anchorRowId) ? prev : fallback.some((item) => item.id === anchorRowId) ? fallback : prev
+  return insertPfmeaRowAfterAnchor(baseRows, anchorRowId, nextRow)
+}
+
 export function insertPfmeaRowAtSortIndex<T extends PfmeaOrderRow>(prev: T[], nextRow: T, sortIndex: number | undefined) {
   const normalized = reindexPfmeaRows(prev)
   const safeIndex = Number.isFinite(sortIndex) ? Math.max(0, Math.min(Math.trunc(sortIndex as number), normalized.length)) : normalized.length

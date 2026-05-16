@@ -37,6 +37,7 @@ const {
   getPfmeaRowOperationId,
   getPfmeaRowOperationIds,
   insertPfmeaRowAfterAnchor,
+  insertPfmeaRowAfterAnchorWithFallback,
   insertPfmeaRowAtSortIndex,
   reindexPfmeaRows,
   sortPfmeaRows,
@@ -59,6 +60,18 @@ assertJsonEqual(
 assertJsonEqual(
   insertPfmeaRowAfterAnchor(rows, 'a', { id: 'x', operation_id: 'op1', operations: { id: 'op1', operation_number: 10 } }).map((row) => row.id),
   ['b', 'a', 'x', 'c']
+)
+assertJsonEqual(
+  insertPfmeaRowAfterAnchorWithFallback(
+    [{ id: 'open-a', operation_id: 'op1', operations: { id: 'op1', operation_number: 10 } }],
+    [
+      { id: 'draft-a', operation_id: 'op1', operations: { id: 'op1', operation_number: 10 } },
+      { id: 'draft-b', operation_id: 'op1', operations: { id: 'op1', operation_number: 10 } },
+    ],
+    'draft-a',
+    { id: 'draft-x', operation_id: 'op1', operations: { id: 'op1', operation_number: 10 } }
+  ).map((row) => row.id),
+  ['draft-a', 'draft-x', 'draft-b']
 )
 assertJsonEqual(
   insertPfmeaRowAtSortIndex(rows, { id: 'y', operation_id: 'op1', operations: { id: 'op1', operation_number: 10 } }, 1).map((row) => row.id),

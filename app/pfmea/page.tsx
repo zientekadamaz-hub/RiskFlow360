@@ -71,7 +71,7 @@ import {
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
-  insertPfmeaRowAfterAnchor,
+  insertPfmeaRowAfterAnchorWithFallback,
   insertPfmeaRowAtSortIndex,
   reindexPfmeaRows,
   sortPfmeaRows,
@@ -607,7 +607,8 @@ function PfmeaFullPageContent() {
 
   function getInsertedCreatedAtForAnchor(anchorRow: PfmeaRow) {
     const opId = anchorRow.operation_id || anchorRow.operations?.id || null
-    const visibleRows = tableRows.filter((item) => {
+    const sourceRows = tableRows.some((item) => item.id === anchorRow.id) ? tableRows : sortPfmeaRows(rowsRef.current)
+    const visibleRows = sourceRows.filter((item) => {
       if (isPlaceholderRowId(item.id)) return false
       return (item.operation_id || item.operations?.id || null) === opId
     })
@@ -860,18 +861,19 @@ function PfmeaFullPageContent() {
       markPfmeaDirty(newId)
       transientCauseContinuationIdsRef.current.add(newId)
       setExpandedOperationId(opId)
-      setRows((prev) => {
-        const nextRow = {
-          ...targetSourceRow,
-          ...payload,
-          id: newId,
-          revision_id: finalRev,
-          created_at: insertedCreatedAt,
-          __sortIndex: targetAnchorRow.__sortIndex,
-        } as PfmeaRow
-        const nextRows = insertPfmeaRowAfterAnchor(prev, targetAnchorRow.id, nextRow)
-        rowsRef.current = nextRows
-        return nextRows
+      const nextRow = {
+        ...targetSourceRow,
+        ...payload,
+        id: newId,
+        revision_id: finalRev,
+        created_at: insertedCreatedAt,
+        __sortIndex: targetAnchorRow.__sortIndex,
+      } as PfmeaRow
+      const nextRows = insertPfmeaRowAfterAnchorWithFallback(rowsRef.current, rowsRef.current, targetAnchorRow.id, nextRow)
+      rowsRef.current = nextRows
+      setRows(nextRows)
+      void persistPfmeaRowOrder(finalRev, nextRows).catch((error: unknown) => {
+        setErr(error instanceof Error ? error.message : String(error))
       })
       setEdit({ rowId: newId, col: 'cause' })
     } catch (e: any) {
@@ -910,18 +912,19 @@ function PfmeaFullPageContent() {
       markPfmeaDirty(newId)
       transientFailureModeContinuationIdsRef.current.add(newId)
       setExpandedOperationId(opId)
-      setRows((prev) => {
-        const nextRow = {
-          ...targetRow,
-          ...payload,
-          id: newId,
-          revision_id: finalRev,
-          created_at: insertedCreatedAt,
-          __sortIndex: targetAnchorRow.__sortIndex,
-        } as PfmeaRow
-        const nextRows = insertPfmeaRowAfterAnchor(prev, targetAnchorRow.id, nextRow)
-        rowsRef.current = nextRows
-        return nextRows
+      const nextRow = {
+        ...targetRow,
+        ...payload,
+        id: newId,
+        revision_id: finalRev,
+        created_at: insertedCreatedAt,
+        __sortIndex: targetAnchorRow.__sortIndex,
+      } as PfmeaRow
+      const nextRows = insertPfmeaRowAfterAnchorWithFallback(rowsRef.current, rowsRef.current, targetAnchorRow.id, nextRow)
+      rowsRef.current = nextRows
+      setRows(nextRows)
+      void persistPfmeaRowOrder(finalRev, nextRows).catch((error: unknown) => {
+        setErr(error instanceof Error ? error.message : String(error))
       })
       setEdit({ rowId: newId, col: 'failure_mode' })
     } catch (e: any) {
@@ -976,18 +979,19 @@ function PfmeaFullPageContent() {
       markPfmeaDirty(newId)
       transientEffectContinuationIdsRef.current.add(newId)
       setExpandedOperationId(opId)
-      setRows((prev) => {
-        const nextRow = {
-          ...targetRow,
-          ...payload,
-          id: newId,
-          revision_id: finalRev,
-          created_at: insertedCreatedAt,
-          __sortIndex: targetAnchorRow.__sortIndex,
-        } as PfmeaRow
-        const nextRows = insertPfmeaRowAfterAnchor(prev, targetAnchorRow.id, nextRow)
-        rowsRef.current = nextRows
-        return nextRows
+      const nextRow = {
+        ...targetRow,
+        ...payload,
+        id: newId,
+        revision_id: finalRev,
+        created_at: insertedCreatedAt,
+        __sortIndex: targetAnchorRow.__sortIndex,
+      } as PfmeaRow
+      const nextRows = insertPfmeaRowAfterAnchorWithFallback(rowsRef.current, rowsRef.current, targetAnchorRow.id, nextRow)
+      rowsRef.current = nextRows
+      setRows(nextRows)
+      void persistPfmeaRowOrder(finalRev, nextRows).catch((error: unknown) => {
+        setErr(error instanceof Error ? error.message : String(error))
       })
       setEdit({ rowId: newId, col: 'effect' })
     } catch (e: any) {
@@ -1060,18 +1064,19 @@ function PfmeaFullPageContent() {
       markPfmeaDirty(newId)
       transientRecommendedActionContinuationIdsRef.current.add(newId)
       setExpandedOperationId(opId)
-      setRows((prev) => {
-        const nextRow = {
-          ...targetSourceRow,
-          ...payload,
-          id: newId,
-          revision_id: finalRev,
-          created_at: insertedCreatedAt,
-          __sortIndex: targetAnchorRow.__sortIndex,
-        } as PfmeaRow
-        const nextRows = insertPfmeaRowAfterAnchor(prev, targetAnchorRow.id, nextRow)
-        rowsRef.current = nextRows
-        return nextRows
+      const nextRow = {
+        ...targetSourceRow,
+        ...payload,
+        id: newId,
+        revision_id: finalRev,
+        created_at: insertedCreatedAt,
+        __sortIndex: targetAnchorRow.__sortIndex,
+      } as PfmeaRow
+      const nextRows = insertPfmeaRowAfterAnchorWithFallback(rowsRef.current, rowsRef.current, targetAnchorRow.id, nextRow)
+      rowsRef.current = nextRows
+      setRows(nextRows)
+      void persistPfmeaRowOrder(finalRev, nextRows).catch((error: unknown) => {
+        setErr(error instanceof Error ? error.message : String(error))
       })
       setEdit({ rowId: newId, col: 'recommended_action' })
     } catch (e: any) {
