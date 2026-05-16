@@ -3,7 +3,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
-import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
 import { CLASS_OPTIONS, TdClassSelect } from '@/features/pfmea/pfmea-class-select-cell'
 import {
   PFMEA_COLUMNS,
@@ -39,6 +38,7 @@ import { usePfmeaPendingCellUpdateQueue } from '@/features/pfmea/use-pfmea-pendi
 import { usePfmeaPendingCellValues } from '@/features/pfmea/use-pfmea-pending-cell-values'
 import { usePfmeaRiskMatrixConfig } from '@/features/pfmea/use-pfmea-risk-matrix-config'
 import { usePfmeaScaleOptions } from '@/features/pfmea/use-pfmea-scale-options'
+import { usePfmeaSessionController } from '@/features/pfmea/use-pfmea-session-controller'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
 import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
@@ -99,16 +99,12 @@ import {
   deletePfmeaEditSession,
   deletePfmeaRowsByRevision,
   ensurePfmeaProcessDraft,
-  fetchPfmeaAuthorName,
   fetchPfmeaCurrentDraftRevisionId,
-  fetchPfmeaEditSession,
-  fetchPfmeaProjectRole,
   fetchPfmeaProjectView,
   fetchPfmeaRevisionHistory,
   persistPfmeaRowOrderMetadata,
   startPfmeaEditSession,
   type PfmeaRowOrderUpdate,
-  type PfmeaEditSession,
   type PfmeaHistoryEntry,
 } from '@/features/pfmea/pfmea-service'
 import {
@@ -139,9 +135,6 @@ function PfmeaFullPageContent() {
 
   const [err, setErr] = useState('')
 
-  const [userId, setUserId] = useState<string | null>(null)
-  const [moduleAccessState, setModuleAccessState] = useState<'checking' | 'allowed' | 'denied'>('checking')
-
   const [project, setProject] = useState<ProjectView | null>(null)
   const [draftRevisionIdOverride, setDraftRevisionIdOverride] = useState<string | null>(null)
   const [ops, setOps] = useState<Operation[]>([])
@@ -166,6 +159,29 @@ function PfmeaFullPageContent() {
     getRiskColorForAverageRpn,
     loadRiskMatrix,
   } = usePfmeaRiskMatrixConfig(projectId)
+  const {
+    currentAuthorName,
+    isChampion,
+    isEditOwner,
+    isLockedByOther,
+    isObsolete,
+    loadEditSession,
+    moduleAccessState,
+    readOnly,
+    sessionBusy,
+    sessionNow,
+    setEditSession,
+    setSessionBusy,
+    userId,
+    workingRevisionId,
+    workingRevisionLabel,
+  } = usePfmeaSessionController({
+    draftRevisionIdOverride,
+    editLockMs: EDIT_LOCK_MS,
+    project,
+    projectId,
+    supabase,
+  })
 
   // ===== REVISION SAVE (dirty tracking) =====
   const [dirtyPfmeaIds, setDirtyPfmeaIds] = useState<string[]>([])
@@ -178,11 +194,6 @@ function PfmeaFullPageContent() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyEntries, setHistoryEntries] = useState<PfmeaHistoryEntry[]>([])
-  const [currentAuthorName, setCurrentAuthorName] = useState('Unknown user')
-  const [isChampion, setIsChampion] = useState(false)
-  const [editSession, setEditSession] = useState<PfmeaEditSession | null>(null)
-  const [sessionNow, setSessionNow] = useState(() => Date.now())
-  const [sessionBusy, setSessionBusy] = useState(false)
   const [expandedOperationId, setExpandedOperationId] = useState<string | null>(null)
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null)
   const [highlightedMissingCells, setHighlightedMissingCells] = useState<string[] | null>(null)
@@ -253,145 +264,12 @@ function PfmeaFullPageContent() {
     markDirtyDraftPersisted()
   }, [markDirtyDraftPersisted])
 
-  const isObsolete = (project?.status ?? 'DRAFT') === 'OBSOLETE'
-  const sessionExpired = useMemo(() => {
-    if (!editSession) return false
-    const last = new Date(editSession.lastActivityAt).getTime()
-    if (!Number.isFinite(last)) return true
-    return sessionNow - last >= EDIT_LOCK_MS
-  }, [editSession, sessionNow])
-  const isEditOwner = !!userId && !!editSession && editSession.lockedBy === userId && !sessionExpired
-  const isLockedByOther = !!editSession && !isEditOwner && !sessionExpired
-  const readOnly = isObsolete || !isEditOwner
-  const activeDraftRevisionId = draftRevisionIdOverride ?? project?.current_draft_revision_id ?? null
-  const workingRevisionId = isEditOwner
-    ? activeDraftRevisionId ?? project?.current_open_revision_id ?? null
-    : project?.current_open_revision_id ?? activeDraftRevisionId
-  const workingRevisionLabel = isEditOwner
-    ? project?.draft_revision_label ?? project?.open_revision_label
-    : project?.open_revision_label ?? project?.draft_revision_label
-
   useEffect(() => {
     if (!highlightedMissingCells || highlightedMissingCells.length === 0) return
     const clearHighlights = () => setHighlightedMissingCells(null)
     document.addEventListener('mousedown', clearHighlights)
     return () => document.removeEventListener('mousedown', clearHighlights)
   }, [highlightedMissingCells])
-
-  /* ---------- auth user ---------- */
-useEffect(() => {
-  let alive = true
-
-  ;(async () => {
-    const { data } = await supabase.auth.getSession()
-    if (!alive) return
-
-    if (!data.session) {
-      const next =
-        window.location.pathname + window.location.search
-
-      window.location.assign(
-        `/login?next=${encodeURIComponent(next)}`
-      )
-      return
-    }
-
-    setUserId(data.session.user.id)
-  })()
-
-  return () => {
-    alive = false
-  }
-}, [])
-
-  useEffect(() => {
-    let alive = true
-
-    void (async () => {
-      if (!projectId || !userId) return
-
-      const headerRes = await supabase.rpc('get_my_header').maybeSingle()
-      const header = (headerRes.data as { org_role?: string | null } | null) ?? null
-      const role = (header?.org_role ?? '').toLowerCase()
-
-      if (role !== 'customer') {
-        if (alive) setModuleAccessState('allowed')
-        return
-      }
-
-      try {
-        const accessMap = await loadOwnCustomerAccessMap(userId, [projectId])
-        const canReadPfmea = hasCustomerModuleAccess(accessMap, projectId, 'PFMEA')
-        if (!alive) return
-
-        if (!canReadPfmea) {
-          setModuleAccessState('denied')
-          window.location.assign('/projects')
-          return
-        }
-
-        setModuleAccessState('allowed')
-      } catch {
-        if (!alive) return
-        setModuleAccessState('denied')
-        window.location.assign('/projects')
-      }
-    })()
-
-    return () => {
-      alive = false
-    }
-  }, [projectId, userId])
-
-  useEffect(() => {
-    let alive = true
-    if (!userId) {
-      setCurrentAuthorName('Unknown user')
-      return () => {
-        alive = false
-      }
-    }
-
-    ;(async () => {
-      try {
-        const authorName = await fetchPfmeaAuthorName(supabase, userId)
-        if (!alive) return
-        setCurrentAuthorName(authorName)
-      } catch {
-        if (!alive) return
-        setCurrentAuthorName('Unknown user')
-      }
-    })()
-
-    return () => {
-      alive = false
-    }
-  }, [userId])
-
-  const loadUserContext = useCallback(async () => {
-    if (!projectId || !userId) {
-      setIsChampion(false)
-      return
-    }
-    try {
-      const role = (await fetchPfmeaProjectRole(supabase, projectId, userId) ?? '').toLowerCase()
-      setIsChampion(role === 'champion')
-    } catch {
-      setIsChampion(false)
-    }
-  }, [projectId, userId])
-
-  const loadEditSession = useCallback(async () => {
-    if (!projectId) {
-      setEditSession(null)
-      return
-    }
-    try {
-      setEditSession(await fetchPfmeaEditSession(supabase, projectId))
-    } catch {
-      setEditSession(null)
-    }
-  }, [projectId])
 
   async function startEditSession() {
     if (!projectId || !userId || isObsolete) return
@@ -815,39 +693,7 @@ useEffect(() => {
     setEditSession(null)
     setExpandedOperationId(null)
     forceRefreshExistingDraftFromOpenRef.current = false
-  }, [projectId])
-
-  useEffect(() => {
-    if (!projectId) return
-    if (moduleAccessState !== 'allowed') return
-    void loadUserContext()
-    void loadEditSession()
-  }, [projectId, loadUserContext, loadEditSession, moduleAccessState])
-
-  useEffect(() => {
-    if (!projectId) return
-    if (moduleAccessState !== 'allowed') return
-    const timer = setInterval(() => {
-      void loadEditSession()
-      setSessionNow(Date.now())
-    }, 30_000)
-    return () => clearInterval(timer)
-  }, [projectId, loadEditSession, moduleAccessState])
-
-  useEffect(() => {
-    if (!projectId || !userId || !isEditOwner) return
-    const beat = async () => {
-      await supabase
-        .from('pfmea_edit_sessions')
-        .update({ last_activity_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq('project_id', projectId)
-        .eq('locked_by', userId)
-    }
-    const timer = setInterval(() => {
-      void beat()
-    }, 30_000)
-    return () => clearInterval(timer)
-  }, [projectId, userId, isEditOwner])
+  }, [projectId, setEditSession])
 
   useEffect(() => {
     if (!edit) return
