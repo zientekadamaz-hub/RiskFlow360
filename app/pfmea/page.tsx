@@ -12,9 +12,9 @@ import {
   type PfmeaColumnId,
 } from '@/features/pfmea/pfmea-columns'
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
+import { PfmeaCurrentRiskCells } from '@/features/pfmea/pfmea-current-risk-cells'
 import { TdDate } from '@/features/pfmea/pfmea-date-cell'
 import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
-import { TdPcpToggle } from '@/features/pfmea/pfmea-pcp-toggle-cell'
 import { PfmeaOperationCells } from '@/features/pfmea/pfmea-operation-cells'
 import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
 import { TdScaleSelect } from '@/features/pfmea/pfmea-scale-select-cell'
@@ -2127,28 +2127,21 @@ function PfmeaFullPageContent() {
                         />
                       ) : null}
 
-                      {isColumnVisible('rpn') && actionPlanBlockSpan > 0 ? (
-                        <TdRead
-                          value={a1.rpn == null ? '' : String(a1.rpn)}
-                          className="pfmeaTd rpnCell center gray singleLine"
-                          style={riskRpnStyle}
-                          rowSpan={actionPlanBlockSpan}
-                          onClick={() => setExpandedOperationId(r.operation_id || r.operations?.id || null)}
-                        />
-                      ) : null}
-
-                      {isColumnVisible('pcp') ? (
-                        <TdPcpToggle
-                          checked={pcpChecked}
-                          reasons={pcpAutoReasons}
-                          disabled={pcpDisabled}
-                          onToggle={() => {
-                            if (pcpDisabled) return
-                            void updateCellWithDerived(r, { pcp: !pcpChecked })
-                          }}
-                          cellKey="pcp"
-                        />
-                      ) : null}
+                      <PfmeaCurrentRiskCells
+                        actionPlanBlockSpan={actionPlanBlockSpan}
+                        currentRpn={a1.rpn}
+                        isColumnVisible={isColumnVisible}
+                        onExpandOperation={setExpandedOperationId}
+                        onTogglePcp={() => {
+                          if (pcpDisabled) return
+                          void updateCellWithDerived(r, { pcp: !pcpChecked })
+                        }}
+                        operationId={r.operation_id || r.operations?.id || null}
+                        pcpAutoReasons={pcpAutoReasons}
+                        pcpChecked={pcpChecked}
+                        pcpDisabled={pcpDisabled}
+                        riskRpnStyle={riskRpnStyle}
+                      />
 
                       {isColumnVisible('recommended_action') ? (
                         <TdText
