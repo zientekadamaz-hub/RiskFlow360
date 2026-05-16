@@ -19,7 +19,7 @@ import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-histo
 import { TdScaleSelect } from '@/features/pfmea/pfmea-scale-select-cell'
 import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
 import { TdSelect } from '@/features/pfmea/pfmea-status-select-cell'
-import { PfmeaTableHeader } from '@/features/pfmea/pfmea-table-header'
+import { PfmeaTableShell } from '@/features/pfmea/pfmea-table-shell'
 import { TdText } from '@/features/pfmea/pfmea-text-cell'
 import { PfmeaToolbar } from '@/features/pfmea/pfmea-toolbar'
 import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
@@ -41,7 +41,7 @@ import { usePfmeaScaleOptions } from '@/features/pfmea/use-pfmea-scale-options'
 import { usePfmeaSessionController } from '@/features/pfmea/use-pfmea-session-controller'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
-import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
+import { SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
   TdRead,
 } from '@/features/pfmea/pfmea-merged-cell'
@@ -1759,35 +1759,18 @@ function PfmeaFullPageContent() {
           visibleColumnIds={visibleColumnIds}
         />
 
-        <div ref={tableWrapRef} style={{ ...card, padding: 0, borderRadius: SURFACE_RADIUS, overflow: 'visible' }}>
-          <div
-            className="pfmeaTable"
-            style={{
-              maxHeight: 'calc(100vh - 280px)',
-              overflowX: 'auto',
-              overflowY: 'visible',
-              ['--pfmea-sticky-cell-top' as any]: `${stickyMergedCellTop}px`,
-            }}
-          >
-            <table
-              style={{
-                width: `${visibleTableWidth}px`,
-                minWidth: `${visibleTableWidth}px`,
-                borderCollapse: 'collapse',
-                tableLayout: 'fixed',
-                fontSize: 16,
-                fontFamily: 'Calibri, Arial, sans-serif',
-              }}
-            >
-              <PfmeaTableHeader
-                isColumnVisible={(id) => isColumnVisible(id as PfmeaColumnId)}
-                tableHeadRef={tableHeadRef}
-                visibleColumnDefs={visibleColumnDefs}
-                widthOf={(id) => widthOf(id as PfmeaColumnId)}
-              />
-
-              <tbody>
-                {tableRows.map((r, rowIndex) => {
+        <PfmeaTableShell
+          cardStyle={card}
+          isColumnVisible={isColumnVisible}
+          stickyMergedCellTop={stickyMergedCellTop}
+          tableHeadRef={tableHeadRef}
+          tableWrapRef={tableWrapRef}
+          visibleColumnDefs={visibleColumnDefs}
+          visibleTableWidth={visibleTableWidth}
+          widthOf={widthOf}
+        >
+          <tbody>
+            {tableRows.map((r, rowIndex) => {
                   const opNo = r.operations?.operation_number ?? null
                   const station = r.operations?.machine ?? ''
                   const operationName = r.operations?.operation ?? ''
@@ -2343,11 +2326,9 @@ function PfmeaFullPageContent() {
                       ) : null}
                     </tr>
                   )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+            })}
+          </tbody>
+        </PfmeaTableShell>
       </div>
     </SettingsPageShell>
   )
