@@ -7,18 +7,17 @@ import { resolvePfmeaSaveDraftRevisionId } from './pfmea-revision-utils'
 import { createPfmeaSaveTimingLogger } from './pfmea-save-timing-utils'
 import {
   cleanupPfmeaSuccessfulSaveAfterPublish,
-  completePfmeaPostPublish,
   ensurePublishedPfmeaIntegrityAfterSave,
   fetchAuthenticatedPfmeaSaveUserId,
   preparePfmeaDraftRowsForPublish,
   persistPfmeaDraftSnapshotAfterSave,
+  publishPfmeaRevisionForSave,
   remapPfmeaSnapshotRowsToRevisionAfterSave,
   syncPublishedPfmeaRowMetadataAfterSave,
   type PersistPfmeaRowOrderForSave,
 } from './pfmea-save-orchestration'
 import {
   fetchPfmeaRowsForRevision,
-  publishPfmeaRevisionWithHistory,
   restorePfmeaRowsSnapshotToRevision,
   type PfmeaEditSession,
 } from './pfmea-service'
@@ -182,36 +181,20 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
         setRows: params.setRows,
       })
 
-      const historyAuthor = params.currentAuthorName || 'Unknown user'
-      const publishResultWithHistory = await publishPfmeaRevisionWithHistory(params.supabase, {
-        authorName: historyAuthor,
-        avgRpn: params.avgRpn,
-        changeDescription: desc,
-        projectId: params.projectId,
-        riskCount: params.riskCount,
-        userId: uid,
-      })
-      if (!publishResultWithHistory.usedFallback) {
-        saveTiming.mark('publish revision and history rpc')
-      } else {
-        saveTiming.mark('publish revision rpc fallback')
-      }
-
       const {
         data,
         integrityWarning,
         postPublishWarning,
         publishedRevisionId,
-      } = await completePfmeaPostPublish({
+      } = await publishPfmeaRevisionForSave({
         avgRpn: params.avgRpn,
         changeDescription: desc,
+        currentAuthorName: params.currentAuthorName,
         draftRevisionId,
         ensurePublishedIntegrity: ensurePublishedPfmeaIntegrity,
-        historyAuthor,
         mark: saveTiming.mark,
         orderedPersistedRows,
         projectId: params.projectId,
-        publishResultWithHistory,
         reloadProjectView: () => params.loadProjectView({ syncDraftOverride: false }),
         riskCount: params.riskCount,
         supabase: params.supabase,

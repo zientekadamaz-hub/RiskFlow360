@@ -20,6 +20,7 @@ import {
   cleanupPfmeaAfterSuccessfulPublish,
   insertPfmeaHistoryFallback,
   persistPfmeaDirtyRevisionRows,
+  publishPfmeaRevisionWithHistory,
   type PfmeaEditSession,
   type PfmeaRowOrderUpdate,
   type PfmeaRevisionPublishResult,
@@ -438,6 +439,54 @@ export async function completePfmeaPostPublish(params: {
     publishedRevisionId,
     revisionLabel,
   }
+}
+
+export async function publishPfmeaRevisionForSave(params: {
+  avgRpn: number | null
+  changeDescription: string
+  currentAuthorName: string
+  draftRevisionId: string
+  ensurePublishedIntegrity: (revisionId: string, persistedRows: PfmeaRow[]) => Promise<string | null>
+  mark: (label: string) => void
+  orderedPersistedRows: PfmeaRow[]
+  projectId: string
+  reloadProjectView: () => Promise<ProjectView>
+  riskCount: number
+  supabase: SupabaseClient
+  syncPublishedRowMetadata: (revisionId: string, persistedRows: PfmeaRow[]) => Promise<void>
+  userId: string
+}) {
+  const historyAuthor = params.currentAuthorName || 'Unknown user'
+  const publishResultWithHistory = await publishPfmeaRevisionWithHistory(params.supabase, {
+    authorName: historyAuthor,
+    avgRpn: params.avgRpn,
+    changeDescription: params.changeDescription,
+    projectId: params.projectId,
+    riskCount: params.riskCount,
+    userId: params.userId,
+  })
+  if (!publishResultWithHistory.usedFallback) {
+    params.mark('publish revision and history rpc')
+  } else {
+    params.mark('publish revision rpc fallback')
+  }
+
+  return completePfmeaPostPublish({
+    avgRpn: params.avgRpn,
+    changeDescription: params.changeDescription,
+    draftRevisionId: params.draftRevisionId,
+    ensurePublishedIntegrity: params.ensurePublishedIntegrity,
+    historyAuthor,
+    mark: params.mark,
+    orderedPersistedRows: params.orderedPersistedRows,
+    projectId: params.projectId,
+    publishResultWithHistory,
+    reloadProjectView: params.reloadProjectView,
+    riskCount: params.riskCount,
+    supabase: params.supabase,
+    syncPublishedRowMetadata: params.syncPublishedRowMetadata,
+    userId: params.userId,
+  })
 }
 
 export async function cleanupPfmeaSuccessfulSaveAfterPublish(params: {

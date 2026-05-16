@@ -14,7 +14,8 @@ const source = `${saveSource}\n${postPublishSource}`
 const expectedPrePublishOrder = [
   'auth session',
   'preparePfmeaDraftRowsForPublish',
-  'publish revision',
+  'publishPfmeaRevisionForSave',
+  'cleanupPfmeaSuccessfulSaveAfterPublish',
 ]
 
 const expectedDraftPreparationOrder = [
@@ -31,6 +32,12 @@ const expectedPostPublishOrder = [
   'sync published row metadata',
   'published integrity check',
   'insert pfmea history fallback',
+]
+
+const expectedPublishHelperOrder = [
+  'publishPfmeaRevisionForSave',
+  'publish revision and history rpc',
+  'completePfmeaPostPublish',
 ]
 
 const expectedSuccessfulCleanupOrder = [
@@ -75,6 +82,15 @@ for (const marker of expectedPostPublishOrder) {
   const nextIndex = postPublishSource.indexOf(marker, cursor + 1)
   assert.notEqual(nextIndex, -1, `Missing PFMEA post-publish marker: ${marker}`)
   assert.ok(nextIndex > cursor, `PFMEA post-publish marker is out of order: ${marker}`)
+  cursor = nextIndex
+}
+
+cursor = postPublishSource.indexOf('publishPfmeaRevisionForSave')
+assert.notEqual(cursor, -1, 'PFMEA publish helper must exist.')
+for (const marker of expectedPublishHelperOrder.slice(1)) {
+  const nextIndex = postPublishSource.indexOf(marker, cursor + 1)
+  assert.notEqual(nextIndex, -1, `Missing PFMEA publish helper marker: ${marker}`)
+  assert.ok(nextIndex > cursor, `PFMEA publish helper marker is out of order: ${marker}`)
   cursor = nextIndex
 }
 
