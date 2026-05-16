@@ -27,12 +27,11 @@ function loadModule(relativePath) {
   return sandbox.module.exports
 }
 
-const { getMissingRequiredForRecommendedAction, getPreviousRequiredFieldForActionPlan } = loadModule([
-  'src',
-  'features',
-  'pfmea',
-  'pfmea-action-validation-utils.ts',
-])
+const {
+  buildPfmeaActionPlanValidationRow,
+  getMissingRequiredForRecommendedAction,
+  getPreviousRequiredFieldForActionPlan,
+} = loadModule(['src', 'features', 'pfmea', 'pfmea-action-validation-utils.ts'])
 
 function assertJsonEqual(actual, expected) {
   assert.equal(JSON.stringify(actual), JSON.stringify(expected))
@@ -64,5 +63,33 @@ assertJsonEqual(getPreviousRequiredFieldForActionPlan('detection2', { ...complet
   'responsible',
   'recommended_action',
 ])
+
+const mergedContext = buildPfmeaActionPlanValidationRow({
+  actionPlanOwnerRow: {
+    cause: 'Second cause',
+    current_detection: 'Final check',
+    current_prevention: 'Standard work',
+    detection: 8,
+    occurrence: 8,
+  },
+  currentRow: {
+    ...complete,
+    cause: 'Second cause',
+    current_detection: 'Final check',
+    current_prevention: 'Standard work',
+    detection: 8,
+    effect: '',
+    occurrence: 8,
+    severity: null,
+  },
+  failureBlockOwnerRow: {
+    effect: 'Merged effect from owner row',
+    severity: 9,
+  },
+  failureModeOwnerRow: {
+    failure_mode: 'Merged failure mode',
+  },
+})
+assertJsonEqual(getPreviousRequiredFieldForActionPlan('recommended_action', mergedContext), [])
 
 console.log('pfmea action validation utils smoke passed')

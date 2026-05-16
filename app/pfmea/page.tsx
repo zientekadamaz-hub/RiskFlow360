@@ -57,7 +57,10 @@ import {
   isRecommendedActionContinuationEmpty,
   patchHasAnyValue,
 } from '@/features/pfmea/pfmea-continuation-utils'
-import { getPreviousRequiredFieldForActionPlan } from '@/features/pfmea/pfmea-action-validation-utils'
+import {
+  buildPfmeaActionPlanValidationRow,
+  getPreviousRequiredFieldForActionPlan,
+} from '@/features/pfmea/pfmea-action-validation-utils'
 import {
   buildPfmeaBlockMergeInfoByHierarchy,
   buildPfmeaHierarchy,
@@ -2223,7 +2226,14 @@ function PfmeaFullPageContent() {
                   const runActionPlanStart = (targetCol: keyof PfmeaRow) => {
                     window.setTimeout(() => {
                       const latestRow = latestRowForHighlights
-                      const contextualActionRow = getRecommendedActionContinuationSourceRow(latestRow)
+                      const contextualActionRow = getRecommendedActionContinuationSourceRow(
+                        buildPfmeaActionPlanValidationRow({
+                          actionPlanOwnerRow: effectiveActionPlanOwnerRow,
+                          currentRow: latestRow,
+                          failureBlockOwnerRow: effectiveFailureBlockOwnerRow,
+                          failureModeOwnerRow: effectiveFailureModeOwnerRow,
+                        }) as PfmeaRow
+                      )
                       const missingFields = getPreviousRequiredFieldForActionPlan(targetCol, contextualActionRow)
                       if (readOnly) return
                       if (missingFields.length === 0) {

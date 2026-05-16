@@ -35,6 +35,28 @@ export type PfmeaActionPlanRow = {
   occurrence2: number | string | null
 }
 
+export function buildPfmeaActionPlanValidationRow(params: {
+  currentRow: PfmeaActionPlanRow
+  failureModeOwnerRow: Pick<PfmeaActionPlanRow, 'failure_mode'>
+  failureBlockOwnerRow: Pick<PfmeaActionPlanRow, 'effect' | 'severity'>
+  actionPlanOwnerRow: Pick<
+    PfmeaActionPlanRow,
+    'cause' | 'occurrence' | 'current_prevention' | 'current_detection' | 'detection'
+  >
+}): PfmeaActionPlanRow {
+  return {
+    ...params.currentRow,
+    failure_mode: params.failureModeOwnerRow.failure_mode,
+    effect: params.failureBlockOwnerRow.effect,
+    severity: params.failureBlockOwnerRow.severity,
+    cause: params.actionPlanOwnerRow.cause,
+    occurrence: params.actionPlanOwnerRow.occurrence,
+    current_prevention: params.actionPlanOwnerRow.current_prevention,
+    current_detection: params.actionPlanOwnerRow.current_detection,
+    detection: params.actionPlanOwnerRow.detection,
+  }
+}
+
 export function getMissingRequiredForRecommendedAction(row: PfmeaActionPlanRow): PfmeaActionPlanDependencyField[] {
   const missing: PfmeaActionPlanDependencyField[] = []
   if (!row.failure_mode.trim()) missing.push('failure_mode')
