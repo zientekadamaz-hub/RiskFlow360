@@ -15,6 +15,13 @@ export type PfmeaTransientRowSets = {
   effectContinuationIds: ReadonlySet<string>
 }
 
+export type PfmeaMutableTransientRowSets = {
+  causeContinuationIds: Set<string>
+  recommendedActionContinuationIds: Set<string>
+  failureModeContinuationIds: Set<string>
+  effectContinuationIds: Set<string>
+}
+
 export function getPfmeaTransientRowKind(id: string, sets: PfmeaTransientRowSets): PfmeaTransientRowKind | null {
   if (sets.causeContinuationIds.has(id)) return 'cause'
   if (sets.recommendedActionContinuationIds.has(id)) return 'recommendedAction'
@@ -59,4 +66,36 @@ export function getEmptyPfmeaTransientRowIds(
   }
 
   return idsToDelete
+}
+
+export function removePfmeaIdsFromList(ids: string[], idsToRemove: ReadonlySet<string>) {
+  if (idsToRemove.size === 0) return ids
+  return ids.filter((id) => !idsToRemove.has(id))
+}
+
+export function removePfmeaTransientIdsFromSets(
+  sets: PfmeaTransientRowSets,
+  idsToRemove: ReadonlySet<string>
+): PfmeaMutableTransientRowSets {
+  const removeFromSet = (source: ReadonlySet<string>) => new Set([...source].filter((id) => !idsToRemove.has(id)))
+
+  return {
+    causeContinuationIds: removeFromSet(sets.causeContinuationIds),
+    recommendedActionContinuationIds: removeFromSet(sets.recommendedActionContinuationIds),
+    failureModeContinuationIds: removeFromSet(sets.failureModeContinuationIds),
+    effectContinuationIds: removeFromSet(sets.effectContinuationIds),
+  }
+}
+
+export function removePfmeaHighlightKeysForRows(
+  highlightedCells: string[] | null | undefined,
+  idsToRemove: ReadonlySet<string>
+) {
+  if (!highlightedCells || idsToRemove.size === 0) return highlightedCells ?? null
+  return highlightedCells.filter((key) => {
+    for (const id of idsToRemove) {
+      if (key.startsWith(`${id}::`)) return false
+    }
+    return true
+  })
 }

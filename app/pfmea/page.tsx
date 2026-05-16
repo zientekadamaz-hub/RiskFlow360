@@ -93,7 +93,13 @@ import {
   buildPfmeaFailureModeContinuationInsertPayload,
   buildPfmeaRecommendedActionContinuationInsertPayload,
 } from '@/features/pfmea/pfmea-row-insert-payload-utils'
-import { getEmptyPfmeaTransientRowIds, isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
+import {
+  getEmptyPfmeaTransientRowIds,
+  isPfmeaTransientRowEmpty,
+  removePfmeaHighlightKeysForRows,
+  removePfmeaIdsFromList,
+  removePfmeaTransientIdsFromSets,
+} from '@/features/pfmea/pfmea-transient-row-utils'
 import { computePfmeaAverageRpnSummary } from '@/features/pfmea/pfmea-summary-utils'
 import { buildPfmeaDisplayOperations, buildPfmeaTableRows } from '@/features/pfmea/pfmea-visible-rows-utils'
 import {
@@ -434,26 +440,27 @@ function PfmeaFullPageContent() {
     }
 
     const idsToDeleteSet = new Set(idsToDelete)
-    transientCauseContinuationIdsRef.current = new Set(
-      [...transientCauseContinuationIdsRef.current].filter((id) => !idsToDeleteSet.has(id))
+    const nextTransientSets = removePfmeaTransientIdsFromSets(
+      {
+        causeContinuationIds: transientCauseContinuationIdsRef.current,
+        recommendedActionContinuationIds: transientRecommendedActionContinuationIdsRef.current,
+        failureModeContinuationIds: transientFailureModeContinuationIdsRef.current,
+        effectContinuationIds: transientEffectContinuationIdsRef.current,
+      },
+      idsToDeleteSet
     )
-    transientRecommendedActionContinuationIdsRef.current = new Set(
-      [...transientRecommendedActionContinuationIdsRef.current].filter((id) => !idsToDeleteSet.has(id))
-    )
-    transientFailureModeContinuationIdsRef.current = new Set(
-      [...transientFailureModeContinuationIdsRef.current].filter((id) => !idsToDeleteSet.has(id))
-    )
-    transientEffectContinuationIdsRef.current = new Set(
-      [...transientEffectContinuationIdsRef.current].filter((id) => !idsToDeleteSet.has(id))
-    )
+    transientCauseContinuationIdsRef.current = nextTransientSets.causeContinuationIds
+    transientRecommendedActionContinuationIdsRef.current = nextTransientSets.recommendedActionContinuationIds
+    transientFailureModeContinuationIdsRef.current = nextTransientSets.failureModeContinuationIds
+    transientEffectContinuationIdsRef.current = nextTransientSets.effectContinuationIds
     clearPendingCellValuesForRows(idsToDelete)
 
     const nextRows = reindexPfmeaRows(rowsRef.current.filter((row) => !idsToDeleteSet.has(row.id)))
     rowsRef.current = nextRows
     setRows(nextRows)
-    setDirtyPfmeaIds((prev) => prev.filter((id) => !idsToDeleteSet.has(id)))
-    setDeletedPfmeaIds((prev) => prev.filter((id) => !idsToDeleteSet.has(id)))
-    setHighlightedMissingCells((prev) => prev?.filter((key) => !idsToDelete.some((id) => key.startsWith(`${id}::`))) ?? null)
+    setDirtyPfmeaIds((prev) => removePfmeaIdsFromList(prev, idsToDeleteSet))
+    setDeletedPfmeaIds((prev) => removePfmeaIdsFromList(prev, idsToDeleteSet))
+    setHighlightedMissingCells((prev) => removePfmeaHighlightKeysForRows(prev, idsToDeleteSet))
     setEdit((prev) => (prev && idsToDeleteSet.has(prev.rowId) ? null : prev))
 
     return nextRows
@@ -497,15 +504,25 @@ function PfmeaFullPageContent() {
             (row) => !isPlaceholderRowId(row.id) && (row.operation_id || row.operations?.id || null) === opId
           )
           const removeRowLocally = () => {
-            transientCauseContinuationIdsRef.current.delete(id)
-            transientRecommendedActionContinuationIdsRef.current.delete(id)
-            transientFailureModeContinuationIdsRef.current.delete(id)
-            transientEffectContinuationIdsRef.current.delete(id)
+            const idsToRemove = new Set([id])
+            const nextTransientSets = removePfmeaTransientIdsFromSets(
+              {
+                causeContinuationIds: transientCauseContinuationIdsRef.current,
+                recommendedActionContinuationIds: transientRecommendedActionContinuationIdsRef.current,
+                failureModeContinuationIds: transientFailureModeContinuationIdsRef.current,
+                effectContinuationIds: transientEffectContinuationIdsRef.current,
+              },
+              idsToRemove
+            )
+            transientCauseContinuationIdsRef.current = nextTransientSets.causeContinuationIds
+            transientRecommendedActionContinuationIdsRef.current = nextTransientSets.recommendedActionContinuationIds
+            transientFailureModeContinuationIdsRef.current = nextTransientSets.failureModeContinuationIds
+            transientEffectContinuationIdsRef.current = nextTransientSets.effectContinuationIds
             clearPendingCellValuesForRow(id)
             setRows((prev) => reindexPfmeaRows(prev.filter((row) => row.id !== id)))
-            setDirtyPfmeaIds((prev) => prev.filter((x) => x !== id))
+            setDirtyPfmeaIds((prev) => removePfmeaIdsFromList(prev, idsToRemove))
             setDeletedPfmeaIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
-            setHighlightedMissingCells((prev) => prev?.filter((key) => !key.startsWith(`${id}::`)) ?? null)
+            setHighlightedMissingCells((prev) => removePfmeaHighlightKeysForRows(prev, idsToRemove))
             setEdit((prev) => (prev?.rowId === id ? null : prev))
           }
 

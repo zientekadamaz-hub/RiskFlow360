@@ -34,6 +34,9 @@ const {
   getPfmeaTransientRowIds,
   getPfmeaTransientRowKind,
   isPfmeaTransientRowEmpty,
+  removePfmeaHighlightKeysForRows,
+  removePfmeaIdsFromList,
+  removePfmeaTransientIdsFromSets,
 } = loadModule(['src', 'features', 'pfmea', 'pfmea-transient-row-utils.ts'])
 
 function assertJsonEqual(actual, expected) {
@@ -111,5 +114,17 @@ const emptyIds = getEmptyPfmeaTransientRowIds(rows, sets, (row) => {
 })
 
 assertJsonEqual(emptyIds.sort(), ['row-empty-action', 'row-empty-cause', 'row-empty-effect'])
+
+const idsToRemove = new Set(['row-empty-cause', 'row-empty-action'])
+assertJsonEqual(removePfmeaIdsFromList(['row-empty-cause', 'keep', 'row-empty-action'], idsToRemove), ['keep'])
+assertJsonEqual(
+  removePfmeaHighlightKeysForRows(['row-empty-cause::cause', 'keep::effect', 'row-empty-action::responsible'], idsToRemove),
+  ['keep::effect']
+)
+
+const reducedSets = removePfmeaTransientIdsFromSets(sets, idsToRemove)
+assertJsonEqual([...reducedSets.causeContinuationIds].sort(), ['row-filled-cause'])
+assertJsonEqual([...reducedSets.recommendedActionContinuationIds].sort(), ['row-pending-action'])
+assertJsonEqual([...reducedSets.effectContinuationIds].sort(), ['row-empty-effect'])
 
 console.log('pfmea transient row utils smoke passed')
