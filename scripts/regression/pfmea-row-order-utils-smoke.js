@@ -95,9 +95,27 @@ try {
   )
 
   const stable = buildPfmeaRowsWithStableOrderMetadata([
-    { ...rows[0], created_at: '2026-04-01T00:00:00.000Z' },
-    { ...rows[1], created_at: '2026-04-01T00:00:01.000Z' },
-    { ...rows[2], created_at: '2026-04-01T00:00:02.000Z' },
+    {
+      ...rows[0],
+      action_plan_group_id: 'ap-b',
+      created_at: '2026-04-01T00:00:00.000Z',
+      failure_block_group_id: 'fb-b',
+      failure_mode_group_id: 'fm-b',
+    },
+    {
+      ...rows[1],
+      action_plan_group_id: 'ap-a',
+      created_at: '2026-04-01T00:00:01.000Z',
+      failure_block_group_id: 'fb-a',
+      failure_mode_group_id: 'fm-a',
+    },
+    {
+      ...rows[2],
+      action_plan_group_id: 'ap-c',
+      created_at: '2026-04-01T00:00:02.000Z',
+      failure_block_group_id: 'fb-c',
+      failure_mode_group_id: 'fm-c',
+    },
   ])
   assertJsonEqual(
     stable.orderedRows.map((row) => [row.id, row.created_at]),
@@ -105,6 +123,14 @@ try {
       ['a', '2026-04-01T00:00:01.000Z'],
       ['c', '2026-04-01T00:00:02.000Z'],
       ['b', '2026-04-01T00:00:00.000Z'],
+    ]
+  )
+  assertJsonEqual(
+    stable.updates.map((row) => [row.id, row.row_no, row.failure_mode_group_id, row.failure_block_group_id, row.action_plan_group_id]),
+    [
+      ['a', '10.1.1.1.1', 'fm-a', 'fb-a', 'ap-a'],
+      ['c', '10.1.1.1.2', 'fm-c', 'fb-c', 'ap-c'],
+      ['b', '20.1.1.1.1', 'fm-b', 'fb-b', 'ap-b'],
     ]
   )
 } finally {
