@@ -15,6 +15,7 @@ import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pf
 import { TdDate } from '@/features/pfmea/pfmea-date-cell'
 import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
 import { TdPcpToggle } from '@/features/pfmea/pfmea-pcp-toggle-cell'
+import { PfmeaOperationCells } from '@/features/pfmea/pfmea-operation-cells'
 import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
 import { TdScaleSelect } from '@/features/pfmea/pfmea-scale-select-cell'
 import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
@@ -42,9 +43,7 @@ import { usePfmeaSessionController } from '@/features/pfmea/use-pfmea-session-co
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
 import { SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
-import {
-  TdRead,
-} from '@/features/pfmea/pfmea-merged-cell'
+import { TdRead } from '@/features/pfmea/pfmea-merged-cell'
 import { asInt1to10, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
 import {
   hasFailureModeContext,
@@ -1850,22 +1849,16 @@ function PfmeaFullPageContent() {
                       data-pfmea-row-no={rowNumber ?? undefined}
                       className={`pfmeaRow ${groupStart ? 'groupStart' : ''}`}
                     >
-                      {span > 0 ? (
-                        <>
-                          {isColumnVisible('id') ? (
-                            <TdRead value={opNo == null ? '' : String(opNo)} className="pfmeaTd gray center multiLine" rowSpan={span} onClick={() => setExpandedOperationId(r.operation_id || r.operations?.id || null)} />
-                          ) : null}
-                          {isColumnVisible('station') ? (
-                            <TdRead value={station} className="pfmeaTd gray center multiLine" rowSpan={span} onClick={() => setExpandedOperationId(r.operation_id || r.operations?.id || null)} />
-                          ) : null}
-                          {isColumnVisible('operation') ? (
-                            <TdRead value={operationName} className="pfmeaTd gray center multiLine" rowSpan={span} onClick={() => setExpandedOperationId(r.operation_id || r.operations?.id || null)} />
-                          ) : null}
-                          {isColumnVisible('process_step') ? (
-                            <TdRead value={step} className="pfmeaTd gray multiLine" rowSpan={span} onClick={() => setExpandedOperationId(r.operation_id || r.operations?.id || null)} />
-                          ) : null}
-                        </>
-                      ) : null}
+                      <PfmeaOperationCells
+                        isColumnVisible={isColumnVisible}
+                        onExpandOperation={setExpandedOperationId}
+                        operationId={r.operation_id || r.operations?.id || null}
+                        operationName={operationName}
+                        opNo={opNo}
+                        span={span}
+                        station={station}
+                        step={step}
+                      />
 
                       {isColumnVisible('failure_mode') && failureModeSpan > 0 ? (
                         <TdText
