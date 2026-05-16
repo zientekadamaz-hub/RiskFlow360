@@ -30,7 +30,11 @@ function loadModule(relativePath) {
 const {
   buildPfmeaActionPlanValidationRow,
   getMissingRequiredForRecommendedAction,
+  getPfmeaActionPlanHighlightOwnerRow,
+  getPfmeaMissingActionPlanHighlightKeys,
   getPreviousRequiredFieldForActionPlan,
+  isPfmeaCellHighlighted,
+  pfmeaCellHighlightKey,
 } = loadModule(['src', 'features', 'pfmea', 'pfmea-action-validation-utils.ts'])
 
 function assertJsonEqual(actual, expected) {
@@ -91,5 +95,23 @@ const mergedContext = buildPfmeaActionPlanValidationRow({
   },
 })
 assertJsonEqual(getPreviousRequiredFieldForActionPlan('recommended_action', mergedContext), [])
+
+const ownerRows = {
+  actionPlanOwnerRow: { id: 'action-row' },
+  currentRow: { id: 'current-row' },
+  failureBlockOwnerRow: { id: 'block-row' },
+  failureModeOwnerRow: { id: 'mode-row' },
+}
+assert.equal(pfmeaCellHighlightKey('row-1', 'severity'), 'row-1::severity')
+assert.equal(isPfmeaCellHighlighted(['row-1::severity'], 'row-1', 'severity'), true)
+assert.equal(isPfmeaCellHighlighted(['row-1::severity'], 'row-1', 'effect'), false)
+assert.equal(getPfmeaActionPlanHighlightOwnerRow('failure_mode', ownerRows).id, 'mode-row')
+assert.equal(getPfmeaActionPlanHighlightOwnerRow('severity', ownerRows).id, 'block-row')
+assert.equal(getPfmeaActionPlanHighlightOwnerRow('detection', ownerRows).id, 'action-row')
+assert.equal(getPfmeaActionPlanHighlightOwnerRow('recommended_action', ownerRows).id, 'current-row')
+assertJsonEqual(
+  getPfmeaMissingActionPlanHighlightKeys(['failure_mode', 'severity', 'detection', 'recommended_action'], ownerRows),
+  ['mode-row::failure_mode', 'block-row::severity', 'action-row::detection', 'current-row::recommended_action']
+)
 
 console.log('pfmea action validation utils smoke passed')

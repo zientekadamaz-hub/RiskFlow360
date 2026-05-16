@@ -58,7 +58,9 @@ import {
 } from '@/features/pfmea/pfmea-continuation-utils'
 import {
   buildPfmeaActionPlanValidationRow,
+  getPfmeaMissingActionPlanHighlightKeys,
   getPreviousRequiredFieldForActionPlan,
+  isPfmeaCellHighlighted,
 } from '@/features/pfmea/pfmea-action-validation-utils'
 import {
   buildPfmeaBlockMergeInfoByHierarchy,
@@ -1787,26 +1789,6 @@ function PfmeaFullPageContent() {
                   const canAddEffectRow = hasPfmeaTextValue(applyPendingCellValues(failureBlockOwnerRow).effect)
                   const canAddCauseRow = hasPfmeaTextValue(applyPendingCellValues(actionPlanOwnerRow).cause)
                   const canAddRecommendedActionRow = hasPfmeaTextValue(effectiveCurrentRow.recommended_action)
-                  const highlightKey = (rowId: string, col: keyof PfmeaRow) => `${rowId}::${String(col)}`
-                  const ownerRowForColumn = (col: keyof PfmeaRow) => {
-                    switch (col) {
-                      case 'failure_mode':
-                      case 'characteristic':
-                      case 'class':
-                        return failureModeOwnerRow
-                      case 'effect':
-                      case 'severity':
-                        return failureBlockOwnerRow
-                      case 'cause':
-                      case 'occurrence':
-                      case 'current_prevention':
-                      case 'current_detection':
-                      case 'detection':
-                        return actionPlanOwnerRow
-                      default:
-                        return latestRowForHighlights
-                    }
-                  }
                   const latestRowForHighlights = applyPendingCellValues(rowsRef.current.find((rowItem) => rowItem.id === r.id) ?? r)
                   const effectiveFailureModeOwnerRow = applyPendingCellValues(failureModeOwnerRow)
                   const effectiveFailureBlockOwnerRow = applyPendingCellValues(failureBlockOwnerRow)
@@ -1819,7 +1801,7 @@ function PfmeaFullPageContent() {
                   const pcpAutoReasons = getPfmeaPcpAutoReasons(effectivePcpSourceRow, risk1)
                   const pcpChecked = isPfmeaSelectedForPcp(effectivePcpSourceRow, risk1)
                   const pcpDisabled = readOnly || isPlaceholder || !hasFailureModeContext(effectiveFailureModeOwnerRow)
-                  const isMissingHighlighted = (col: keyof PfmeaRow) => highlightedMissingCells?.includes(highlightKey(r.id, col)) ?? false
+                  const isMissingHighlighted = (col: keyof PfmeaRow) => isPfmeaCellHighlighted(highlightedMissingCells, r.id, col)
                   const runActionPlanStart = (targetCol: keyof PfmeaRow) => {
                     window.setTimeout(() => {
                       const latestRow = latestRowForHighlights
@@ -1837,9 +1819,11 @@ function PfmeaFullPageContent() {
                         void startEditCell(latestRow, targetCol)
                         return
                       }
-                      const highlightKeys = missingFields.map((col) => {
-                        const ownerRow = ownerRowForColumn(col)
-                        return highlightKey(ownerRow.id, col)
+                      const highlightKeys = getPfmeaMissingActionPlanHighlightKeys(missingFields, {
+                        actionPlanOwnerRow,
+                        currentRow: latestRowForHighlights,
+                        failureBlockOwnerRow,
+                        failureModeOwnerRow,
                       })
                       setHighlightedMissingCells(highlightKeys)
                     }, 0)

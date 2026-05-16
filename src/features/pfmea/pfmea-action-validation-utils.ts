@@ -35,6 +35,13 @@ export type PfmeaActionPlanRow = {
   occurrence2: number | string | null
 }
 
+export type PfmeaActionPlanOwnerRows<T> = {
+  actionPlanOwnerRow: T
+  currentRow: T
+  failureBlockOwnerRow: T
+  failureModeOwnerRow: T
+}
+
 export function buildPfmeaActionPlanValidationRow(params: {
   currentRow: PfmeaActionPlanRow
   failureModeOwnerRow: Pick<PfmeaActionPlanRow, 'failure_mode'>
@@ -55,6 +62,49 @@ export function buildPfmeaActionPlanValidationRow(params: {
     current_detection: params.actionPlanOwnerRow.current_detection,
     detection: params.actionPlanOwnerRow.detection,
   }
+}
+
+export function pfmeaCellHighlightKey(rowId: string, col: PropertyKey) {
+  return `${rowId}::${String(col)}`
+}
+
+export function isPfmeaCellHighlighted(
+  highlightedCells: string[] | null | undefined,
+  rowId: string,
+  col: PropertyKey
+) {
+  return highlightedCells?.includes(pfmeaCellHighlightKey(rowId, col)) ?? false
+}
+
+export function getPfmeaActionPlanHighlightOwnerRow<T>(
+  col: PfmeaActionPlanDependencyField,
+  owners: PfmeaActionPlanOwnerRows<T>
+) {
+  switch (col) {
+    case 'failure_mode':
+      return owners.failureModeOwnerRow
+    case 'effect':
+    case 'severity':
+      return owners.failureBlockOwnerRow
+    case 'cause':
+    case 'occurrence':
+    case 'current_prevention':
+    case 'current_detection':
+    case 'detection':
+      return owners.actionPlanOwnerRow
+    default:
+      return owners.currentRow
+  }
+}
+
+export function getPfmeaMissingActionPlanHighlightKeys<T extends { id: string }>(
+  missingFields: PfmeaActionPlanDependencyField[],
+  owners: PfmeaActionPlanOwnerRows<T>
+) {
+  return missingFields.map((col) => {
+    const ownerRow = getPfmeaActionPlanHighlightOwnerRow(col, owners)
+    return pfmeaCellHighlightKey(ownerRow.id, col)
+  })
 }
 
 export function getMissingRequiredForRecommendedAction(row: PfmeaActionPlanRow): PfmeaActionPlanDependencyField[] {
