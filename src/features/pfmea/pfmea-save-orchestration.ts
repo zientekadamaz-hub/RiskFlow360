@@ -10,7 +10,13 @@ import {
   summarizePfmeaRowsForError,
 } from './pfmea-payload-utils'
 import { findEquivalentPfmeaRow, findEquivalentPublishedPfmeaRow } from './pfmea-row-match-utils'
-import { insertPfmeaHistoryFallback, persistPfmeaDirtyRevisionRows, type PfmeaRevisionPublishResult } from './pfmea-service'
+import {
+  cleanupPfmeaAfterSuccessfulPublish,
+  insertPfmeaHistoryFallback,
+  persistPfmeaDirtyRevisionRows,
+  type PfmeaEditSession,
+  type PfmeaRevisionPublishResult,
+} from './pfmea-service'
 import type { PfmeaRow, ProjectView } from './pfmea-types'
 
 export type PfmeaEditorCommitTarget = {
@@ -23,6 +29,16 @@ export type PfmeaPostPublishResult = {
   postPublishWarning: string | null
   publishedRevisionId: string | null
   revisionLabel: string
+}
+
+type CurrentRef<T> = {
+  current: T
+}
+
+type PfmeaSaveCleanupResult = {
+  draftCleanupAttempted: boolean
+  draftRowsCleaned: boolean
+  editSessionDeleted: boolean
 }
 
 export async function commitPfmeaEditorBeforeSave(editor: PfmeaEditorCommitTarget) {
@@ -373,4 +389,44 @@ export async function completePfmeaPostPublish(params: {
     publishedRevisionId,
     revisionLabel,
   }
+}
+
+export async function cleanupPfmeaSuccessfulSaveAfterPublish(params: {
+  clearDirtyDraftPersisted: () => void
+  draftRevisionId: string
+  forceRefreshExistingDraftFromOpenRef: CurrentRef<boolean>
+  mark: (label: string) => void
+  projectId: string
+  publishedRevisionId: string | null
+  resetPfmeaEditRuntimeState: () => void
+  setChangeDesc: (value: string) => void
+  setDeletedPfmeaIds: (value: string[]) => void
+  setDirtyPfmeaIds: (value: string[]) => void
+  setDraftRevisionIdOverride: (value: string | null) => void
+  setEditSession: (value: PfmeaEditSession | null) => void
+  setShowSave: (value: boolean) => void
+  supabase: SupabaseClient
+  userId: string | null
+}): Promise<PfmeaSaveCleanupResult> {
+  params.setShowSave(false)
+  params.setChangeDesc('')
+  params.setDirtyPfmeaIds([])
+  params.setDeletedPfmeaIds([])
+  params.clearDirtyDraftPersisted()
+  params.setDraftRevisionIdOverride(null)
+  params.resetPfmeaEditRuntimeState()
+
+  const cleanupResult = await cleanupPfmeaAfterSuccessfulPublish(params.supabase, {
+    draftRevisionId: params.draftRevisionId,
+    projectId: params.projectId,
+    publishedRevisionId: params.publishedRevisionId,
+    userId: params.userId,
+  })
+
+  if (cleanupResult.draftCleanupAttempted) params.mark('cleanup old draft rows')
+  if (cleanupResult.editSessionDeleted) params.mark('cleanup edit session')
+  params.setEditSession(null)
+  params.forceRefreshExistingDraftFromOpenRef.current = false
+
+  return cleanupResult
 }

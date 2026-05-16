@@ -8,6 +8,7 @@ import { resolvePfmeaSaveDraftRevisionId } from './pfmea-revision-utils'
 import { createPfmeaSaveTimingLogger } from './pfmea-save-timing-utils'
 import {
   commitPfmeaEditorBeforeSave,
+  cleanupPfmeaSuccessfulSaveAfterPublish,
   completePfmeaPostPublish,
   ensurePublishedPfmeaIntegrityAfterSave,
   fetchAuthenticatedPfmeaSaveUserId,
@@ -16,7 +17,6 @@ import {
   syncPublishedPfmeaRowMetadataAfterSave,
 } from './pfmea-save-orchestration'
 import {
-  cleanupPfmeaAfterSuccessfulPublish,
   fetchPfmeaRowsForRevision,
   publishPfmeaRevisionWithHistory,
   restorePfmeaRowsSnapshotToRevision,
@@ -231,23 +231,23 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
         userId: uid,
       })
 
-      params.setShowSave(false)
-      params.setChangeDesc('')
-      params.setDirtyPfmeaIds([])
-      params.setDeletedPfmeaIds([])
-      params.clearDirtyDraftPersisted()
-      params.setDraftRevisionIdOverride(null)
-      params.resetPfmeaEditRuntimeState()
-      const cleanupResult = await cleanupPfmeaAfterSuccessfulPublish(params.supabase, {
+      await cleanupPfmeaSuccessfulSaveAfterPublish({
+        clearDirtyDraftPersisted: params.clearDirtyDraftPersisted,
         draftRevisionId,
+        forceRefreshExistingDraftFromOpenRef: params.forceRefreshExistingDraftFromOpenRef,
+        mark: saveTiming.mark,
         projectId: params.projectId,
         publishedRevisionId,
+        resetPfmeaEditRuntimeState: params.resetPfmeaEditRuntimeState,
+        setChangeDesc: params.setChangeDesc,
+        setDeletedPfmeaIds: params.setDeletedPfmeaIds,
+        setDirtyPfmeaIds: params.setDirtyPfmeaIds,
+        setDraftRevisionIdOverride: params.setDraftRevisionIdOverride,
+        setEditSession: params.setEditSession,
+        setShowSave: params.setShowSave,
+        supabase: params.supabase,
         userId: params.userId,
       })
-      if (cleanupResult.draftCleanupAttempted) saveTiming.mark('cleanup old draft rows')
-      if (cleanupResult.editSessionDeleted) saveTiming.mark('cleanup edit session')
-      params.setEditSession(null)
-      params.forceRefreshExistingDraftFromOpenRef.current = false
 
       if (data) console.log('Published PFMEA revision id:', data)
 
