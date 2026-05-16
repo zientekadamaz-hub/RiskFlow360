@@ -9,6 +9,7 @@ import {
   PFMEA_COLUMNS_BY_ID,
   PFMEA_COLUMN_FILTER_GROUPS,
   PFMEA_EDITABLE_COLUMN_VISIBILITY,
+  PFMEA_EDITABLE_FIELDS,
   type PfmeaColumnId,
 } from '@/features/pfmea/pfmea-columns'
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
@@ -45,7 +46,7 @@ import { SURFACE_RADIUS, SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-
 import {
   TdRead,
 } from '@/features/pfmea/pfmea-merged-cell'
-import { asInt1to10 } from '@/features/pfmea/pfmea-risk-utils'
+import { asInt1to10, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
 import { colorFill, type RiskColor } from '@/features/pfmea/pfmea-risk-matrix-config'
 import {
   hasFailureModeContext,
@@ -87,13 +88,8 @@ import {
   getPfmeaRecommendedActionContinuationSourceRow,
 } from '@/features/pfmea/pfmea-row-context-utils'
 import { findEquivalentPfmeaRow } from '@/features/pfmea/pfmea-row-match-utils'
-import { normalizeClassValue } from '@/features/pfmea/pfmea-value-utils'
+import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
 import { makeEmptyPfmeaPayload, makePlaceholderRow } from '@/features/pfmea/pfmea-row-factory-utils'
-import {
-  buildPfmeaPendingEditablePatch,
-  buildPfmeaPlaceholderInsertPayload,
-  normalizePfmeaEditablePatch,
-} from '@/features/pfmea/pfmea-cell-edit-utils'
 import {
   buildPfmeaCauseContinuationInsertPayload,
   buildPfmeaEffectContinuationInsertPayload,
@@ -881,7 +877,20 @@ function PfmeaFullPageContent() {
 
     const task = (async () => {
       try {
-      const guarded = normalizePfmeaEditablePatch(patch)
+      const guarded: Partial<PfmeaRow> = { ...patch }
+      ;(['severity', 'occurrence', 'detection', 'occurrence2', 'detection2'] as (keyof PfmeaRow)[]).forEach((k) => {
+        if (!(k in guarded)) return
+        const v = (guarded as any)[k]
+        if (v === null) return
+        const n = asInt1to10(v)
+        ;(guarded as any)[k] = n
+      })
+      if ('pcp' in guarded) {
+        guarded.pcp = normalizePfmeaPcpValue(guarded.pcp)
+      }
+      if ('class' in guarded) {
+        guarded.class = normalizeClassValue((guarded.class as string | null | undefined) ?? null)
+      }
 
       const isPlaceholder = isPlaceholderRowId(row.id)
       if (isPlaceholder && !patchHasAnyValue(guarded)) return
@@ -910,7 +919,10 @@ function PfmeaFullPageContent() {
       const localPatch: Partial<PfmeaRow> = { ...guarded, ...computePfmeaDerivedFromContext(merged).derived }
 
       if (isPlaceholder) {
-        const payload = buildPfmeaPlaceholderInsertPayload(row, finalRev, localPatch)
+        const payload = {
+          ...makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row)),
+          ...localPatch,
+        }
         const insertRes = await supabase
           .from('pfmea_rows')
           .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
@@ -930,7 +942,8 @@ function PfmeaFullPageContent() {
           if (prev.some((x) => x.id === newId)) return prev
           const nextRow = {
             ...row,
-            ...payload,
+            ...makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row)),
+            ...(localPatch as any),
             id: newId,
             revision_id: finalRev,
             created_at: createdAt,
@@ -1002,8 +1015,26 @@ function PfmeaFullPageContent() {
         if (!finalRev) throw new Error('No working revision found.')
 
         const effectiveRow = applyPendingCellValues(row)
-        const pendingPatch = buildPfmeaPendingEditablePatch(effectiveRow)
-        const payload = buildPfmeaPlaceholderInsertPayload(row, finalRev, pendingPatch)
+        const pendingPatch: Partial<PfmeaRow> = {}
+        for (const field of PFMEA_EDITABLE_FIELDS) {
+          ;(pendingPatch as any)[field] = (effectiveRow as any)[field]
+        }
+        ;(['severity', 'occurrence', 'detection', 'occurrence2', 'detection2'] as (keyof PfmeaRow)[]).forEach((field) => {
+          if (!(field in pendingPatch)) return
+          const value = (pendingPatch as any)[field]
+          if (value === null) return
+          ;(pendingPatch as any)[field] = asInt1to10(value)
+        })
+        if ('class' in pendingPatch) {
+          pendingPatch.class = normalizeClassValue((pendingPatch.class as string | null | undefined) ?? null)
+        }
+
+        const merged = { ...row, ...(pendingPatch as any) } as PfmeaRow
+        const payload = {
+          ...makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row)),
+          ...pendingPatch,
+          ...computeDerived(merged),
+        }
         const ins = await supabase
           .from('pfmea_rows')
           .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
