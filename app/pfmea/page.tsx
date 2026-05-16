@@ -8,7 +8,6 @@ import {
   PFMEA_COLUMNS,
   PFMEA_COLUMNS_BY_ID,
   PFMEA_COLUMN_FILTER_GROUPS,
-  PFMEA_EDITABLE_COLUMN_VISIBILITY,
   PFMEA_EDITABLE_FIELDS,
   type PfmeaColumnId,
 } from '@/features/pfmea/pfmea-columns'
@@ -102,6 +101,11 @@ import {
   findPfmeaMergeOwnerRow,
   resolvePfmeaBlockEndAnchorRow,
 } from '@/features/pfmea/pfmea-table-merge-utils'
+import {
+  buildPfmeaEditableColumnOrder,
+  getNextPfmeaCellPosition,
+  getPreviousPfmeaCellPosition,
+} from '@/features/pfmea/pfmea-table-navigation-utils'
 import { usePfmeaSaveRevision } from '@/features/pfmea/use-pfmea-save-revision'
 import {
   stripPfmeaGroupIdsFromPayload,
@@ -1417,47 +1421,13 @@ function PfmeaFullPageContent() {
     rowHierarchyByIdRef.current = rowHierarchyById
   }, [rowHierarchyById])
 
-  const colOrder = useMemo<(keyof PfmeaRow)[]>(() => {
-    const order: Array<keyof typeof PFMEA_EDITABLE_COLUMN_VISIBILITY> = [
-      'failure_mode',
-      'characteristic',
-      'class',
-      'effect',
-      'severity',
-      'cause',
-      'occurrence',
-      'current_prevention',
-      'current_detection',
-      'detection',
-      'recommended_action',
-      'responsible',
-      'target_date',
-      'action_status',
-      'occurrence2',
-      'detection2',
-    ]
-    return order.filter((key) => isColumnVisible(PFMEA_EDITABLE_COLUMN_VISIBILITY[key])) as (keyof PfmeaRow)[]
-  }, [isColumnVisible])
+  const colOrder = useMemo(() => buildPfmeaEditableColumnOrder(isColumnVisible), [isColumnVisible])
 
   const nextCell = useCallback((rowIndex: number, colIdx: number) => {
-    if (colOrder.length === 0) return { r: rowIndex, c: 0 }
-    let c = colIdx + 1
-    let r = rowIndex
-    if (c >= colOrder.length) {
-      c = 0
-      r = Math.min(rowIndex + 1, tableRowsMemo.current.length - 1)
-    }
-    return { r, c }
+    return getNextPfmeaCellPosition(rowIndex, colIdx, colOrder, tableRowsMemo.current.length)
   }, [colOrder])
   const prevCell = useCallback((rowIndex: number, colIdx: number) => {
-    if (colOrder.length === 0) return { r: rowIndex, c: 0 }
-    let c = colIdx - 1
-    let r = rowIndex
-    if (c < 0) {
-      c = colOrder.length - 1
-      r = Math.max(rowIndex - 1, 0)
-    }
-    return { r, c }
+    return getPreviousPfmeaCellPosition(rowIndex, colIdx, colOrder)
   }, [colOrder])
 
   const handleCellKeyDown = useCallback(
