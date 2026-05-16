@@ -22,8 +22,18 @@ assert.match(
 )
 assert.match(
   source,
-  /setDraftValue\(props\.value\s*\?\?\s*''\)/,
-  'TdText must seed the local draft when editing starts.'
+  /defaultValue=\{val\}/,
+  'TdText editor must seed its initial DOM value when editing starts.'
+)
+assert.doesNotMatch(
+  source,
+  /value=\{val\}/,
+  'TdText editor must not be controlled by live props while editing.'
+)
+assert.doesNotMatch(
+  source,
+  /setDraftValue/,
+  'TdText must not call setState from effects to seed draft values.'
 )
 
 console.log('pfmea text cell smoke passed')

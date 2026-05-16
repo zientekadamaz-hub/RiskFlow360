@@ -1,9 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef } from 'react'
 import { editorBase } from './pfmea-cell-styles'
 import { MergedCellInner, mergedCellTdStyle } from './pfmea-merged-cell'
 
 type PfmeaEditorElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement
 type PfmeaEditorRef = React.MutableRefObject<PfmeaEditorElement | null>
+
+function resizeTextareaToContent(el: HTMLTextAreaElement) {
+  el.style.height = '0px'
+  el.style.height = `${Math.max(18, el.scrollHeight)}px`
+}
 
 export function TdText(props: {
   value: string
@@ -26,31 +31,24 @@ export function TdText(props: {
   flash?: boolean
   cellKey?: string
 }) {
-  const [draftValue, setDraftValue] = useState<string | null>(null)
   const localRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
+  const latestValueRef = useRef(props.value ?? '')
   const initialEditValueRef = useRef(props.value ?? '')
-  const wasEditingRef = useRef(false)
+  const activeEditorNodeRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
   const { editorRef } = props
-  const val = props.editing ? draftValue ?? props.value ?? '' : props.value ?? ''
+  const val = props.value ?? ''
 
   useEffect(() => {
-    if (props.editing && !wasEditingRef.current) {
-      initialEditValueRef.current = props.value ?? ''
-      setDraftValue(props.value ?? '')
-    }
-    if (!props.editing && wasEditingRef.current) {
-      setDraftValue(null)
-    }
-    wasEditingRef.current = props.editing
-  }, [props.editing, props.value])
+    if (props.editing) return
+    latestValueRef.current = val
+  }, [props.editing, val])
 
   useEffect(() => {
     if (!props.editing) return
     if (props.singleLine) return
     const t = localRef.current as HTMLTextAreaElement | null
     if (!t) return
-    t.style.height = '0px'
-    t.style.height = `${Math.max(18, t.scrollHeight)}px`
+    resizeTextareaToContent(t)
   }, [props.editing, props.singleLine, val])
 
   const sideActionButton = props.sideAction && !props.disabled ? (
@@ -80,9 +78,24 @@ export function TdText(props: {
     (el: HTMLTextAreaElement | HTMLInputElement | null) => {
       localRef.current = el
       editorRef.current = el
+      if (!el) {
+        activeEditorNodeRef.current = null
+        return
+      }
+      if (activeEditorNodeRef.current === el) return
+
+      activeEditorNodeRef.current = el
+      initialEditValueRef.current = latestValueRef.current
+      if (el instanceof HTMLTextAreaElement) resizeTextareaToContent(el)
     },
     [editorRef]
   )
+
+  const startEditing = useCallback(() => {
+    latestValueRef.current = val
+    initialEditValueRef.current = val
+    props.onStart()
+  }, [props, val])
 
   if (props.disabled) {
     return (
@@ -110,7 +123,7 @@ export function TdText(props: {
         data-pfmea-col={props.cellKey}
         rowSpan={props.rowSpan}
         className={`pfmeaTd editable ${props.singleLine ? 'singleLine' : 'multiLine'} ${props.flash ? 'flashMissing' : ''}`}
-        onClick={props.onStart}
+        onClick={startEditing}
         title={props.singleLine ? val : undefined}
         style={mergedCellTdStyle(props.rowSpan, props.style)}
       >
@@ -140,9 +153,8 @@ export function TdText(props: {
               <input
                 className="pfmeaEditor"
                 ref={setEditorRefs}
-                value={val}
+                defaultValue={val}
                 onChange={(e) => {
-                  setDraftValue(e.target.value)
                   props.onLiveChange?.(e.target.value)
                 }}
                 onKeyDown={props.onKeyDown}
@@ -150,7 +162,6 @@ export function TdText(props: {
                   const nextVal = e.currentTarget.value
                   props.onLiveChange?.(nextVal)
                   if (nextVal !== initialEditValueRef.current) props.onCommit(nextVal)
-                  setDraftValue(null)
                   props.stopEdit()
                 }}
                 style={editorBase}
@@ -159,9 +170,9 @@ export function TdText(props: {
               <textarea
                 className="pfmeaEditor"
                 ref={setEditorRefs}
-                value={val}
+                defaultValue={val}
                 onChange={(e) => {
-                  setDraftValue(e.target.value)
+                  resizeTextareaToContent(e.currentTarget)
                   props.onLiveChange?.(e.target.value)
                 }}
                 onKeyDown={props.onKeyDown}
@@ -169,7 +180,6 @@ export function TdText(props: {
                   const nextVal = e.currentTarget.value
                   props.onLiveChange?.(nextVal)
                   if (nextVal !== initialEditValueRef.current) props.onCommit(nextVal)
-                  setDraftValue(null)
                   props.stopEdit()
                 }}
                 style={editorBase}
