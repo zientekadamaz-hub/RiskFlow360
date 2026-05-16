@@ -2155,6 +2155,7 @@ function PfmeaFullPageContent() {
             >
               <PfmeaTableHeader
                 isColumnVisible={(id) => isColumnVisible(id as PfmeaColumnId)}
+                onHideColumn={(id) => toggleColumnVisibility(id as PfmeaColumnId, false)}
                 tableHeadRef={tableHeadRef}
                 visibleColumnDefs={visibleColumnDefs}
                 widthOf={(id) => widthOf(id as PfmeaColumnId)}

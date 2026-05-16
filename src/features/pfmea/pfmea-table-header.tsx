@@ -1,5 +1,9 @@
 import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
+import {
+  SettingsTableColumnHeader,
+  type SettingsColumnMenuItem,
+} from '@/features/settings/column-menu'
 import { anchoredPopupStyle } from './pfmea-popup-position'
 
 const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
@@ -10,12 +14,40 @@ export type PfmeaTableColumn = {
 
 type PfmeaTableHeaderProps = {
   isColumnVisible: (id: string) => boolean
+  onHideColumn?: (id: string) => void
   tableHeadRef: React.Ref<HTMLTableSectionElement>
   visibleColumnDefs: PfmeaTableColumn[]
   widthOf: (id: string) => string
 }
 
-function Th(props: { w?: number | string; children?: React.ReactNode }) {
+function HideColumnIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 12s3.4-6 9-6 9 6 9 6-3.4 6-9 6-9-6-9-6Z" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m4 4 16 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function Th(props: {
+  columnId?: string
+  label?: React.ReactNode
+  onHideColumn?: (id: string) => void
+  w?: number | string
+  children?: React.ReactNode
+}) {
+  const menuItems: SettingsColumnMenuItem[] =
+    props.columnId && props.onHideColumn
+      ? [
+          {
+            icon: <HideColumnIcon />,
+            key: 'hide',
+            label: 'Hide column',
+            onSelect: () => props.onHideColumn?.(props.columnId!),
+          },
+        ]
+      : []
+
   return (
     <th
       style={{
@@ -39,7 +71,15 @@ function Th(props: { w?: number | string; children?: React.ReactNode }) {
         fontWeight: 650,
       }}
     >
-      {props.children}
+      {props.label != null ? (
+        <SettingsTableColumnHeader
+          label={props.label}
+          menuItems={menuItems}
+          menuTitle={`${typeof props.label === 'string' ? props.label : 'Column'} actions`}
+        />
+      ) : (
+        props.children
+      )}
     </th>
   )
 }
@@ -126,10 +166,15 @@ function AfterHeader(props: { prefix: string }) {
 
 export function PfmeaTableHeader({
   isColumnVisible,
+  onHideColumn,
   tableHeadRef,
   visibleColumnDefs,
   widthOf,
 }: PfmeaTableHeaderProps) {
+  const renderTh = (id: string, label: React.ReactNode) => (
+    <Th columnId={id} label={label} onHideColumn={id === 'delete' ? undefined : onHideColumn} w={widthOf(id)} />
+  )
+
   return (
     <>
       <colgroup>
@@ -139,34 +184,34 @@ export function PfmeaTableHeader({
       </colgroup>
       <thead ref={tableHeadRef}>
         <tr>
-          {isColumnVisible('id') ? <Th w={widthOf('id')}>ID#</Th> : null}
-          {isColumnVisible('station') ? <Th w={widthOf('station')}>STATION</Th> : null}
-          {isColumnVisible('operation') ? <Th w={widthOf('operation')}>OPERATION</Th> : null}
-          {isColumnVisible('process_step') ? <Th w={widthOf('process_step')}>PROCESS STEP</Th> : null}
+          {isColumnVisible('id') ? renderTh('id', 'ID#') : null}
+          {isColumnVisible('station') ? renderTh('station', 'STATION') : null}
+          {isColumnVisible('operation') ? renderTh('operation', 'OPERATION') : null}
+          {isColumnVisible('process_step') ? renderTh('process_step', 'PROCESS STEP') : null}
 
-          {isColumnVisible('failure_mode') ? <Th w={widthOf('failure_mode')}>FAILURE MODE</Th> : null}
-          {isColumnVisible('characteristic') ? <Th w={widthOf('characteristic')}>CHARACTERISTIC</Th> : null}
-          {isColumnVisible('class') ? <Th w={widthOf('class')}>CLASS</Th> : null}
-          {isColumnVisible('effect') ? <Th w={widthOf('effect')}>EFFECT</Th> : null}
-          {isColumnVisible('sev') ? <Th w={widthOf('sev')}>SEV</Th> : null}
-          {isColumnVisible('cause') ? <Th w={widthOf('cause')}>CAUSE</Th> : null}
-          {isColumnVisible('occ') ? <Th w={widthOf('occ')}>OCC</Th> : null}
+          {isColumnVisible('failure_mode') ? renderTh('failure_mode', 'FAILURE MODE') : null}
+          {isColumnVisible('characteristic') ? renderTh('characteristic', 'CHARACTERISTIC') : null}
+          {isColumnVisible('class') ? renderTh('class', 'CLASS') : null}
+          {isColumnVisible('effect') ? renderTh('effect', 'EFFECT') : null}
+          {isColumnVisible('sev') ? renderTh('sev', 'SEV') : null}
+          {isColumnVisible('cause') ? renderTh('cause', 'CAUSE') : null}
+          {isColumnVisible('occ') ? renderTh('occ', 'OCC') : null}
 
-          {isColumnVisible('current_prev') ? <Th w={widthOf('current_prev')}>CURRENT CONTROLS (PREV)</Th> : null}
-          {isColumnVisible('current_det') ? <Th w={widthOf('current_det')}>CURRENT CONTROLS (DET)</Th> : null}
-          {isColumnVisible('det') ? <Th w={widthOf('det')}>DET</Th> : null}
+          {isColumnVisible('current_prev') ? renderTh('current_prev', 'CURRENT CONTROLS (PREV)') : null}
+          {isColumnVisible('current_det') ? renderTh('current_det', 'CURRENT CONTROLS (DET)') : null}
+          {isColumnVisible('det') ? renderTh('det', 'DET') : null}
 
-          {isColumnVisible('rpn') ? <Th w={widthOf('rpn')}>RPN</Th> : null}
-          {isColumnVisible('pcp') ? <Th w={widthOf('pcp')}><PcpHeaderHelp /></Th> : null}
+          {isColumnVisible('rpn') ? renderTh('rpn', 'RPN') : null}
+          {isColumnVisible('pcp') ? renderTh('pcp', <PcpHeaderHelp />) : null}
 
-          {isColumnVisible('recommended_action') ? <Th w={widthOf('recommended_action')}>RECOMMENDED ACTION</Th> : null}
-          {isColumnVisible('responsible') ? <Th w={widthOf('responsible')}>RESPONSIBLE</Th> : null}
-          {isColumnVisible('target_date') ? <Th w={widthOf('target_date')}>TARGET DATE</Th> : null}
-          {isColumnVisible('action_status') ? <Th w={widthOf('action_status')}>ACTION STATUS</Th> : null}
+          {isColumnVisible('recommended_action') ? renderTh('recommended_action', 'RECOMMENDED ACTION') : null}
+          {isColumnVisible('responsible') ? renderTh('responsible', 'RESPONSIBLE') : null}
+          {isColumnVisible('target_date') ? renderTh('target_date', 'TARGET DATE') : null}
+          {isColumnVisible('action_status') ? renderTh('action_status', 'ACTION STATUS') : null}
 
-          {isColumnVisible('o2') ? <Th w={widthOf('o2')}><AfterHeader prefix="OCC" /></Th> : null}
-          {isColumnVisible('d2') ? <Th w={widthOf('d2')}><AfterHeader prefix="DET" /></Th> : null}
-          {isColumnVisible('rpn2') ? <Th w={widthOf('rpn2')}><AfterHeader prefix="RPN" /></Th> : null}
+          {isColumnVisible('o2') ? renderTh('o2', <AfterHeader prefix="OCC" />) : null}
+          {isColumnVisible('d2') ? renderTh('d2', <AfterHeader prefix="DET" />) : null}
+          {isColumnVisible('rpn2') ? renderTh('rpn2', <AfterHeader prefix="RPN" />) : null}
 
           {isColumnVisible('delete') ? <Th w={widthOf('delete')}></Th> : null}
         </tr>
