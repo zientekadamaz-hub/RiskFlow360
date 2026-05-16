@@ -31,8 +31,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 tmp-pfmea-*.js
 pcp-save-regression-failure.png
+
+# local Supabase CLI state
+/supabase/.temp/
 
 # local Supabase backups / live data snapshots
 /PFMEA/supabase-backup-*/
