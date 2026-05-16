@@ -1,0 +1,33 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = path.join(__dirname, '..', '..')
+const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
+const failureModeCellsSource = fs.readFileSync(
+  path.join(root, 'src', 'features', 'pfmea', 'pfmea-failure-mode-cells.tsx'),
+  'utf8'
+)
+
+assert.match(failureModeCellsSource, /export function PfmeaFailureModeCells/, 'PFMEA failure mode cells component must be exported.')
+assert.match(failureModeCellsSource, /if \(failureModeSpan <= 0\) return null/, 'PFMEA failure mode cells must not render non-owner merged rows.')
+assert.match(failureModeCellsSource, /import \{ CLASS_OPTIONS, TdClassSelect \}/, 'PFMEA failure mode cells must reuse class selector.')
+assert.match(failureModeCellsSource, /import \{ TdText \}/, 'PFMEA failure mode cells must reuse text cells.')
+
+for (const col of ['failure_mode', 'characteristic', 'class']) {
+  assert.match(failureModeCellsSource, new RegExp(`isColumnVisible\\('${col}'\\)`), `PFMEA ${col} visibility gate must be preserved.`)
+  assert.match(failureModeCellsSource, new RegExp(`cellKey="${col}"`), `PFMEA ${col} cell key must be preserved.`)
+}
+
+assert.match(failureModeCellsSource, /rowSpan=\{failureModeSpan\}/, 'PFMEA failure mode cells must preserve merged rowSpan.')
+assert.match(failureModeCellsSource, /sideAction=\{failureModeSideAction\}/, 'PFMEA failure mode plus action must be injected unchanged from the page.')
+assert.match(failureModeCellsSource, /flash=\{isMissingHighlighted\('failure_mode'\)\}/, 'PFMEA failure mode missing highlight must be preserved.')
+assert.match(failureModeCellsSource, /normalizeClassValue\(effectiveFailureModeOwnerRow\.class\)/, 'PFMEA class normalization must be preserved.')
+
+assert.match(pageSource, /import \{ PfmeaFailureModeCells \}/, 'PFMEA page must import PfmeaFailureModeCells.')
+assert.match(pageSource, /<PfmeaFailureModeCells[\s\S]*effectiveFailureModeOwnerRow=\{effectiveFailureModeOwnerRow\}/, 'PFMEA page must pass failure mode owner row.')
+assert.match(pageSource, /<PfmeaFailureModeCells[\s\S]*failureModeSpan=\{failureModeSpan\}/, 'PFMEA page must pass failure mode span.')
+assert.match(pageSource, /<PfmeaFailureModeCells[\s\S]*failureModeSideAction=\{[\s\S]*Add failure mode row/, 'PFMEA page must preserve failure mode side action.')
+assert.match(pageSource, /<PfmeaFailureModeCells[\s\S]*addFailureModeContinuationRow/, 'PFMEA page must preserve failure mode continuation callback.')
+
+console.log('pfmea failure mode cells smoke passed')

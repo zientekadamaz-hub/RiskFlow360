@@ -3,7 +3,6 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabaseBrowser'
-import { CLASS_OPTIONS, TdClassSelect } from '@/features/pfmea/pfmea-class-select-cell'
 import {
   PFMEA_COLUMNS,
   PFMEA_COLUMNS_BY_ID,
@@ -15,6 +14,7 @@ import { PfmeaActionClosureCells } from '@/features/pfmea/pfmea-action-closure-c
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
 import { PfmeaCurrentRiskCells } from '@/features/pfmea/pfmea-current-risk-cells'
 import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
+import { PfmeaFailureModeCells } from '@/features/pfmea/pfmea-failure-mode-cells'
 import { PfmeaOperationCells } from '@/features/pfmea/pfmea-operation-cells'
 import { PfmeaResidualRiskCells } from '@/features/pfmea/pfmea-residual-risk-cells'
 import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
@@ -1859,84 +1859,46 @@ function PfmeaFullPageContent() {
                         step={step}
                       />
 
-                      {isColumnVisible('failure_mode') && failureModeSpan > 0 ? (
-                        <TdText
-                          value={effectiveFailureModeOwnerRow.failure_mode}
-                          editing={edit?.rowId === r.id && edit?.col === 'failure_mode'}
-                          onStart={() => void startEditCell(r, 'failure_mode')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'failure_mode', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'failure_mode', v)
-                            updateCellWithDerived(r, { failure_mode: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('failure_mode'), true)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          rowSpan={failureModeSpan}
-                          sideAction={
-                            canAddFailureModeRow
-                              ? {
-                                  title: 'Add failure mode row',
-                                  label: '+',
-                                  onClick: () => {
-                                    if (isPlaceholder) {
-                                      void (async () => {
-                                        try {
-                                          const materializedRow = await materializePlaceholderRowForAdd(r)
-                                          await addFailureModeContinuationRow(materializedRow, materializedRow)
-                                        } catch (e: any) {
-                                          setErr(e?.message ?? String(e))
-                                        }
-                                      })()
-                                      return
-                                    }
-                                    const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, failureModeMergeInfo) ?? r
-                                    void addFailureModeContinuationRow(r, anchorRow)
-                                  },
-                                }
-                              : undefined
-                          }
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('failure_mode')}
-                          cellKey="failure_mode"
-                          style={{ fontFamily: 'Calibri, Arial, sans-serif', fontSize: 16, fontWeight: 400, lineHeight: 1.45, textAlign: 'center', paddingTop: 14, paddingBottom: 14, color: '#d7dbe3' }}
-                        />
-                      ) : null}
-
-                      {isColumnVisible('characteristic') && failureModeSpan > 0 ? (
-                        <TdText
-                          value={effectiveFailureModeOwnerRow.characteristic}
-                          editing={edit?.rowId === r.id && edit?.col === 'characteristic'}
-                          onStart={() => void startEditCell(r, 'characteristic')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'characteristic', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'characteristic', v)
-                            updateCellWithDerived(r, { characteristic: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('characteristic'), true)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          rowSpan={failureModeSpan}
-                          disabled={readOnly}
-                          cellKey="characteristic"
-                          style={{ fontFamily: 'Calibri, Arial, sans-serif', fontSize: 16, color: '#d7dbe3' }}
-                        />
-                      ) : null}
-
-                      {isColumnVisible('class') && failureModeSpan > 0 ? (
-                        <TdClassSelect
-                          value={normalizeClassValue(effectiveFailureModeOwnerRow.class)}
-                          editing={edit?.rowId === r.id && edit?.col === 'class'}
-                          onStart={() => void startEditCell(r, 'class')}
-                          onCommit={(v) => updateCellWithDerived(r, { class: v || null })}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('class'), false)}
-                          stopEdit={() => setEdit(null)}
-                          options={CLASS_OPTIONS}
-                          rowSpan={failureModeSpan}
-                          disabled={readOnly}
-                          cellKey="class"
-                        />
-                      ) : null}
+                      <PfmeaFailureModeCells
+                        disabled={readOnly}
+                        edit={edit}
+                        editorRef={editorRef}
+                        effectiveFailureModeOwnerRow={effectiveFailureModeOwnerRow}
+                        failureModeSideAction={
+                          canAddFailureModeRow
+                            ? {
+                                title: 'Add failure mode row',
+                                label: '+',
+                                onClick: () => {
+                                  if (isPlaceholder) {
+                                    void (async () => {
+                                      try {
+                                        const materializedRow = await materializePlaceholderRowForAdd(r)
+                                        await addFailureModeContinuationRow(materializedRow, materializedRow)
+                                      } catch (e: any) {
+                                        setErr(e?.message ?? String(e))
+                                      }
+                                    })()
+                                    return
+                                  }
+                                  const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, failureModeMergeInfo) ?? r
+                                  void addFailureModeContinuationRow(r, anchorRow)
+                                },
+                              }
+                            : undefined
+                        }
+                        failureModeSpan={failureModeSpan}
+                        isColumnVisible={isColumnVisible}
+                        isMissingHighlighted={isMissingHighlighted}
+                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
+                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
+                        }
+                        onCommit={(patch) => updateCellWithDerived(r, patch)}
+                        onLiveChange={(columnId, value) => setPendingCellValue(r.id, columnId, value)}
+                        onStart={(columnId) => void startEditCell(r, columnId)}
+                        rowId={r.id}
+                        stopEdit={() => setEdit(null)}
+                      />
 
                       {isColumnVisible('effect') && failureBlockSpan > 0 ? (
                         <TdText
