@@ -11,15 +11,15 @@ import {
   PFMEA_EDITABLE_FIELDS,
   type PfmeaColumnId,
 } from '@/features/pfmea/pfmea-columns'
+import { PfmeaActionClosureCells } from '@/features/pfmea/pfmea-action-closure-cells'
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
 import { PfmeaCurrentRiskCells } from '@/features/pfmea/pfmea-current-risk-cells'
-import { TdDate } from '@/features/pfmea/pfmea-date-cell'
 import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
 import { PfmeaOperationCells } from '@/features/pfmea/pfmea-operation-cells'
+import { PfmeaResidualRiskCells } from '@/features/pfmea/pfmea-residual-risk-cells'
 import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
 import { TdScaleSelect } from '@/features/pfmea/pfmea-scale-select-cell'
 import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
-import { TdSelect } from '@/features/pfmea/pfmea-status-select-cell'
 import { PfmeaTableShell } from '@/features/pfmea/pfmea-table-shell'
 import { TdText } from '@/features/pfmea/pfmea-text-cell'
 import { PfmeaToolbar } from '@/features/pfmea/pfmea-toolbar'
@@ -43,7 +43,6 @@ import { usePfmeaSessionController } from '@/features/pfmea/use-pfmea-session-co
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
 import { SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
-import { TdRead } from '@/features/pfmea/pfmea-merged-cell'
 import { asInt1to10, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
 import {
   hasFailureModeContext,
@@ -2188,110 +2187,45 @@ function PfmeaFullPageContent() {
                         />
                       ) : null}
 
-                      {isColumnVisible('responsible') ? (
-                        <TdText
-                          value={effectiveCurrentRow.responsible}
-                          editing={edit?.rowId === r.id && edit?.col === 'responsible'}
-                          onStart={() => runActionPlanStart('responsible')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'responsible', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'responsible', v)
-                            updateCellWithDerived(r, { responsible: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('responsible'), false)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          singleLine
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('responsible')}
-                          cellKey="responsible"
-                        />
-                      ) : null}
+                      <PfmeaActionClosureCells
+                        disabled={readOnly}
+                        edit={edit}
+                        editorRef={editorRef}
+                        effectiveCurrentRow={effectiveCurrentRow}
+                        isColumnVisible={isColumnVisible}
+                        isMissingHighlighted={isMissingHighlighted}
+                        latestRowForHighlights={latestRowForHighlights}
+                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
+                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
+                        }
+                        onCommit={(patch) => updateCellWithDerived(r, patch)}
+                        onLiveChange={(columnId, value) => setPendingCellValue(r.id, columnId, value)}
+                        onStart={runActionPlanStart}
+                        rowId={r.id}
+                        stopEdit={() => setEdit(null)}
+                      />
 
-                      {isColumnVisible('target_date') ? (
-                        <TdDate
-                          value={effectiveCurrentRow.target_date}
-                          editing={edit?.rowId === r.id && edit?.col === 'target_date'}
-                          onStart={() => runActionPlanStart('target_date')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'target_date', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'target_date', v)
-                            updateCellWithDerived(r, { target_date: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('target_date'), false)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('target_date')}
-                          cellKey="target_date"
-                        />
-                      ) : null}
-
-                      {isColumnVisible('action_status') ? (
-                        <TdSelect
-                          value={latestRowForHighlights.action_status}
-                          editing={edit?.rowId === r.id && edit?.col === 'action_status'}
-                          onStart={() => runActionPlanStart('action_status')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'action_status', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'action_status', v)
-                            updateCellWithDerived(r, { action_status: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('action_status'), false)}
-                          stopEdit={() => setEdit(null)}
-                          options={['', 'OPEN', 'CLOSED', 'CANCELED']}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('action_status')}
-                          cellKey="action_status"
-                        />
-                      ) : null}
-
-                      {isColumnVisible('o2') ? (
-                        <TdScaleSelect
-                          value={asInt1to10(latestRowForHighlights.occurrence2)}
-                          editing={edit?.rowId === r.id && edit?.col === 'occurrence2'}
-                          onStart={() => runActionPlanStart('occurrence2')}
-                          onLiveChange={(n) => setPendingCellValue(r.id, 'occurrence2', n)}
-                          onCommit={(n) => {
-                            setPendingCellValue(r.id, 'occurrence2', n)
-                            updateCellWithDerived(r, { occurrence2: n })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('occurrence2'), false)}
-                          stopEdit={() => setEdit(null)}
-                          options={occurrenceOptions}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('occurrence2')}
-                          cellKey="occurrence2"
-                        />
-                      ) : null}
-
-                      {isColumnVisible('d2') ? (
-                        <TdScaleSelect
-                          value={asInt1to10(latestRowForHighlights.detection2)}
-                          editing={edit?.rowId === r.id && edit?.col === 'detection2'}
-                          onStart={() => runActionPlanStart('detection2')}
-                          onLiveChange={(n) => setPendingCellValue(r.id, 'detection2', n)}
-                          onCommit={(n) => {
-                            setPendingCellValue(r.id, 'detection2', n)
-                            updateCellWithDerived(r, { detection2: n })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('detection2'), false)}
-                          stopEdit={() => setEdit(null)}
-                          options={detectionOptions}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('detection2')}
-                          cellKey="detection2"
-                        />
-                      ) : null}
-
-                      {isColumnVisible('rpn2') ? (
-                        <TdRead
-                          value={a2.rpn == null ? '' : String(a2.rpn)}
-                          className="pfmeaTd rpnCell center gray singleLine"
-                          style={riskRpn2Style}
-                          onClick={() => setExpandedOperationId(r.operation_id || r.operations?.id || null)}
-                        />
-                      ) : null}
+                      <PfmeaResidualRiskCells
+                        detectionOptions={detectionOptions}
+                        disabled={readOnly}
+                        edit={edit}
+                        isColumnVisible={isColumnVisible}
+                        isMissingHighlighted={isMissingHighlighted}
+                        latestRowForHighlights={latestRowForHighlights}
+                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
+                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
+                        }
+                        onCommit={(patch) => updateCellWithDerived(r, patch)}
+                        onExpandOperation={setExpandedOperationId}
+                        onLiveChange={(columnId, value) => setPendingCellValue(r.id, columnId, value)}
+                        onStart={runActionPlanStart}
+                        operationId={r.operation_id || r.operations?.id || null}
+                        occurrenceOptions={occurrenceOptions}
+                        residualRpn={a2.rpn}
+                        riskRpn2Style={riskRpn2Style}
+                        rowId={r.id}
+                        stopEdit={() => setEdit(null)}
+                      />
 
                       {isColumnVisible('delete') ? (
                         <PfmeaDeleteCell

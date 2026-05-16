@@ -1,0 +1,29 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = path.join(__dirname, '..', '..')
+const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
+const residualRiskCellsSource = fs.readFileSync(
+  path.join(root, 'src', 'features', 'pfmea', 'pfmea-residual-risk-cells.tsx'),
+  'utf8'
+)
+
+assert.match(residualRiskCellsSource, /export function PfmeaResidualRiskCells/, 'PFMEA residual risk cells component must be exported.')
+assert.match(residualRiskCellsSource, /import \{ TdScaleSelect \}/, 'PFMEA residual risk cells must reuse scale select cells.')
+assert.match(residualRiskCellsSource, /import \{ TdRead \}/, 'PFMEA residual risk cells must reuse read-only RPN cell.')
+assert.match(residualRiskCellsSource, /isColumnVisible\('o2'\)/, 'PFMEA residual OCC visibility gate must be preserved.')
+assert.match(residualRiskCellsSource, /isColumnVisible\('d2'\)/, 'PFMEA residual DET visibility gate must be preserved.')
+assert.match(residualRiskCellsSource, /isColumnVisible\('rpn2'\)/, 'PFMEA residual RPN visibility gate must be preserved.')
+assert.match(residualRiskCellsSource, /cellKey="occurrence2"/, 'PFMEA residual OCC cell key must be preserved.')
+assert.match(residualRiskCellsSource, /cellKey="detection2"/, 'PFMEA residual DET cell key must be preserved.')
+assert.match(residualRiskCellsSource, /className="pfmeaTd rpnCell center gray singleLine"/, 'PFMEA residual RPN style must be preserved.')
+assert.match(residualRiskCellsSource, /onClick=\{expandOperation\}/, 'PFMEA residual RPN expand behavior must be preserved.')
+
+assert.match(pageSource, /import \{ PfmeaResidualRiskCells \}/, 'PFMEA page must import PfmeaResidualRiskCells.')
+assert.match(pageSource, /<PfmeaResidualRiskCells[\s\S]*residualRpn=\{a2\.rpn\}/, 'PFMEA page must pass residual RPN from row model.')
+assert.match(pageSource, /<PfmeaResidualRiskCells[\s\S]*riskRpn2Style=\{riskRpn2Style\}/, 'PFMEA page must pass residual RPN color style.')
+assert.match(pageSource, /<PfmeaResidualRiskCells[\s\S]*operationId=\{r\.operation_id \|\| r\.operations\?\.id \|\| null\}/, 'PFMEA page must preserve operation id for residual RPN expand.')
+assert.match(pageSource, /<PfmeaResidualRiskCells[\s\S]*onCommit=\{\(patch\) => updateCellWithDerived\(r, patch\)\}/, 'PFMEA page must preserve residual commit path.')
+
+console.log('pfmea residual risk cells smoke passed')
