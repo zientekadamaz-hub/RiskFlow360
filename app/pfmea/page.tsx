@@ -1882,6 +1882,14 @@ function PfmeaFullPageContent() {
           border-top: 1px solid rgba(255,255,255,0.14) !important;
         }
 
+        .pfmeaTd:hover {
+          background: rgba(255,255,255,0.075);
+        }
+
+        .pfmeaTd.gray:hover {
+          background: rgba(255,255,255,0.095);
+        }
+
         .pfmeaTd.flashMissing {
           box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.9) !important;
           border-radius: 0;
