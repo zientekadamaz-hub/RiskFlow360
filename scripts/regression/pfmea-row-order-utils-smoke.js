@@ -31,6 +31,7 @@ function loadModule(relativePath) {
 }
 
 const {
+  applyPersistedPfmeaRowOrderUpdates,
   buildPfmeaCreatedAtOrder,
   buildPfmeaRowsWithOrderMetadata,
   buildPfmeaRowsWithStableOrderMetadata,
@@ -170,6 +171,38 @@ try {
       ['b', '20.1.1.1.1', 'fm-b', 'fb-b', 'ap-b'],
     ]
   )
+
+  const updatedRows = applyPersistedPfmeaRowOrderUpdates(stable.orderedRows, [
+    {
+      id: 'c',
+      created_at: '2026-05-01T00:00:00.000Z',
+      row_no: '10.1.1.1.2',
+      failure_mode_group_id: 'fm-c-new',
+      failure_block_group_id: 'fb-c-new',
+      action_plan_group_id: 'ap-c-new',
+    },
+  ])
+  assert.notEqual(updatedRows, stable.orderedRows)
+  assertJsonEqual(
+    updatedRows.map((row) => [row.id, row.created_at, row.failure_mode_group_id, row.failure_block_group_id, row.action_plan_group_id]),
+    [
+      ['a', '2026-04-01T00:00:01.000Z', 'fm-a', 'fb-a', 'ap-a'],
+      ['c', '2026-05-01T00:00:00.000Z', 'fm-c-new', 'fb-c-new', 'ap-c-new'],
+      ['b', '2026-04-01T00:00:00.000Z', 'fm-b', 'fb-b', 'ap-b'],
+    ]
+  )
+
+  const unchangedRows = applyPersistedPfmeaRowOrderUpdates(updatedRows, [
+    {
+      id: 'c',
+      created_at: '2026-05-01T00:00:00.000Z',
+      row_no: '10.1.1.1.2',
+      failure_mode_group_id: 'fm-c-new',
+      failure_block_group_id: 'fb-c-new',
+      action_plan_group_id: 'ap-c-new',
+    },
+  ])
+  assert.equal(unchangedRows, updatedRows)
 } finally {
   Date.now = originalDateNow
 }

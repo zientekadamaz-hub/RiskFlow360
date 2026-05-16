@@ -69,6 +69,7 @@ import {
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
+  applyPersistedPfmeaRowOrderUpdates,
   insertPfmeaRowAfterAnchorWithOrderMetadata,
   insertPfmeaRowAtSortIndex,
   reindexPfmeaRows,
@@ -1182,35 +1183,8 @@ function PfmeaFullPageContent() {
       })
       if (updates.length === 0) return
 
-      const createdAtById = new Map(updates.map((item) => [item.id, item.created_at]))
-      const rowNoById = new Map(updates.map((item) => [item.id, item.row_no]))
-      const groupIdsById = new Map(
-        updates.map((item) => [
-          item.id,
-          {
-            failure_mode_group_id: item.failure_mode_group_id,
-            failure_block_group_id: item.failure_block_group_id,
-            action_plan_group_id: item.action_plan_group_id,
-          },
-        ])
-      )
       setRows((prev) => {
-        const nextRows = prev.map((row) => {
-          const createdAt = createdAtById.get(row.id)
-          const rowNo = rowNoById.get(row.id)
-          const groupIds = groupIdsById.get(row.id)
-          if (
-            !createdAt ||
-            (row.created_at === createdAt &&
-              row.row_no === rowNo &&
-              row.failure_mode_group_id === groupIds?.failure_mode_group_id &&
-              row.failure_block_group_id === groupIds?.failure_block_group_id &&
-              row.action_plan_group_id === groupIds?.action_plan_group_id)
-          ) {
-            return row
-          }
-          return { ...row, created_at: createdAt, row_no: rowNo, ...groupIds }
-        })
+        const nextRows = applyPersistedPfmeaRowOrderUpdates(prev, updates)
         rowsRef.current = nextRows
         return nextRows
       })

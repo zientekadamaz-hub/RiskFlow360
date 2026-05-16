@@ -21,6 +21,15 @@ export type PfmeaOrderRow = {
   } | null
 }
 
+export type PfmeaOrderMetadataUpdate = {
+  id: string
+  created_at: string
+  row_no: string | null
+  failure_mode_group_id: string | null
+  failure_block_group_id: string | null
+  action_plan_group_id: string | null
+}
+
 export function reindexPfmeaRows<T extends PfmeaOrderRow>(rows: T[]) {
   let changed = false
   const next = rows.map((row, index) => {
@@ -195,4 +204,41 @@ export function buildPfmeaRowsWithStableOrderMetadata<T extends PfmeaOrderRow>(r
     }),
     updates,
   }
+}
+
+export function applyPersistedPfmeaRowOrderUpdates<T extends PfmeaOrderRow>(
+  rows: T[],
+  updates: PfmeaOrderMetadataUpdate[]
+) {
+  if (updates.length === 0) return rows
+
+  const updateById = new Map(updates.map((item) => [item.id, item] as const))
+  let changed = false
+
+  const nextRows = rows.map((row) => {
+    const update = updateById.get(row.id)
+    if (!update) return row
+
+    if (
+      row.created_at === update.created_at &&
+      row.row_no === update.row_no &&
+      row.failure_mode_group_id === update.failure_mode_group_id &&
+      row.failure_block_group_id === update.failure_block_group_id &&
+      row.action_plan_group_id === update.action_plan_group_id
+    ) {
+      return row
+    }
+
+    changed = true
+    return {
+      ...row,
+      created_at: update.created_at,
+      row_no: update.row_no,
+      failure_mode_group_id: update.failure_mode_group_id,
+      failure_block_group_id: update.failure_block_group_id,
+      action_plan_group_id: update.action_plan_group_id,
+    }
+  })
+
+  return changed ? nextRows : rows
 }
