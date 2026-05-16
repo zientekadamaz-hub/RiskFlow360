@@ -9,6 +9,7 @@ import {
   buildPfmeaStableOrderMetadata,
   sortPfmeaRows,
 } from './pfmea-row-order-utils'
+import { resolvePfmeaSaveDraftRevisionId } from './pfmea-revision-utils'
 import { parsePfmeaPublishResult } from './pfmea-publish-utils'
 import {
   buildPfmeaPublishedMetadataPatch,
@@ -49,6 +50,12 @@ type PfmeaSaveCleanupResult = {
   editSessionDeleted: boolean
 }
 
+export type PfmeaSaveStartValidationResult =
+  | { status: 'busy' }
+  | { status: 'clean' }
+  | { status: 'invalid'; error: string }
+  | { status: 'ready'; changeDescription: string; draftRevisionId: string }
+
 export type PersistPfmeaRowOrderForSave = (
   revisionId: string,
   sourceRows?: PfmeaRow[],
@@ -67,6 +74,41 @@ export async function fetchAuthenticatedPfmeaSaveUserId(supabase: SupabaseClient
   const uid = sess?.session?.user?.id
   if (!uid) throw new Error('Not authenticated.')
   return uid
+}
+
+export function validatePfmeaSaveStart(params: {
+  changeDesc: string
+  currentDraftRevisionId?: string | null
+  currentOpenRevisionId?: string | null
+  draftRevisionIdOverride: string | null
+  isDirty: boolean
+  saveBusy: boolean
+  workingRevisionId: string | null
+}): PfmeaSaveStartValidationResult {
+  if (params.saveBusy) return { status: 'busy' }
+  if (!params.isDirty) return { status: 'clean' }
+
+  const changeDescription = params.changeDesc.trim()
+  if (!changeDescription) {
+    return { status: 'invalid', error: 'Change description is required.' }
+  }
+
+  const draftRevisionId = resolvePfmeaSaveDraftRevisionId({
+    currentDraftRevisionId: params.currentDraftRevisionId,
+    currentOpenRevisionId: params.currentOpenRevisionId,
+    draftRevisionIdOverride: params.draftRevisionIdOverride,
+    workingRevisionId: params.workingRevisionId,
+  })
+
+  if (!draftRevisionId) {
+    return { status: 'invalid', error: 'No draft revision found.' }
+  }
+
+  return {
+    status: 'ready',
+    changeDescription,
+    draftRevisionId,
+  }
 }
 
 export async function syncPublishedPfmeaRowMetadataAfterSave(params: {

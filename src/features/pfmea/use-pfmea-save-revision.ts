@@ -3,7 +3,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { isTimeoutError } from '@/lib/error-utils'
 import { hydratePfmeaGroupIds } from './pfmea-row-normalization-utils'
-import { resolvePfmeaSaveDraftRevisionId } from './pfmea-revision-utils'
 import { createPfmeaSaveTimingLogger } from './pfmea-save-timing-utils'
 import {
   cleanupPfmeaSuccessfulSaveAfterPublish,
@@ -16,6 +15,7 @@ import {
   publishPfmeaRevisionForSave,
   remapPfmeaSnapshotRowsToRevisionAfterSave,
   syncPublishedPfmeaRowMetadataAfterSave,
+  validatePfmeaSaveStart,
   type PersistPfmeaRowOrderForSave,
 } from './pfmea-save-orchestration'
 import {
@@ -134,34 +134,37 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
   }
 
   const handleSaveRevision = async () => {
-    if (params.saveBusy) return
+    const validation = validatePfmeaSaveStart({
+      changeDesc: params.changeDesc,
+      currentDraftRevisionId: params.project?.current_draft_revision_id,
+      currentOpenRevisionId: params.project?.current_open_revision_id,
+      draftRevisionIdOverride: params.draftRevisionIdOverride,
+      isDirty: params.isDirty,
+      saveBusy: params.saveBusy,
+      workingRevisionId: params.workingRevisionId,
+    })
+
+    if (validation.status === 'busy') return
     params.setErr('')
 
-    if (!params.isDirty) {
+    if (validation.status === 'clean') {
       params.setShowSave(false)
       return
     }
 
-    const desc = params.changeDesc.trim()
-    if (!desc) {
-      params.setErr('Change description is required.')
+    if (validation.status === 'invalid') {
+      params.setErr(validation.error)
       return
     }
 
+    const desc = validation.changeDescription
+    const draftRevisionId = validation.draftRevisionId
     const saveTiming = createPfmeaSaveTimingLogger()
 
     try {
       params.setSaveBusy(true)
       const uid = await fetchAuthenticatedPfmeaSaveUserId(params.supabase)
       saveTiming.mark('auth session')
-
-      const draftRevisionId = resolvePfmeaSaveDraftRevisionId({
-        currentDraftRevisionId: params.project?.current_draft_revision_id,
-        currentOpenRevisionId: params.project?.current_open_revision_id,
-        draftRevisionIdOverride: params.draftRevisionIdOverride,
-        workingRevisionId: params.workingRevisionId,
-      })
-      if (!draftRevisionId) throw new Error('No draft revision found.')
 
       const { orderedPersistedRows } = await preparePfmeaDraftRowsForPublish({
         cleanupEmptyTransientRows: params.cleanupEmptyTransientRows,

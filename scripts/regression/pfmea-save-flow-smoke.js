@@ -12,6 +12,8 @@ const postPublishSource = fs.readFileSync(postPublishSourcePath, 'utf8')
 const source = `${saveSource}\n${postPublishSource}`
 
 const expectedPrePublishOrder = [
+  'validatePfmeaSaveStart',
+  'validation.status ===',
   'auth session',
   'preparePfmeaDraftRowsForPublish',
   'publishPfmeaRevisionForSave',
@@ -72,11 +74,30 @@ const expectedSuccessfulReloadOrder = [
   'postPublishWarning',
 ]
 
+const expectedStartValidationOrder = [
+  'validatePfmeaSaveStart',
+  "status: 'busy'",
+  "status: 'clean'",
+  'Change description is required.',
+  'resolvePfmeaSaveDraftRevisionId',
+  'No draft revision found.',
+  "status: 'ready'",
+]
+
 let cursor = -1
 for (const marker of expectedPrePublishOrder) {
   const nextIndex = saveSource.indexOf(marker, cursor + 1)
   assert.notEqual(nextIndex, -1, `Missing PFMEA save flow marker: ${marker}`)
   assert.ok(nextIndex > cursor, `PFMEA save flow marker is out of order: ${marker}`)
+  cursor = nextIndex
+}
+
+cursor = postPublishSource.indexOf('validatePfmeaSaveStart')
+assert.notEqual(cursor, -1, 'PFMEA save start validation helper must exist.')
+for (const marker of expectedStartValidationOrder.slice(1)) {
+  const nextIndex = postPublishSource.indexOf(marker, cursor + 1)
+  assert.notEqual(nextIndex, -1, `Missing PFMEA save start validation marker: ${marker}`)
+  assert.ok(nextIndex > cursor, `PFMEA save start validation marker is out of order: ${marker}`)
   cursor = nextIndex
 }
 
@@ -134,5 +155,6 @@ for (const marker of expectedSuccessfulReloadOrder.slice(1)) {
 assert.match(source, /commitPfmeaEditorBeforeSave/, 'Save flow must blur/commit the active editor before publishing.')
 assert.match(source, /flushPendingCellUpdates/, 'Save flow must flush queued cell updates before publishing.')
 assert.match(source, /cleanupPfmeaSuccessfulSaveAfterPublish/, 'Save flow must clean up draft rows and edit session after publish.')
+assert.match(source, /validatePfmeaSaveStart/, 'Save flow must validate initial save state before publishing.')
 
 console.log('pfmea save flow smoke passed')
