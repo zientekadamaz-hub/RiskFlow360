@@ -38,6 +38,7 @@ const {
   getPfmeaRowOperationIds,
   insertPfmeaRowAfterAnchor,
   insertPfmeaRowAfterAnchorWithFallback,
+  insertPfmeaRowAfterAnchorWithOrderMetadata,
   insertPfmeaRowAtSortIndex,
   reindexPfmeaRows,
   sortPfmeaRows,
@@ -105,6 +106,29 @@ try {
       ['c', 1],
       ['b', 2],
     ]
+  )
+
+  const insertedWithVisibleOrder = insertPfmeaRowAfterAnchorWithOrderMetadata(
+    [
+      { id: 'visible-a', operation_id: 'op1', row_no: '10.1.3.1.1', operations: { id: 'op1', operation_number: 10 } },
+      { id: 'visible-b', operation_id: 'op1', row_no: '10.1.1.1.1', operations: { id: 'op1', operation_number: 10 } },
+      { id: 'visible-c', operation_id: 'op1', row_no: '10.1.2.1.1', operations: { id: 'op1', operation_number: 10 } },
+    ],
+    [
+      { id: 'visible-a', operation_id: 'op1', row_no: '10.1.3.1.1', operations: { id: 'op1', operation_number: 10 } },
+      { id: 'visible-c', operation_id: 'op1', row_no: '10.1.2.1.1', operations: { id: 'op1', operation_number: 10 } },
+      { id: 'visible-b', operation_id: 'op1', row_no: '10.1.1.1.1', operations: { id: 'op1', operation_number: 10 } },
+    ],
+    'visible-b',
+    { id: 'visible-x', operation_id: 'op1', operations: { id: 'op1', operation_number: 10 } }
+  )
+  assertJsonEqual(
+    insertedWithVisibleOrder.orderedRows.map((row) => row.id),
+    ['visible-a', 'visible-b', 'visible-x', 'visible-c']
+  )
+  assertJsonEqual(
+    insertedWithVisibleOrder.orderedRows.map((row) => row.row_no),
+    ['10.1.1.1.1', '10.2.1.1.1', '10.3.1.1.1', '10.4.1.1.1']
   )
 
   const stable = buildPfmeaRowsWithStableOrderMetadata([

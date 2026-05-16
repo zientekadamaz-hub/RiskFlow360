@@ -135,6 +135,45 @@ export function buildPfmeaRowsWithOrderMetadata<T extends PfmeaOrderRow>(rows: T
   }
 }
 
+export function applyPfmeaOrderMetadata<T extends PfmeaOrderRow>(
+  rows: T[],
+  updates: ReturnType<typeof buildPfmeaCreatedAtOrder<T>>
+) {
+  const updateById = new Map(updates.map((item) => [item.id, item] as const))
+
+  return reindexPfmeaRows(rows).map((row, index) => {
+    const meta = updateById.get(row.id)
+    if (!meta) return { ...row, __sortIndex: index }
+    return {
+      ...row,
+      created_at: meta.created_at,
+      row_no: meta.row_no,
+      failure_mode_group_id: meta.failure_mode_group_id,
+      failure_block_group_id: meta.failure_block_group_id,
+      action_plan_group_id: meta.action_plan_group_id,
+      __sortIndex: index,
+    }
+  })
+}
+
+export function insertPfmeaRowAfterAnchorWithOrderMetadata<T extends PfmeaOrderRow>(
+  visibleRows: T[],
+  fallbackRows: T[],
+  anchorRowId: string,
+  nextRow: T
+) {
+  const insertedRows = insertPfmeaRowAfterAnchorWithFallback(visibleRows, fallbackRows, anchorRowId, nextRow).filter(
+    (row) => !isPlaceholderRowId(row.id)
+  )
+  const orderedRows = reindexPfmeaRows(insertedRows)
+  const updates = buildPfmeaCreatedAtOrder(orderedRows)
+
+  return {
+    orderedRows: applyPfmeaOrderMetadata(orderedRows, updates),
+    updates,
+  }
+}
+
 export function buildPfmeaRowsWithStableOrderMetadata<T extends PfmeaOrderRow>(rows: T[]) {
   const orderedRows = sortPfmeaRows(rows).filter((row) => !isPlaceholderRowId(row.id))
   const updates = buildPfmeaStableOrderMetadata(orderedRows)

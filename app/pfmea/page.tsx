@@ -71,7 +71,7 @@ import {
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
-  insertPfmeaRowAfterAnchorWithFallback,
+  insertPfmeaRowAfterAnchorWithOrderMetadata,
   insertPfmeaRowAtSortIndex,
   reindexPfmeaRows,
   sortPfmeaRows,
@@ -627,6 +627,24 @@ function PfmeaFullPageContent() {
     return new Date().toISOString()
   }
 
+  function commitInsertedPfmeaRow(finalRev: string, anchorRowId: string, nextRow: PfmeaRow) {
+    const visibleRows = tableRows.some((item) => item.id === anchorRowId) ? tableRows : sortPfmeaRows(rowsRef.current)
+    const { orderedRows, updates } = insertPfmeaRowAfterAnchorWithOrderMetadata(
+      visibleRows,
+      sortPfmeaRows(rowsRef.current),
+      anchorRowId,
+      nextRow
+    )
+
+    rowsRef.current = orderedRows
+    setRows(orderedRows)
+    void persistPfmeaRowOrder(finalRev, orderedRows, updates).catch((error: unknown) => {
+      setErr(error instanceof Error ? error.message : String(error))
+    })
+
+    return orderedRows
+  }
+
   function getCauseContinuationSourceRow(row: PfmeaRow) {
     const effectiveRow = applyPendingCellValues(row)
     if ((effectiveRow.effect ?? '').trim() && asInt1to10(effectiveRow.severity) != null) return effectiveRow
@@ -869,12 +887,7 @@ function PfmeaFullPageContent() {
         created_at: insertedCreatedAt,
         __sortIndex: targetAnchorRow.__sortIndex,
       } as PfmeaRow
-      const nextRows = insertPfmeaRowAfterAnchorWithFallback(rowsRef.current, rowsRef.current, targetAnchorRow.id, nextRow)
-      rowsRef.current = nextRows
-      setRows(nextRows)
-      void persistPfmeaRowOrder(finalRev, nextRows).catch((error: unknown) => {
-        setErr(error instanceof Error ? error.message : String(error))
-      })
+      commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
       setEdit({ rowId: newId, col: 'cause' })
     } catch (e: any) {
       setErr(e?.message ?? String(e))
@@ -920,12 +933,7 @@ function PfmeaFullPageContent() {
         created_at: insertedCreatedAt,
         __sortIndex: targetAnchorRow.__sortIndex,
       } as PfmeaRow
-      const nextRows = insertPfmeaRowAfterAnchorWithFallback(rowsRef.current, rowsRef.current, targetAnchorRow.id, nextRow)
-      rowsRef.current = nextRows
-      setRows(nextRows)
-      void persistPfmeaRowOrder(finalRev, nextRows).catch((error: unknown) => {
-        setErr(error instanceof Error ? error.message : String(error))
-      })
+      commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
       setEdit({ rowId: newId, col: 'failure_mode' })
     } catch (e: any) {
       setErr(e?.message ?? String(e))
@@ -987,12 +995,7 @@ function PfmeaFullPageContent() {
         created_at: insertedCreatedAt,
         __sortIndex: targetAnchorRow.__sortIndex,
       } as PfmeaRow
-      const nextRows = insertPfmeaRowAfterAnchorWithFallback(rowsRef.current, rowsRef.current, targetAnchorRow.id, nextRow)
-      rowsRef.current = nextRows
-      setRows(nextRows)
-      void persistPfmeaRowOrder(finalRev, nextRows).catch((error: unknown) => {
-        setErr(error instanceof Error ? error.message : String(error))
-      })
+      commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
       setEdit({ rowId: newId, col: 'effect' })
     } catch (e: any) {
       setErr(e?.message ?? String(e))
@@ -1072,12 +1075,7 @@ function PfmeaFullPageContent() {
         created_at: insertedCreatedAt,
         __sortIndex: targetAnchorRow.__sortIndex,
       } as PfmeaRow
-      const nextRows = insertPfmeaRowAfterAnchorWithFallback(rowsRef.current, rowsRef.current, targetAnchorRow.id, nextRow)
-      rowsRef.current = nextRows
-      setRows(nextRows)
-      void persistPfmeaRowOrder(finalRev, nextRows).catch((error: unknown) => {
-        setErr(error instanceof Error ? error.message : String(error))
-      })
+      commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
       setEdit({ rowId: newId, col: 'recommended_action' })
     } catch (e: any) {
       setErr(e?.message ?? String(e))
