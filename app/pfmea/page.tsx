@@ -186,7 +186,6 @@ function PfmeaFullPageContent() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyEntries, setHistoryEntries] = useState<PfmeaHistoryEntry[]>([])
   const [expandedOperationId, setExpandedOperationId] = useState<string | null>(null)
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null)
   const [highlightedMissingCells, setHighlightedMissingCells] = useState<string[] | null>(null)
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const tableHeadRef = useRef<HTMLTableSectionElement | null>(null)
@@ -459,7 +458,6 @@ function PfmeaFullPageContent() {
     setDirtyPfmeaIds((prev) => prev.filter((id) => !idsToDeleteSet.has(id)))
     setDeletedPfmeaIds((prev) => prev.filter((id) => !idsToDeleteSet.has(id)))
     setHighlightedMissingCells((prev) => prev?.filter((key) => !idsToDelete.some((id) => key.startsWith(`${id}::`))) ?? null)
-    setHoveredRowId((prev) => (prev && idsToDeleteSet.has(prev) ? null : prev))
     setEdit((prev) => (prev && idsToDeleteSet.has(prev.rowId) ? null : prev))
 
     return nextRows
@@ -512,7 +510,6 @@ function PfmeaFullPageContent() {
             setDirtyPfmeaIds((prev) => prev.filter((x) => x !== id))
             setDeletedPfmeaIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
             setHighlightedMissingCells((prev) => prev?.filter((key) => !key.startsWith(`${id}::`)) ?? null)
-            setHoveredRowId((prev) => (prev === id ? null : prev))
             setEdit((prev) => (prev?.rowId === id ? null : prev))
           }
 
@@ -1885,14 +1882,6 @@ function PfmeaFullPageContent() {
           border-top: 1px solid rgba(255,255,255,0.14) !important;
         }
 
-        .pfmeaTd.editable:hover {
-          box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.45);
-          border-radius: 0;
-        }
-        .pfmeaRow.rowHover .pfmeaTd.editable:focus-within {
-          box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.45);
-          border-radius: 0;
-        }
         .pfmeaTd.flashMissing {
           box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.9) !important;
           border-radius: 0;
@@ -2276,9 +2265,7 @@ function PfmeaFullPageContent() {
                       key={r.id}
                       data-pfmea-row-id={r.id}
                       data-pfmea-row-no={rowNumber ?? undefined}
-                      className={`pfmeaRow ${groupStart ? 'groupStart' : ''} ${hoveredRowId === r.id ? 'rowHover' : ''}`}
-                      onMouseEnter={() => setHoveredRowId(r.id)}
-                      onMouseLeave={() => setHoveredRowId((current) => (current === r.id ? null : current))}
+                      className={`pfmeaRow ${groupStart ? 'groupStart' : ''}`}
                     >
                       {span > 0 ? (
                         <>
