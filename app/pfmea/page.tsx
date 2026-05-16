@@ -14,6 +14,7 @@ import { PfmeaActionClosureCells } from '@/features/pfmea/pfmea-action-closure-c
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
 import { PfmeaCurrentRiskCells } from '@/features/pfmea/pfmea-current-risk-cells'
 import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
+import { PfmeaFailureEffectCells } from '@/features/pfmea/pfmea-failure-effect-cells'
 import { PfmeaFailureModeCells } from '@/features/pfmea/pfmea-failure-mode-cells'
 import { PfmeaOperationCells } from '@/features/pfmea/pfmea-operation-cells'
 import { PfmeaResidualRiskCells } from '@/features/pfmea/pfmea-residual-risk-cells'
@@ -1900,69 +1901,57 @@ function PfmeaFullPageContent() {
                         stopEdit={() => setEdit(null)}
                       />
 
-                      {isColumnVisible('effect') && failureBlockSpan > 0 ? (
-                        <TdText
-                          value={effectiveFailureBlockOwnerRow.effect}
-                          editing={edit?.rowId === r.id && edit?.col === 'effect'}
-                          onStart={() => void startEditCell(r, 'effect')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'effect', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'effect', v)
-                            updateCellWithDerived(r, { effect: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('effect'), true)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          rowSpan={failureBlockSpan}
-                          sideAction={
-                            canAddEffectRow
-                              ? {
-                                  title: 'Add effect row',
-                                  label: '+',
-                                  onClick: () => {
-                                    if (isPlaceholder) {
-                                      void (async () => {
-                                        try {
-                                          const materializedRow = await materializePlaceholderRowForAdd(r)
-                                          await addEffectContinuationRow(materializedRow, materializedRow)
-                                        } catch (e: any) {
-                                          setErr(e?.message ?? String(e))
-                                        }
-                                      })()
-                                      return
-                                    }
-                                    const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, failureBlockMergeInfo) ?? r
-                                    void addEffectContinuationRow(failureModeOwnerRow, anchorRow)
-                                  },
-                                }
-                              : undefined
-                          }
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('effect')}
-                          cellKey="effect"
-                          style={{ fontFamily: 'Calibri, Arial, sans-serif', fontSize: 16, color: '#d7dbe3' }}
-                        />
-                      ) : null}
-
-                      {isColumnVisible('sev') && failureBlockSpan > 0 ? (
-                        <TdScaleSelect
-                          value={asInt1to10(effectiveFailureBlockOwnerRow.severity)}
-                          editing={edit?.rowId === failureBlockOwnerRow.id && edit?.col === 'severity'}
-                          onStart={() => void startEditCell(failureBlockOwnerRow, 'severity')}
-                          onLiveChange={(n) => setPendingCellValue(failureBlockOwnerRow.id, 'severity', n)}
-                          onCommit={(n) => {
-                            setPendingCellValue(failureBlockOwnerRow.id, 'severity', n)
-                            updateCellWithDerived(failureBlockOwnerRow, { severity: n })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('severity'), false)}
-                          stopEdit={() => setEdit(null)}
-                          options={severityOptions}
-                          rowSpan={failureBlockSpan}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('severity')}
-                          cellKey="severity"
-                        />
-                      ) : null}
+                      <PfmeaFailureEffectCells
+                        disabled={readOnly}
+                        edit={edit}
+                        editorRef={editorRef}
+                        effectRowId={r.id}
+                        effectSideAction={
+                          canAddEffectRow
+                            ? {
+                                title: 'Add effect row',
+                                label: '+',
+                                onClick: () => {
+                                  if (isPlaceholder) {
+                                    void (async () => {
+                                      try {
+                                        const materializedRow = await materializePlaceholderRowForAdd(r)
+                                        await addEffectContinuationRow(materializedRow, materializedRow)
+                                      } catch (e: any) {
+                                        setErr(e?.message ?? String(e))
+                                      }
+                                    })()
+                                    return
+                                  }
+                                  const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, failureBlockMergeInfo) ?? r
+                                  void addEffectContinuationRow(failureModeOwnerRow, anchorRow)
+                                },
+                              }
+                            : undefined
+                        }
+                        effectiveFailureBlockOwnerRow={effectiveFailureBlockOwnerRow}
+                        failureBlockSpan={failureBlockSpan}
+                        isColumnVisible={isColumnVisible}
+                        isMissingHighlighted={isMissingHighlighted}
+                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
+                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
+                        }
+                        onEffectCommit={(value) => {
+                          setPendingCellValue(r.id, 'effect', value)
+                          updateCellWithDerived(r, { effect: value })
+                        }}
+                        onEffectLiveChange={(value) => setPendingCellValue(r.id, 'effect', value)}
+                        onEffectStart={() => void startEditCell(r, 'effect')}
+                        onSeverityCommit={(value) => {
+                          setPendingCellValue(failureBlockOwnerRow.id, 'severity', value)
+                          updateCellWithDerived(failureBlockOwnerRow, { severity: value })
+                        }}
+                        onSeverityLiveChange={(value) => setPendingCellValue(failureBlockOwnerRow.id, 'severity', value)}
+                        onSeverityStart={() => void startEditCell(failureBlockOwnerRow, 'severity')}
+                        severityOptions={severityOptions}
+                        severityRowId={failureBlockOwnerRow.id}
+                        stopEdit={() => setEdit(null)}
+                      />
 
                       {isColumnVisible('cause') && actionPlanBlockSpan > 0 ? (
                         <TdText
