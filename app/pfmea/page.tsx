@@ -12,6 +12,7 @@ import {
 } from '@/features/pfmea/pfmea-columns'
 import { PfmeaActionClosureCells } from '@/features/pfmea/pfmea-action-closure-cells'
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
+import { PfmeaCauseCurrentControlCells } from '@/features/pfmea/pfmea-cause-current-control-cells'
 import { PfmeaCurrentRiskCells } from '@/features/pfmea/pfmea-current-risk-cells'
 import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
 import { PfmeaFailureEffectCells } from '@/features/pfmea/pfmea-failure-effect-cells'
@@ -19,7 +20,6 @@ import { PfmeaFailureModeCells } from '@/features/pfmea/pfmea-failure-mode-cells
 import { PfmeaOperationCells } from '@/features/pfmea/pfmea-operation-cells'
 import { PfmeaResidualRiskCells } from '@/features/pfmea/pfmea-residual-risk-cells'
 import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
-import { TdScaleSelect } from '@/features/pfmea/pfmea-scale-select-cell'
 import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
 import { PfmeaTableShell } from '@/features/pfmea/pfmea-table-shell'
 import { TdText } from '@/features/pfmea/pfmea-text-cell'
@@ -1953,129 +1953,49 @@ function PfmeaFullPageContent() {
                         stopEdit={() => setEdit(null)}
                       />
 
-                      {isColumnVisible('cause') && actionPlanBlockSpan > 0 ? (
-                        <TdText
-                          value={effectiveActionPlanOwnerRow.cause}
-                          editing={edit?.rowId === r.id && edit?.col === 'cause'}
-                          onStart={() => void startEditCell(r, 'cause')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'cause', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'cause', v)
-                            updateCellWithDerived(r, { cause: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('cause'), true)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          sideAction={
-                            canAddCauseRow
-                              ? {
-                                  title: 'Add cause row',
-                                  label: '+',
-                                  onClick: () => {
-                                    if (isPlaceholder) {
-                                      void (async () => {
-                                        try {
-                                          const materializedRow = await materializePlaceholderRowForAdd(r)
-                                          await addCauseContinuationRow(materializedRow, materializedRow)
-                                        } catch (e: any) {
-                                          setErr(e?.message ?? String(e))
-                                        }
-                                      })()
-                                      return
-                                    }
-                                    const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, actionPlanBlockMergeInfo) ?? r
-                                    const sourceRow = getFailureBlockSourceRowAtIndex(rowIndex) ?? failureBlockOwnerRow
-                                    void addCauseContinuationRow(sourceRow, anchorRow)
-                                  },
-                                }
-                              : undefined
-                          }
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('cause')}
-                          rowSpan={actionPlanBlockSpan}
-                          cellKey="cause"
-                        />
-                      ) : null}
-
-                      {isColumnVisible('occ') && actionPlanBlockSpan > 0 ? (
-                        <TdScaleSelect
-                          value={asInt1to10(effectiveActionPlanOwnerRow.occurrence)}
-                          editing={edit?.rowId === r.id && edit?.col === 'occurrence'}
-                          onStart={() => void startEditCell(r, 'occurrence')}
-                          onLiveChange={(n) => setPendingCellValue(r.id, 'occurrence', n)}
-                          onCommit={(n) => {
-                            setPendingCellValue(r.id, 'occurrence', n)
-                            updateCellWithDerived(r, { occurrence: n })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('occurrence'), false)}
-                          stopEdit={() => setEdit(null)}
-                          options={occurrenceOptions}
-                          rowSpan={actionPlanBlockSpan}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('occurrence')}
-                          cellKey="occurrence"
-                        />
-                      ) : null}
-
-                      {isColumnVisible('current_prev') && actionPlanBlockSpan > 0 ? (
-                        <TdText
-                          value={effectiveActionPlanOwnerRow.current_prevention}
-                          editing={edit?.rowId === r.id && edit?.col === 'current_prevention'}
-                          onStart={() => void startEditCell(r, 'current_prevention')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'current_prevention', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'current_prevention', v)
-                            updateCellWithDerived(r, { current_prevention: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('current_prevention'), true)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          rowSpan={actionPlanBlockSpan}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('current_prevention')}
-                          cellKey="current_prevention"
-                        />
-                      ) : null}
-
-                      {isColumnVisible('current_det') && actionPlanBlockSpan > 0 ? (
-                        <TdText
-                          value={effectiveActionPlanOwnerRow.current_detection}
-                          editing={edit?.rowId === r.id && edit?.col === 'current_detection'}
-                          onStart={() => void startEditCell(r, 'current_detection')}
-                          onLiveChange={(v) => setPendingCellValue(r.id, 'current_detection', v)}
-                          onCommit={(v) => {
-                            setPendingCellValue(r.id, 'current_detection', v)
-                            updateCellWithDerived(r, { current_detection: v })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('current_detection'), true)}
-                          editorRef={editorRef}
-                          stopEdit={() => setEdit(null)}
-                          rowSpan={actionPlanBlockSpan}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('current_detection')}
-                          cellKey="current_detection"
-                        />
-                      ) : null}
-
-                      {isColumnVisible('det') && actionPlanBlockSpan > 0 ? (
-                        <TdScaleSelect
-                          value={asInt1to10(effectiveActionPlanOwnerRow.detection)}
-                          editing={edit?.rowId === r.id && edit?.col === 'detection'}
-                          onStart={() => void startEditCell(r, 'detection')}
-                          onLiveChange={(n) => setPendingCellValue(r.id, 'detection', n)}
-                          onCommit={(n) => {
-                            setPendingCellValue(r.id, 'detection', n)
-                            updateCellWithDerived(r, { detection: n })
-                          }}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colOrder.indexOf('detection'), false)}
-                          stopEdit={() => setEdit(null)}
-                          options={detectionOptions}
-                          rowSpan={actionPlanBlockSpan}
-                          disabled={readOnly}
-                          flash={isMissingHighlighted('detection')}
-                          cellKey="detection"
-                        />
-                      ) : null}
+                      <PfmeaCauseCurrentControlCells
+                        actionPlanBlockSpan={actionPlanBlockSpan}
+                        causeSideAction={
+                          canAddCauseRow
+                            ? {
+                                title: 'Add cause row',
+                                label: '+',
+                                onClick: () => {
+                                  if (isPlaceholder) {
+                                    void (async () => {
+                                      try {
+                                        const materializedRow = await materializePlaceholderRowForAdd(r)
+                                        await addCauseContinuationRow(materializedRow, materializedRow)
+                                      } catch (e: any) {
+                                        setErr(e?.message ?? String(e))
+                                      }
+                                    })()
+                                    return
+                                  }
+                                  const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, actionPlanBlockMergeInfo) ?? r
+                                  const sourceRow = getFailureBlockSourceRowAtIndex(rowIndex) ?? failureBlockOwnerRow
+                                  void addCauseContinuationRow(sourceRow, anchorRow)
+                                },
+                              }
+                            : undefined
+                        }
+                        detectionOptions={detectionOptions}
+                        disabled={readOnly}
+                        edit={edit}
+                        editorRef={editorRef}
+                        effectiveActionPlanOwnerRow={effectiveActionPlanOwnerRow}
+                        isColumnVisible={isColumnVisible}
+                        isMissingHighlighted={isMissingHighlighted}
+                        occurrenceOptions={occurrenceOptions}
+                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
+                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
+                        }
+                        onCommit={(patch) => updateCellWithDerived(r, patch)}
+                        onLiveChange={(columnId, value) => setPendingCellValue(r.id, columnId, value)}
+                        onStart={(columnId) => void startEditCell(r, columnId)}
+                        rowId={r.id}
+                        stopEdit={() => setEdit(null)}
+                      />
 
                       <PfmeaCurrentRiskCells
                         actionPlanBlockSpan={actionPlanBlockSpan}
