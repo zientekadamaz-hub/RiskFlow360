@@ -18,6 +18,7 @@ Plain language:
 Already available:
 
 - GitHub Actions workflow: `.github/workflows/regression.yml`
+- Safe env template: `scripts/regression/regression.env.example`
 - Static quality gate:
   - `npm run lint`
   - `npm run typecheck`
@@ -32,6 +33,8 @@ Already available:
   - `npm run regression:pcp:save`
 - Local preflight:
   - `npm run regression:preflight`
+- Project access verification:
+  - `npm run regression:verify-project`
 
 ## Required Supabase setup
 
@@ -85,6 +88,8 @@ Do not commit it. It is ignored by git.
 Template:
 
 ```dotenv
+REGRESSION_BASE_URL=http://localhost:3000
+
 NEXT_PUBLIC_SUPABASE_URL=https://your-regression-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-regression-anon-key
 
@@ -92,9 +97,12 @@ REGRESSION_EMAIL=regression-user@example.com
 REGRESSION_PASSWORD=your-regression-password
 PFMEA_REGRESSION_PROJECT_ID=00000000-0000-0000-0000-000000000000
 PCP_REGRESSION_PROJECT_ID=00000000-0000-0000-0000-000000000000
+```
 
-REGRESSION_BASE_URL=http://localhost:3000
-REGRESSION_BROWSER_ATTEMPTS=3
+You can copy the same shape from:
+
+```text
+scripts/regression/regression.env.example
 ```
 
 Optional organization/invitation regression:
@@ -119,7 +127,13 @@ npm run dev
 npm run regression:preflight
 ```
 
-3. Run the browser suite:
+3. Check that the regression user can see the project and PFMEA rows:
+
+```powershell
+npm run regression:verify-project
+```
+
+4. Run the browser suite:
 
 ```powershell
 npm run regression:all
@@ -162,7 +176,30 @@ Organization/invitation regression, if enabled later:
 
 - Build job always runs on relevant pushes and pull requests.
 - Browser Regression job runs only when required secrets are present.
+- Browser Regression first verifies that the regression user can read the selected project and PFMEA rows.
 - If secrets are missing, GitHub will show warnings, but the normal build job can still stay green.
+
+## Current local limitation
+
+This machine has the Supabase CLI installed, but it is not logged in:
+
+```powershell
+npx supabase projects list
+```
+
+Current result:
+
+```text
+Access token not provided.
+```
+
+That means the repository can prepare and validate the regression setup, but creating the remote Supabase project still requires one manual login step:
+
+```powershell
+npx supabase login
+```
+
+GitHub CLI is not installed locally, so GitHub Actions secrets also need to be added manually in the GitHub website unless `gh` is installed later.
 
 ## Safety rules
 
@@ -174,4 +211,9 @@ Organization/invitation regression, if enabled later:
 
 ## Next step
 
-Create the regression Supabase project and one editable PFMEA project, then add the GitHub secrets listed above.
+Create or select the regression Supabase project, add one editable PFMEA project, create `.env.regression.local`, then run:
+
+```powershell
+npm run regression:preflight
+npm run regression:verify-project
+```

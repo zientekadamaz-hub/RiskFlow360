@@ -34,6 +34,7 @@ Local env loading:
 - browser regression scripts load `.env.local`
 - they also load `.env.regression.local` if present
 - both files are ignored by git
+- use `scripts/regression/regression.env.example` as the safe template
 
 Recommended usage:
 
@@ -48,10 +49,20 @@ Preflight:
 - warns when `REGRESSION_BASE_URL` is not reachable
 - does not print secret values
 
+Project access verification:
+
+- `npm run regression:verify-project`
+- signs in with `REGRESSION_EMAIL` / `REGRESSION_PASSWORD`
+- verifies that `PFMEA_REGRESSION_PROJECT_ID` is visible for that user
+- verifies that the project has an open or draft revision with PFMEA rows
+- optionally checks `PCP_REGRESSION_PROJECT_ID` when it is set
+- does not print passwords or API keys
+
 Available scripts:
 
 - `npm run regression:all`
 - `npm run regression:preflight`
+- `npm run regression:verify-project`
 - `npm run regression:shared`
 - `npm run regression:app-header`
 - `npm run regression:error-utils`
