@@ -12,12 +12,8 @@ import {
 import { clampInt, normalizeProjectText } from '@/features/projects/utils'
 import { PFMEA_REPORT_RISK_SELECT_WITH_REVISION } from '@/features/reports/pfmea-report-query'
 import { getPfmeaReportRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
-import { getReportRevisionId } from '@/features/reports/report-revision-utils'
+import { buildOpenReportProjectScope, normalizeReportOptionList } from '@/features/reports/report-project-scope'
 import type { RpnMatrixCellSummary, RpnMatrixFilters, RpnMatrixProject, RpnMatrixProjectColorCounts, RpnMatrixReportData } from './types'
-
-function normalizeOptionList(values: string[]) {
-  return Array.from(new Set(values.map(normalizeProjectText).filter(Boolean))).sort((a, b) => a.localeCompare(b))
-}
 
 function emptyColorCounts(): Record<RiskColor, number> {
   return { green: 0, orange: 0, red: 0, yellow: 0 }
@@ -38,36 +34,6 @@ function colorForCell(
   ) as RiskColor
 }
 
-function buildProjectRows(
-  projects: Awaited<ReturnType<typeof fetchProjectsWithRevision>>,
-  siteDeptMap: Record<string, { department: string; site: string }>,
-  filters: RpnMatrixFilters,
-  options: { includeProjectFilter?: boolean } = {}
-): RpnMatrixProject[] {
-  const siteFilter = new Set(filters.sites)
-  const departmentFilter = new Set(filters.departments)
-  const projectFilter = new Set(filters.projectIds)
-  const includeProjectFilter = options.includeProjectFilter ?? true
-
-  return projects
-    .filter((project) => normalizeProjectText(project.status).toUpperCase() === 'OPEN')
-    .map((project) => {
-      const siteDept = project.site_department_id ? siteDeptMap[project.site_department_id] : undefined
-      return {
-        department: normalizeProjectText(siteDept?.department),
-        id: normalizeProjectText(project.id),
-        name: normalizeProjectText(project.name),
-        openRevisionId: normalizeProjectText(project.current_open_revision_id),
-        revisionId: getReportRevisionId(project),
-        site: normalizeProjectText(siteDept?.site),
-      }
-    })
-    .filter((project) => project.id && project.revisionId)
-    .filter((project) => !siteFilter.size || siteFilter.has(project.site))
-    .filter((project) => !departmentFilter.size || departmentFilter.has(project.department))
-    .filter((project) => !includeProjectFilter || !projectFilter.size || projectFilter.has(project.id))
-}
-
 export async function fetchRpnMatrixReportData(
   supabase: SupabaseClient,
   userId: string,
@@ -81,9 +47,9 @@ export async function fetchRpnMatrixReportData(
     fetchRiskMatrixCells(supabase, { orgId: userCtx.orgId }),
   ])
 
-  const allOpenProjects = buildProjectRows(projects, siteDeptData.siteDeptMap, { departments: [], projectIds: [], sites: [] })
-  const projectOptions = buildProjectRows(projects, siteDeptData.siteDeptMap, filters, { includeProjectFilter: false })
-  const filteredProjects = buildProjectRows(projects, siteDeptData.siteDeptMap, filters)
+  const allOpenProjects = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, { departments: [], projectIds: [], sites: [] }, { requireRevision: true }) as RpnMatrixProject[]
+  const projectOptions = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, filters, { includeProjectFilter: false, requireRevision: true }) as RpnMatrixProject[]
+  const filteredProjects = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, filters, { requireRevision: true }) as RpnMatrixProject[]
   const revisionIds = filteredProjects.map((project) => project.revisionId)
   const projectIdByRevision = new Map(filteredProjects.map((project) => [project.revisionId, project.id]))
   const projectColorCounts = new Map<string, RpnMatrixProjectColorCounts>(
@@ -98,8 +64,8 @@ export async function fetchRpnMatrixReportData(
     ])
   )
 
-  const departments = normalizeOptionList(allOpenProjects.map((project) => project.department))
-  const sites = normalizeOptionList(allOpenProjects.map((project) => project.site))
+  const departments = normalizeReportOptionList(allOpenProjects.map((project) => project.department))
+  const sites = normalizeReportOptionList(allOpenProjects.map((project) => project.site))
 
   const cells: Record<string, RpnMatrixCellSummary> = {}
   const colorCounts = emptyColorCounts()

@@ -5,10 +5,9 @@ import {
   fetchProjectsUserContext,
   fetchProjectsWithRevision,
 } from '@/features/projects/projects-service'
-import { normalizeProjectText } from '@/features/projects/utils'
 import { PFMEA_REPORT_RISK_SELECT } from '@/features/reports/pfmea-report-query'
 import { getPfmeaReportRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
-import { getReportRevisionId } from '@/features/reports/report-revision-utils'
+import { buildOpenReportProjectScope } from '@/features/reports/report-project-scope'
 import type {
   ProgressChartData,
   ProgressChartFilters,
@@ -200,19 +199,14 @@ export async function fetchProgressChartData(
     fetchRiskMatrixConfig(supabase, userCtx.orgId),
   ])
 
-  const projectOptions: ProgressProjectOption[] = projects
-    .filter((project) => normalizeProjectText(project.status).toUpperCase() === 'OPEN')
-    .map((project) => {
-      const siteDept = project.site_department_id ? siteDeptData.siteDeptMap[project.site_department_id] : undefined
-      return {
-        currentRevisionId: getReportRevisionId(project),
-        department: normalizeProjectText(siteDept?.department),
-        id: normalizeProjectText(project.id),
-        name: normalizeProjectText(project.name),
-        site: normalizeProjectText(siteDept?.site),
-      }
-    })
-    .filter((project) => project.id && project.name)
+  const projectOptions: ProgressProjectOption[] = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap)
+    .map((project) => ({
+      currentRevisionId: project.revisionId,
+      department: project.department,
+      id: project.id,
+      name: project.name,
+      site: project.site,
+    }))
     .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }))
 
   const siteOptions = Array.from(new Set([
