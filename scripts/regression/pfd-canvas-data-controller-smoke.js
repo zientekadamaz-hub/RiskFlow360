@@ -18,6 +18,6 @@ assert.match(pageSource, /usePfdCanvasDataController\(\{/, 'PFD page must use th
 assert.doesNotMatch(pageSource, /fetchPfdCanvasData/, 'PFD page should not fetch canvas data directly after canvas controller extraction.')
 assert.doesNotMatch(pageSource, /fetchOwnPfdDraft/, 'PFD page should not fetch drafts directly after canvas controller extraction.')
 assert.doesNotMatch(pageSource, /savePfdDraft/, 'PFD page should not autosave drafts directly after canvas controller extraction.')
-assert.match(pageSource, /resetDraftLoad\(\)/, 'PFD page must reset draft loading when starting or discarding an edit session.')
+assert.match(pageSource, /resetDraftLoad/, 'PFD page must pass draft reset handling to edit session actions.')
 
 console.log('pfd canvas data controller smoke passed')

@@ -52,10 +52,6 @@ import {
   resequenceOperationRecords,
 } from '@/features/pfd/pfd-operations-service'
 import {
-  discardPfdDraftAndCloseSession,
-  startPfdEditSession,
-} from '@/features/pfd/pfd-service'
-import {
   SURFACE_RADIUS,
 } from '@/features/pfd/pfd-page-styles'
 import { PfdConfirmDialog, type PfdConfirmDialogConfig } from '@/features/pfd/pfd-confirm-dialog'
@@ -69,6 +65,7 @@ import { PfdLeftRail } from '@/features/pfd/pfd-left-rail'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
 import { usePfdCanvasDataController } from '@/features/pfd/use-pfd-canvas-data-controller'
+import { usePfdEditSessionActions } from '@/features/pfd/use-pfd-edit-session-actions'
 import { usePfdMiniPfmeaController } from '@/features/pfd/use-pfd-mini-pfmea-controller'
 import { usePfdProjectDataController } from '@/features/pfd/use-pfd-project-data-controller'
 import { usePfdSaveController } from '@/features/pfd/use-pfd-save-controller'
@@ -245,53 +242,26 @@ function PfdPageContent() {
     setError: setErr,
     supabase,
   })
+  const {
+    discardDraftAndCloseSession,
+    startEditSession,
+  } = usePfdEditSessionActions({
+    currentUserId,
+    edges,
+    editLockMs,
+    isEditOwner,
+    loadAll,
+    loadEditSession,
+    nodes,
+    projectId,
+    resetDraftLoad,
+    setError: setErr,
+    setSessionBusy,
+    setSessionMsg,
+    supabase,
+  })
 
   const canWork = !!projectId
-
-  const startEditSession = useCallback(async () => {
-    if (!projectId || !currentUserId) return
-    setSessionBusy(true)
-    setErr('')
-    setSessionMsg('')
-    try {
-      const result = await startPfdEditSession(supabase, {
-        projectId,
-        currentUserId,
-        nodes,
-        edges,
-        editLockMs,
-      })
-
-      if (result.blocked) {
-        setErr(result.message)
-        return
-      }
-
-      await loadEditSession()
-      resetDraftLoad()
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    } finally {
-      setSessionBusy(false)
-    }
-  }, [projectId, currentUserId, nodes, edges, loadEditSession, editLockMs, resetDraftLoad, setSessionBusy, setSessionMsg])
-
-  const discardDraftAndCloseSession = useCallback(async () => {
-    if (!projectId || !currentUserId || !isEditOwner) return
-    setSessionBusy(true)
-    setErr('')
-    try {
-      await discardPfdDraftAndCloseSession(supabase, { projectId, currentUserId })
-      resetDraftLoad()
-      await loadEditSession()
-      await loadAll()
-      setSessionMsg('Draft discarded. Session closed without publishing.')
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    } finally {
-      setSessionBusy(false)
-    }
-  }, [projectId, currentUserId, isEditOwner, loadEditSession, loadAll, resetDraftLoad, setSessionBusy, setSessionMsg])
 
   const patchOperation = useCallback(
     async (operationId: string, patch: Partial<PfdData>) => {
