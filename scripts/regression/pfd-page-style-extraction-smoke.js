@@ -4,6 +4,7 @@ const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
 const pageSource = fs.readFileSync(path.join(root, 'app', 'pfd', 'page.tsx'), 'utf8')
+const railSource = fs.readFileSync(path.join(root, 'src', 'features', 'pfd', 'pfd-left-rail.tsx'), 'utf8')
 const stylesSource = fs.readFileSync(path.join(root, 'src', 'features', 'pfd', 'pfd-page-styles.ts'), 'utf8')
 const paletteSource = fs.readFileSync(path.join(root, 'src', 'features', 'pfd', 'pfd-symbol-palette.tsx'), 'utf8')
 
@@ -18,7 +19,8 @@ assert.match(paletteSource, /SURFACE_BG_STRONG/, 'PFD palette button must preser
 assert.match(paletteSource, /export function ThumbOperation/, 'PFD operation thumbnail must be available for later palette extraction.')
 
 assert.match(pageSource, /from '@\/features\/pfd\/pfd-page-styles'/, 'PFD page must import shared PFD styles.')
-assert.match(pageSource, /from '@\/features\/pfd\/pfd-symbol-palette'/, 'PFD page must import palette button.')
+assert.match(pageSource, /from '@\/features\/pfd\/pfd-left-rail'/, 'PFD page must import left rail after palette extraction.')
+assert.match(railSource, /from '\.\/pfd-symbol-palette'/, 'PFD left rail must import palette button and thumbnails.')
 assert.doesNotMatch(pageSource, /function PaletteButton/, 'PFD page should not define PaletteButton after extraction.')
 assert.doesNotMatch(pageSource, /const baseBtn: React\.CSSProperties/, 'PFD page should not define base button style after extraction.')
 

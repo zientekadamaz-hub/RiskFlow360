@@ -77,12 +77,9 @@ import {
   startPfdEditSession,
 } from '@/features/pfd/pfd-service'
 import {
-  SURFACE_BG,
   SURFACE_BORDER,
   SURFACE_RADIUS,
-  SURFACE_TEXT,
   baseBtn,
-  baseBtnDisabled,
 } from '@/features/pfd/pfd-page-styles'
 import { PfdConfirmDialog, type PfdConfirmDialogConfig } from '@/features/pfd/pfd-confirm-dialog'
 import {
@@ -90,9 +87,9 @@ import {
   type PfdDecisionConnectDialogConfig,
 } from '@/features/pfd/pfd-decision-connect-dialog'
 import { PfdHistoryDialog } from '@/features/pfd/pfd-history-dialog'
+import { PfdLeftRail } from '@/features/pfd/pfd-left-rail'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
-import { PaletteButton } from '@/features/pfd/pfd-symbol-palette'
 import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
 
 // ✅ biblioteka symboli obok route
@@ -130,90 +127,6 @@ function PfdPageFallback() {
     <div style={{ padding: 24, color: '#666', fontSize: 14, fontWeight: 700 }}>
       Loading PFD...
     </div>
-  )
-}
-
-function ThumbOperation() {
-  // mini prostokąt jak operation
-  return (
-    <svg width="46" height="34" viewBox="0 0 46 34">
-      <rect
-        x="4"
-        y="4"
-        width="38"
-        height="26"
-        rx="6"
-        fill="rgba(232,243,237,0.96)"
-        stroke="rgba(107,145,125,0.42)"
-        strokeWidth="1.2"
-      />
-    </svg>
-  )
-}
-
-function ThumbDecision() {
-  // mini romb (bez zaokrągleń w mini)
-  return (
-    <svg width="46" height="34" viewBox="0 0 46 34">
-      <path
-        d="M23 2 L44 17 L23 32 L2 17 Z"
-        fill="rgba(232,243,237,0.96)"
-        stroke="rgba(107,145,125,0.42)"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function ThumbCircle() {
-  return (
-    <svg width="46" height="34" viewBox="0 0 46 34">
-      <circle cx="23" cy="17" r="13" fill="rgba(232,243,237,0.96)" stroke="rgba(107,145,125,0.42)" strokeWidth="1.2" />
-    </svg>
-  )
-}
-
-function ThumbFrame() {
-  return (
-    <svg width="46" height="34" viewBox="0 0 46 34">
-      <rect x="4" y="4" width="38" height="26" fill="transparent" stroke="rgba(107,145,125,0.42)" strokeWidth="1.2" strokeDasharray="4 3" />
-    </svg>
-  )
-}
-
-function ThumbStartStop() {
-  return (
-    <svg width="46" height="34" viewBox="0 0 46 34">
-      <rect
-        x="4"
-        y="8"
-        width="38"
-        height="18"
-        rx="9"
-        fill="rgba(232,243,237,0.96)"
-        stroke="rgba(107,145,125,0.42)"
-        strokeWidth="1.2"
-      />
-    </svg>
-  )
-}
-
-function ThumbTriangle() {
-  return (
-    <svg width="46" height="34" viewBox="0 0 46 34">
-      <path d="M23 5 L40 29 L6 29 Z" fill="rgba(232,243,237,0.96)" stroke="rgba(107,145,125,0.42)" strokeWidth="1.2" />
-    </svg>
-  )
-}
-
-function ThumbSubProcess() {
-  return (
-    <svg width="46" height="34" viewBox="0 0 46 34">
-      <rect x="4" y="4" width="38" height="26" rx="6" fill="rgba(232,243,237,0.96)" stroke="rgba(107,145,125,0.42)" strokeWidth="1.2" />
-      <line x1="11" y1="4" x2="11" y2="30" stroke="rgba(107,145,125,0.42)" strokeWidth="1.4" />
-      <line x1="35" y1="4" x2="35" y2="30" stroke="rgba(107,145,125,0.42)" strokeWidth="1.4" />
-    </svg>
   )
 }
 
@@ -1473,167 +1386,46 @@ function PfdPageContent() {
           </div>
         </div>
       ) : null}
-      {/* LEFT RAIL */}
-      <div
-        style={{
-          position: 'absolute',
-          zIndex: 30,
-          top: 12,
-          left: 12,
-          width: 198,
-          maxHeight: 'calc(100vh - 24px)',
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          paddingRight: 2,
-        }}
-      >
-        <div
-          style={{
-            padding: 10,
-            borderRadius: SURFACE_RADIUS,
-            background: 'rgba(255,255,255,0.08)',
-            border: `1px solid ${SURFACE_BORDER}`,
-            boxShadow: '0 18px 40px rgba(0,0,0,0.18)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button
-              className={`btn ${isEditOwner ? 'dangerBtn' : 'btnGreen'}`}
-              style={{
-                ...baseBtn,
-                width: '100%',
-                ...(
-                  sessionBusy || (!isEditOwner && (isLockedByOther || !currentUserId))
-                    ? baseBtnDisabled
-                    : null
-                ),
-              }}
-              onClick={
-                isEditOwner
-                  ? () =>
-                      setConfirmDialog({
-                        title: 'Discard draft and close session',
-                        body: 'Are you sure? All unsaved draft changes will be permanently lost.',
-                        dangerNote: 'DRAFT CHANGES WILL BE LOST',
-                        onConfirm: async () => {
-                          await discardDraftAndCloseSession()
-                          return true
-                        },
-                      })
-                  : startEditSession
-              }
-              disabled={sessionBusy || (!isEditOwner && (isLockedByOther || !currentUserId))}
-            >
-              {sessionBusy ? 'Please wait...' : isEditOwner ? 'Discard draft' : 'Edit PFD'}
-            </button>
-            {isEditOwner ? (
-              <button className="btn btnGreen" style={{ ...baseBtn, width: '100%' }} onClick={() => setSaveDialogOpen(true)} disabled={!projectId}>
-                Save PFD
-              </button>
-            ) : null}
-            <button className="btn btnGreen" style={{ ...baseBtn, width: '100%' }} onClick={() => setHistoryOpen(true)} disabled={!projectId}>
-              PFD history
-            </button>
-          </div>
-          {err ? <div style={{ fontSize: 12, padding: '8px 10px', borderRadius: SURFACE_RADIUS, background: 'rgba(127,29,29,0.42)', color: '#fee2e2', border: '1px solid rgba(248,113,113,0.4)' }}><b>Error:</b> {err}</div> : null}
-        </div>
-
-        {isEditOwner && (
-          <div
-            style={{
-              padding: 9,
-              borderRadius: SURFACE_RADIUS,
-              background: 'rgba(255,255,255,0.08)',
-              border: `1px solid ${SURFACE_BORDER}`,
-              boxShadow: '0 18px 40px rgba(0,0,0,0.18)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 7,
-            }}
-          >
-            <PaletteButton title="Start/Stop" subtitle="Center" onClick={addStartStopNearSelected} disabled={loading || !nodes.length || isReadOnly}><ThumbStartStop /></PaletteButton>
-            <PaletteButton title="Process Step" subtitle="Adds at end" onClick={addOperationAtEnd} disabled={loading || isReadOnly}><ThumbOperation /></PaletteButton>
-            <PaletteButton title="Process Step" subtitle="Insert after" onClick={addOperationAfterSelected} disabled={loading || !selectedIsOperation || isReadOnly}><ThumbOperation /></PaletteButton>
-            <PaletteButton title="Decision" subtitle="Center" onClick={addDecisionNearSelected} disabled={loading || !nodes.length || isReadOnly}><ThumbDecision /></PaletteButton>
-            <PaletteButton title="Connector" subtitle="Center" onClick={addCircleNearSelected} disabled={loading || !nodes.length || isReadOnly}><ThumbCircle /></PaletteButton>
-            <PaletteButton title="Storage" subtitle="Center" onClick={addTriangleNearSelected} disabled={loading || !nodes.length || isReadOnly}><ThumbTriangle /></PaletteButton>
-            <PaletteButton title="Frame" subtitle="Center" onClick={addFrameNearSelected} disabled={loading || isReadOnly}><ThumbFrame /></PaletteButton>
-            <PaletteButton title="Sub - Process" subtitle="Select process" onClick={addProcessRefNearSelected} disabled={loading || isReadOnly}><ThumbSubProcess /></PaletteButton>
-            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '2px 0' }} />
-            <button className="btn btnGreen" style={{ ...baseBtn, width: '100%', ...(isReadOnly ? baseBtnDisabled : null) }} onClick={resequenceOperations} disabled={isReadOnly}>Resequence</button>
-            <button className="btn btnGreen" style={{ ...baseBtn, width: '100%', ...(isReadOnly ? baseBtnDisabled : null), ...(lassoEnabled ? { background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)' } : null) }} onClick={() => setLassoEnabled((v) => !v)} disabled={isReadOnly}>{lassoEnabled ? 'Lasso: ON' : 'Lasso: OFF'}</button>
-          </div>
-        )}
-
-        <div
-          style={{
-            padding: 12,
-            borderRadius: SURFACE_RADIUS,
-            background: 'rgba(255,255,255,0.08)',
-            border: `1px solid ${SURFACE_BORDER}`,
-            boxShadow: '0 18px 40px rgba(0,0,0,0.18)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              type="button"
-              onClick={() => setZoomByStep(-1)}
-              style={{ ...baseBtn, height: 29, width: 29, padding: 0, background: SURFACE_BG }}
-              title="Zoom out"
-            >
-              -
-            </button>
-            <div
-              style={{
-                minWidth: 52,
-                height: 29,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                textAlign: 'center',
-                fontSize: 12,
-                fontWeight: 800,
-                color: SURFACE_TEXT,
-                borderRadius: SURFACE_RADIUS,
-                border: `1px solid ${SURFACE_BORDER}`,
-                background: SURFACE_BG,
-              }}
-            >
-              {zoomPct}%
-            </div>
-            <button
-              type="button"
-              onClick={() => setZoomByStep(1)}
-              style={{ ...baseBtn, height: 29, width: 29, padding: 0, background: SURFACE_BG }}
-              title="Zoom in"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={centerAll}
-              style={{ ...baseBtn, height: 29, padding: '0 10px', background: SURFACE_BG, flex: 1 }}
-              title="Center all objects"
-            >
-              Center
-            </button>
-          </div>
-        </div>
-      </div>
+      <PfdLeftRail
+        canStartEdit={Boolean(currentUserId)}
+        errorMessage={err}
+        hasNodes={Boolean(nodes.length)}
+        hasProject={Boolean(projectId)}
+        isEditOwner={isEditOwner}
+        isLockedByOther={isLockedByOther}
+        isReadOnly={isReadOnly}
+        lassoEnabled={lassoEnabled}
+        loading={loading}
+        selectedIsOperation={selectedIsOperation}
+        sessionBusy={sessionBusy}
+        zoomPct={zoomPct}
+        onAddCircle={addCircleNearSelected}
+        onAddDecision={addDecisionNearSelected}
+        onAddFrame={addFrameNearSelected}
+        onAddOperationAfterSelected={addOperationAfterSelected}
+        onAddOperationAtEnd={addOperationAtEnd}
+        onAddProcessRef={addProcessRefNearSelected}
+        onAddStartStop={addStartStopNearSelected}
+        onAddTriangle={addTriangleNearSelected}
+        onCenterAll={centerAll}
+        onDiscardDraft={() =>
+          setConfirmDialog({
+            title: 'Discard draft and close session',
+            body: 'Are you sure? All unsaved draft changes will be permanently lost.',
+            dangerNote: 'DRAFT CHANGES WILL BE LOST',
+            onConfirm: async () => {
+              await discardDraftAndCloseSession()
+              return true
+            },
+          })
+        }
+        onOpenHistory={() => setHistoryOpen(true)}
+        onOpenSave={() => setSaveDialogOpen(true)}
+        onResequenceOperations={resequenceOperations}
+        onStartEditSession={startEditSession}
+        onToggleLasso={() => setLassoEnabled((value) => !value)}
+        onZoomStep={setZoomByStep}
+      />
 {/* FLOW */}
       <div
         style={{ width: '100%', height: flowHeight, transition: 'height 180ms ease', position: 'relative' }}
