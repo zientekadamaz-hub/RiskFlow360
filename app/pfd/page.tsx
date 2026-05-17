@@ -92,6 +92,7 @@ import {
   type PfdDecisionConnectDialogConfig,
 } from '@/features/pfd/pfd-decision-connect-dialog'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
+import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
 import { PaletteButton } from '@/features/pfd/pfd-symbol-palette'
 import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
 
@@ -1781,89 +1782,18 @@ function PfdPageContent() {
         }
       />
 
-      {saveDialogOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 80,
-          }}
-          onClick={() => (saveBusy ? null : setSaveDialogOpen(false))}
-        >
-          <div
-            style={{
-              width: 560,
-              maxWidth: '92vw',
-              background: SURFACE_PANEL_BG,
-              borderRadius: SURFACE_RADIUS,
-              border: `1px solid ${SURFACE_BORDER}`,
-              boxShadow: '0 16px 36px rgba(0,0,0,0.2)',
-              padding: 20,
-              color: SURFACE_TEXT,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 10 }}>Save PFD</div>
-            <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.5, marginBottom: 12 }}>
-              Describe what you changed.
-            </div>
-            <textarea
-              autoFocus
-              value={saveDesc}
-              onChange={(e) => setSaveDesc(e.target.value)}
-              placeholder="Describe changes (required)"
-              style={{
-                width: '100%',
-                minHeight: 90,
-                borderRadius: SURFACE_RADIUS,
-                border: `1px solid ${SURFACE_BORDER}`,
-                padding: '10px 12px',
-                fontSize: 14,
-                fontFamily: UI_FONT,
-                resize: 'vertical',
-                marginBottom: 14,
-                background: SURFACE_BG,
-                color: SURFACE_TEXT,
-              }}
-            />
-            <div style={{ fontSize: 12, color: SURFACE_MUTED, marginBottom: 6 }}>
-              Next revision: <b>{(() => {
-                const parts = (currentRevisionLabel || '0.0.0').split('.')
-                const major = Number.parseInt(parts[0] ?? '0', 10)
-                const safeMajor = Number.isFinite(major) ? major : 0
-                const rest = parts.length > 1 ? parts.slice(1).join('.') : '0.0'
-                return `${safeMajor + 1}.${rest}`
-              })()}</b>
-            </div>
-            <div style={{ fontSize: 12, color: SURFACE_MUTED, marginBottom: 6 }}>
-              Author: <b>{historyAuthor}</b>
-            </div>
-            <div style={{ fontSize: 12, color: SURFACE_MUTED, marginBottom: 14 }}>
-              Current diagram: <b>{nodes.length}</b> objects, <b>{edges.length}</b> connections
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => (saveBusy ? null : setSaveDialogOpen(false))}
-                disabled={saveBusy}
-                style={{ ...baseBtn, height: 28, padding: '0 12px' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={savePfdWithDescription}
-                disabled={saveBusy || !saveDesc.trim()}
-                style={{ ...baseBtn, height: 28, padding: '0 12px' }}
-              >
-                {saveBusy ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PfdSaveDialog
+        author={historyAuthor}
+        busy={saveBusy}
+        currentRevisionLabel={currentRevisionLabel}
+        description={saveDesc}
+        edgeCount={edges.length}
+        nodeCount={nodes.length}
+        open={saveDialogOpen}
+        onCancel={() => setSaveDialogOpen(false)}
+        onDescriptionChange={setSaveDesc}
+        onSave={savePfdWithDescription}
+      />
 
       {historyOpen && (
         <div
