@@ -6,7 +6,7 @@ import {
   fetchProjectsWithRevision,
 } from '@/features/projects/projects-service'
 import { PFMEA_REPORT_RISK_SELECT } from '@/features/reports/pfmea-report-query'
-import { getPfmeaReportRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
+import { toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
 import { buildOpenReportProjectScope } from '@/features/reports/report-project-scope'
 import type {
   ProgressChartData,
@@ -136,12 +136,25 @@ function buildPoints(rows: PfmeaHistoryRow[], filters: ProgressChartFilters): Pr
     }))
 }
 
-function summarizeCurrentRows(rows: PfmeaReportRiskRow[]) {
+function getCurrentOpenProjectRpn(row: PfmeaReportRiskRow) {
+  const rpnCurrent = toNumber(row.rpn_current)
+  const persistedRpn = toNumber(row.rpn)
+  const severity = toNumber(row.severity)
+  const occurrence = toNumber(row.occurrence)
+  const detection = toNumber(row.detection)
+  const computedRpn = severity != null && occurrence != null && detection != null
+    ? severity * occurrence * detection
+    : null
+
+  return rpnCurrent ?? persistedRpn ?? computedRpn
+}
+
+export function summarizeProgressCurrentRows(rows: PfmeaReportRiskRow[]) {
   let sum = 0
   let count = 0
 
   for (const row of rows) {
-    const rpn = getPfmeaReportRisk(row).rpn
+    const rpn = getCurrentOpenProjectRpn(row)
     if (rpn == null) continue
     sum += rpn
     count += 1
@@ -156,7 +169,7 @@ function summarizeCurrentRows(rows: PfmeaReportRiskRow[]) {
 function upsertCurrentPoint(
   points: ProgressChartPoint[],
   filters: ProgressChartFilters,
-  currentSummary: ReturnType<typeof summarizeCurrentRows>
+  currentSummary: ReturnType<typeof summarizeProgressCurrentRows>
 ) {
   if (currentSummary.averageRpn == null || currentSummary.count <= 0) return points
 
@@ -262,7 +275,7 @@ export async function fetchProgressChartData(
     currentRows = (currentRes.data ?? []) as PfmeaReportRiskRow[]
   }
 
-  const currentSummary = summarizeCurrentRows(currentRows)
+  const currentSummary = summarizeProgressCurrentRows(currentRows)
   const points = upsertCurrentPoint(buildPoints(rows, filters), filters, currentSummary).slice(-30)
   const recordCount = points.reduce((sum, point) => sum + point.recordCount, 0)
   const lastAverageRpn = points.at(-1)?.averageRpn ?? null
