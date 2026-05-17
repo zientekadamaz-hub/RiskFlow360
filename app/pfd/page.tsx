@@ -57,9 +57,6 @@ import {
   discardPfdDraftAndCloseSession,
   fetchOwnPfdDraft,
   fetchPfdCanvasData,
-  fetchPfdHistory,
-  fetchPfdProcessOptions,
-  fetchPfdRevisionLabel,
   publishPfdDiagram,
   savePfdDraft,
   startPfdEditSession,
@@ -77,8 +74,8 @@ import { PfdHistoryDialog } from '@/features/pfd/pfd-history-dialog'
 import { PfdLeftRail } from '@/features/pfd/pfd-left-rail'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
-import type { PfdHistoryEntry } from '@/features/pfd/types'
 import { usePfdMiniPfmeaController } from '@/features/pfd/use-pfd-mini-pfmea-controller'
+import { usePfdProjectDataController } from '@/features/pfd/use-pfd-project-data-controller'
 import { usePfdSessionController } from '@/features/pfd/use-pfd-session-controller'
 
 // ✅ biblioteka symboli obok route
@@ -189,9 +186,6 @@ function PfdPageContent() {
   const [saveDesc, setSaveDesc] = useState('')
   const [saveBusy, setSaveBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [historyEntries, setHistoryEntries] = useState<PfdHistoryEntry[]>([])
-  const [currentRevisionLabel, setCurrentRevisionLabel] = useState('0.0.0')
-  const [processOptions, setProcessOptions] = useState<string[]>([])
   const draftLoadedFor = useRef<string>('')
   const [confirmDialog, setConfirmDialog] = useState<PfdConfirmDialogConfig | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
@@ -212,33 +206,15 @@ function PfdPageContent() {
     setSessionBusy,
     setSessionMsg,
   } = usePfdSessionController({ projectId, supabase })
+  const {
+    currentRevisionLabel,
+    historyEntries,
+    loadHistory,
+    loadRevisionLabel,
+    processOptions,
+  } = usePfdProjectDataController({ projectId, supabase })
 
   const canWork = !!projectId
-
-  const loadRevisionLabel = useCallback(async () => {
-    try {
-      const label = await fetchPfdRevisionLabel(supabase, projectId)
-      setCurrentRevisionLabel(label)
-    } catch {}
-  }, [projectId])
-
-  const loadProcessOptions = useCallback(async () => {
-    try {
-      const values = await fetchPfdProcessOptions(supabase, projectId)
-      setProcessOptions(values)
-    } catch {
-      setProcessOptions([])
-    }
-  }, [projectId])
-
-  const loadHistory = useCallback(async () => {
-    try {
-      const entries = await fetchPfdHistory(supabase, projectId)
-      setHistoryEntries(entries)
-    } catch {
-      setHistoryEntries([])
-    }
-  }, [projectId])
 
   const savePfdWithDescription = useCallback(async () => {
     if (!projectId || !currentUserId || !isEditOwner) return
@@ -357,18 +333,6 @@ function PfdPageContent() {
     if (moduleAccessState !== 'allowed') return
     loadAll()
   }, [projectId, loadAll, moduleAccessState])
-
-  useEffect(() => {
-    void loadHistory()
-  }, [loadHistory])
-
-  useEffect(() => {
-    void loadRevisionLabel()
-  }, [loadRevisionLabel])
-
-  useEffect(() => {
-    void loadProcessOptions()
-  }, [loadProcessOptions])
 
   useEffect(() => {
     if (!projectId || !currentUserId || !isEditOwner || !nodes.length) return
