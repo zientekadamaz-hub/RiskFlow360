@@ -83,6 +83,21 @@ assert.equal(
   'Draft row matching should use PFMEA group ids when a duplicated row_no is not enough.'
 )
 
+const draftRowsWithMisleadingRowNo = [
+  { ...base, id: 'draft-wrong-row-no', row_no: '10.1.1.1.1', failure_mode_group_id: 'fm-x', failure_block_group_id: 'fb-x', action_plan_group_id: 'ap-x' },
+  { ...base, id: 'draft-correct-group', row_no: '10.9.9.9.9', failure_mode_group_id: 'fm-1', failure_block_group_id: 'fb-1', action_plan_group_id: 'ap-1' },
+]
+assert.equal(
+  findEquivalentPfmeaRow(draftRowsWithMisleadingRowNo, { ...base, id: 'source-copy', row_no: '10.1.1.1.1' })?.id,
+  'draft-correct-group',
+  'Draft row matching should prefer stable PFMEA group ids over stale row_no metadata.'
+)
+assert.equal(
+  findEquivalentPublishedPfmeaRow(draftRowsWithMisleadingRowNo, { ...base, id: 'source-copy', row_no: '10.1.1.1.1' })?.id,
+  'draft-correct-group',
+  'Published row matching should prefer stable PFMEA group ids over stale row_no metadata.'
+)
+
 const draftRowsWithChangedMetadata = [
   {
     ...base,

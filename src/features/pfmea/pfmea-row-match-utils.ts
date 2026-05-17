@@ -33,6 +33,22 @@ function pfmeaRowOperationId(row: PfmeaMatchRow) {
   return row.operation_id || row.operations?.id || ''
 }
 
+function buildPfmeaGroupKey(row: PfmeaMatchRow) {
+  return JSON.stringify([
+    normalizePfmeaGroupId(row.failure_mode_group_id) ?? '',
+    normalizePfmeaGroupId(row.failure_block_group_id) ?? '',
+    normalizePfmeaGroupId(row.action_plan_group_id) ?? '',
+  ])
+}
+
+function findByPfmeaGroupIds<Row extends PfmeaMatchRow>(rows: Row[], sourceRow: PfmeaMatchRow) {
+  const sourceGroupKey = buildPfmeaGroupKey(sourceRow)
+  if (sourceGroupKey === JSON.stringify(['', '', ''])) return null
+
+  const byGroupIds = rows.filter((row) => buildPfmeaGroupKey(row) === sourceGroupKey)
+  return byGroupIds.length === 1 ? byGroupIds[0] : null
+}
+
 export function buildPfmeaRowMatchKey(row: PfmeaMatchRow) {
   return JSON.stringify([
     pfmeaRowOperationId(row),
@@ -87,27 +103,13 @@ export function findEquivalentPublishedPfmeaRow<Row extends PfmeaMatchRow>(rows:
   const sameOperationRows = rows.filter((row) => (pfmeaRowOperationId(row) || null) === operationId)
   if (sameOperationRows.length === 0) return null
 
+  const byGroupIds = findByPfmeaGroupIds(sameOperationRows, sourceRow)
+  if (byGroupIds) return byGroupIds
+
   const sourceRowNo = normalizePfmeaRowNo(sourceRow.row_no)
   if (sourceRowNo) {
     const byRowNo = sameOperationRows.filter((row) => normalizePfmeaRowNo(row.row_no) === sourceRowNo)
     if (byRowNo.length === 1) return byRowNo[0]
-  }
-
-  const sourceGroupKey = JSON.stringify([
-    normalizePfmeaGroupId(sourceRow.failure_mode_group_id) ?? '',
-    normalizePfmeaGroupId(sourceRow.failure_block_group_id) ?? '',
-    normalizePfmeaGroupId(sourceRow.action_plan_group_id) ?? '',
-  ])
-  if (sourceGroupKey !== JSON.stringify(['', '', ''])) {
-    const byGroupIds = sameOperationRows.filter(
-      (row) =>
-        JSON.stringify([
-          normalizePfmeaGroupId(row.failure_mode_group_id) ?? '',
-          normalizePfmeaGroupId(row.failure_block_group_id) ?? '',
-          normalizePfmeaGroupId(row.action_plan_group_id) ?? '',
-        ]) === sourceGroupKey
-    )
-    if (byGroupIds.length === 1) return byGroupIds[0]
   }
 
   const sourceContentKey = buildPfmeaRowContentKey(sourceRow)
@@ -136,27 +138,13 @@ export function findEquivalentPfmeaRow<Row extends PfmeaMatchRow>(
   const sameOperationRows = rows.filter((row) => (pfmeaRowOperationId(row) || null) === operationId)
   if (sameOperationRows.length === 0) return null
 
+  const byGroupIds = findByPfmeaGroupIds(sameOperationRows, sourceRow)
+  if (byGroupIds) return byGroupIds
+
   const sourceRowNo = normalizePfmeaRowNo(sourceRow.row_no)
   if (sourceRowNo) {
     const byRowNo = sameOperationRows.filter((row) => normalizePfmeaRowNo(row.row_no) === sourceRowNo)
     if (byRowNo.length === 1) return byRowNo[0]
-  }
-
-  const sourceGroupKey = JSON.stringify([
-    normalizePfmeaGroupId(sourceRow.failure_mode_group_id) ?? '',
-    normalizePfmeaGroupId(sourceRow.failure_block_group_id) ?? '',
-    normalizePfmeaGroupId(sourceRow.action_plan_group_id) ?? '',
-  ])
-  if (sourceGroupKey !== JSON.stringify(['', '', ''])) {
-    const byGroupIds = sameOperationRows.filter(
-      (row) =>
-        JSON.stringify([
-          normalizePfmeaGroupId(row.failure_mode_group_id) ?? '',
-          normalizePfmeaGroupId(row.failure_block_group_id) ?? '',
-          normalizePfmeaGroupId(row.action_plan_group_id) ?? '',
-        ]) === sourceGroupKey
-    )
-    if (byGroupIds.length === 1) return byGroupIds[0]
   }
 
   const sourceCreatedAt = (sourceRow.created_at ?? '').trim()
