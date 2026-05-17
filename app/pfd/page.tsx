@@ -78,6 +78,21 @@ import {
   savePfdDraft,
   startPfdEditSession,
 } from '@/features/pfd/pfd-service'
+import {
+  PFMEA_ACCENT,
+  PFMEA_CELL_TEXT,
+  SURFACE_BG,
+  SURFACE_BORDER,
+  SURFACE_MUTED,
+  SURFACE_PANEL_BG,
+  SURFACE_RADIUS,
+  SURFACE_TEXT,
+  baseBtn,
+  baseBtnDisabled,
+  td,
+  th,
+} from '@/features/pfd/pfd-page-styles'
+import { PaletteButton } from '@/features/pfd/pfd-symbol-palette'
 import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
 
 // ✅ biblioteka symboli obok route
@@ -94,15 +109,6 @@ type Edge = PfdFlowEdge
 type ColKey = 'failure_mode' | 'effect' | 'cause' | 'severity' | 'occurrence' | 'detection'
 const EDIT_LOCK_HOURS = 48
 const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
-const SURFACE_RADIUS = 8
-const SURFACE_BG = 'rgba(255,255,255,0.08)'
-const SURFACE_BG_STRONG = 'rgba(255,255,255,0.12)'
-const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
-const SURFACE_PANEL_BG = 'rgb(40, 39, 47)'
-const SURFACE_TEXT = '#f8fafc'
-const SURFACE_MUTED = 'rgba(255,255,255,0.72)'
-const PFMEA_CELL_TEXT = '#d7dbe3'
-const PFMEA_ACCENT = '#d9a86c'
 
 /* ===================== Layout ===================== */
 
@@ -118,62 +124,6 @@ const EDGE_MARKER = {
 }
 const ZOOM_BASE = 0.6
 
-
-/* ===================== Symbol Palette (miniaturki) ===================== */
-
-function PaletteButton({
-  title,
-  subtitle,
-  onClick,
-  disabled,
-  children,
-}: {
-  title: string
-  subtitle?: string
-  onClick: () => void
-  disabled?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        width: '100%',
-        display: 'flex',
-        gap: 8,
-        alignItems: 'center',
-        padding: 8,
-        borderRadius: SURFACE_RADIUS,
-        border: `1px solid ${SURFACE_BORDER}`,
-        background: disabled ? 'rgba(255,255,255,0.05)' : SURFACE_BG_STRONG,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        boxShadow: disabled ? 'none' : '0 18px 40px rgba(0,0,0,0.18)',
-        transition: 'transform .10s ease, box-shadow .15s ease, border-color .15s ease',
-        fontFamily: UI_FONT,
-      }}
-    >
-      <div
-        style={{
-          width: 51,
-          height: 41,
-          borderRadius: SURFACE_RADIUS,
-          display: 'grid',
-          placeItems: 'center',
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.08)',
-        }}
-      >
-        {children}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: SURFACE_TEXT, lineHeight: 1.02 }}>{title}</div>
-        {subtitle ? <div style={{ fontSize: 10, color: SURFACE_MUTED, fontWeight: 600 }}>{subtitle}</div> : null}
-      </div>
-    </button>
-  )
-}
 
 function PfdPageFallback() {
   return (
@@ -2302,60 +2252,6 @@ function PfdPageContent() {
       `}</style>
     </div>
   )
-}
-
-/* ===================== BUTTONS ===================== */
-
-const baseBtn: React.CSSProperties = {
-  height: 29,
-  padding: '0 14px',
-  borderRadius: SURFACE_RADIUS,
-  border: `1px solid ${SURFACE_BORDER}`,
-  background: SURFACE_BG,
-  fontSize: 13,
-  fontWeight: 600,
-  color: SURFACE_TEXT,
-  cursor: 'pointer',
-  transition: 'background .15s ease, box-shadow .15s ease, transform .10s ease, border-color .15s ease, color .15s ease',
-  textDecoration: 'none',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontFamily: UI_FONT,
-}
-
-const baseBtnDisabled: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.05)',
-  color: 'rgba(255,255,255,0.35)',
-  border: '1px solid rgba(255,255,255,0.08)',
-}
-
-/* ===================== TABLE HELPERS (mini PFMEA) ===================== */
-
-function th(extra: React.CSSProperties = {}): React.CSSProperties {
-  return {
-    position: 'sticky',
-    top: 0,
-    background: SURFACE_PANEL_BG,
-    borderBottom: '1px solid rgba(255,255,255,0.08)',
-    padding: '10px 10px',
-    textAlign: 'left',
-    fontWeight: 800,
-    color: PFMEA_ACCENT,
-    zIndex: 1,
-    ...extra,
-  }
-}
-
-function td(extra: React.CSSProperties = {}): React.CSSProperties {
-  return {
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
-    borderRight: '1px solid rgba(255,255,255,0.06)',
-    padding: 0,
-    verticalAlign: 'top',
-    color: PFMEA_CELL_TEXT,
-    ...extra,
-  }
 }
 
 function ExcelView({ value, onStart, align = 'left' }: { value: string; onStart: () => void; align?: 'left' | 'center' }) {
