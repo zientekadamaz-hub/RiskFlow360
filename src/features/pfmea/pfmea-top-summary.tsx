@@ -23,7 +23,7 @@ type PfmeaTopSummaryProps = {
   averageRpn: PfmeaTopSummaryValue
   operationsCount: number
   processName: string | null | undefined
-  rowsCount: number
+  riskCount: number
   revisionLabel: string | null | undefined
 }
 
@@ -31,7 +31,7 @@ export function PfmeaTopSummary({
   averageRpn,
   operationsCount,
   processName,
-  rowsCount,
+  riskCount,
   revisionLabel,
 }: PfmeaTopSummaryProps) {
   const name = processName ?? '-'
@@ -62,7 +62,7 @@ export function PfmeaTopSummary({
         />
         <SettingsSummaryTile label="Revision" value={pfmeaRevisionNumberFromLabel(revisionLabel ?? '')} valueStyle={pfmeaSummaryValueStyle} />
         <SettingsSummaryTile label="Operations" value={operationsCount} valueStyle={pfmeaSummaryValueStyle} />
-        <SettingsSummaryTile label="PFMEA rows" value={rowsCount} valueStyle={pfmeaSummaryValueStyle} />
+        <SettingsSummaryTile label="PFMEA risks" value={riskCount} valueStyle={pfmeaSummaryValueStyle} />
         <SettingsSummaryTile
           label="Average RPN"
           style={averageRpn.color ? settingsRiskSummaryTileStyle(averageRpn.color) : undefined}

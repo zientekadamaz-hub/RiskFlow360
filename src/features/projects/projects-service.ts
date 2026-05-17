@@ -22,6 +22,7 @@ import {
   formatDateTimePL,
   sectionRevisionFromLabel,
 } from './utils'
+import { collectPfmeaCurrentOpenRisks, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
 
 type ProfileOrgRow = {
   active_organization_id?: string | null
@@ -53,14 +54,21 @@ type RiskMatrixCellRow = {
 }
 
 type PfmeaStatsRow = {
+  action_plan_group_id?: string | null
+  failure_block_group_id?: string | null
+  failure_mode_group_id?: string | null
+  id?: string | null
+  operation_id?: string | null
+  row_no?: string | null
   revision_id?: string | null
   rpn?: number | null
   rpn_current?: number | null
   severity?: number | null
   occurrence?: number | null
   detection?: number | null
+  oxd_current?: number | null
   created_at?: string | null
-  operations?: { project_id?: string | null } | Array<{ project_id?: string | null }> | null
+  operations?: { id?: string | null; project_id?: string | null; active?: boolean | null } | Array<{ id?: string | null; project_id?: string | null; active?: boolean | null }> | null
 }
 
 const PROJECT_STATUSES = ['DRAFT', 'OPEN', 'OBSOLETE'] as const
@@ -399,16 +407,11 @@ export async function fetchProjectPfmeaStats(
 
   const { data, error } = await supabase
     .from('pfmea_rows')
-    .select('revision_id,rpn,rpn_current,severity,occurrence,detection,created_at,operations!inner(project_id,active)')
+    .select('id,operation_id,row_no,revision_id,failure_mode_group_id,failure_block_group_id,action_plan_group_id,rpn,rpn_current,severity,occurrence,detection,oxd_current,created_at,operations!inner(id,project_id,active)')
     .in('operations.project_id', projectIds)
     .eq('operations.active', true)
 
   if (error) throw error
-
-  const toNum = (value: unknown) => {
-    const numeric = Number(value)
-    return Number.isFinite(numeric) ? numeric : null
-  }
 
   type RevisionAggregate = {
     riskCount: number
@@ -419,7 +422,8 @@ export async function fetchProjectPfmeaStats(
 
   const aggregateByProjectRevision: Record<string, Record<string, RevisionAggregate>> = {}
 
-  for (const row of (data ?? []) as PfmeaStatsRow[]) {
+  for (const risk of collectPfmeaCurrentOpenRisks((data ?? []) as PfmeaStatsRow[])) {
+    const row = risk.row as PfmeaStatsRow
     const operationRelation = row.operations
     const operation = Array.isArray(operationRelation) ? operationRelation[0] : operationRelation
     const projectId = normalizeProjectText(operation?.project_id)
@@ -432,15 +436,9 @@ export async function fetchProjectPfmeaStats(
     slot.riskCount += 1
     if (Number.isFinite(createdAtMs)) slot.lastCreatedAt = Math.max(slot.lastCreatedAt, createdAtMs)
 
-    const rpnCurrent = toNum(row.rpn_current)
-    const rpn = toNum(row.rpn)
-    const severity = toNum(row.severity)
-    const occurrence = toNum(row.occurrence)
-    const detection = toNum(row.detection)
-    const rowRpn = rpnCurrent ?? rpn ?? (severity != null && occurrence != null && detection != null ? severity * occurrence * detection : null)
-    if (rowRpn != null) {
+    if (risk.rpn != null) {
       slot.rpnCount += 1
-      slot.rpnSum += rowRpn
+      slot.rpnSum += risk.rpn
     }
 
     byRevision[revisionId] = slot
@@ -587,7 +585,7 @@ export async function fetchOpenRiskSummary(
 
   const { data, error } = await supabase
     .from('pfmea_rows')
-    .select('severity,occurrence,detection,oxd_current,rpn_current,rpn,operations!inner(project_id,active)')
+    .select('id,operation_id,row_no,revision_id,failure_mode_group_id,failure_block_group_id,action_plan_group_id,severity,occurrence,detection,oxd_current,rpn_current,rpn,created_at,operations!inner(id,project_id,active)')
     .in('revision_id', normalizedRevisionIds)
     .eq('operations.active', true)
 
@@ -597,21 +595,11 @@ export async function fetchOpenRiskSummary(
   let rpnSum = 0
   let rpnCount = 0
 
-  const toNum = (value: unknown) => {
-    const numeric = Number(value)
-    return Number.isFinite(numeric) ? numeric : null
-  }
-
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    const severity = toNum(row.severity)
-    const oxdCurrent = toNum(row.oxd_current)
-    const occurrence = toNum(row.occurrence)
-    const detection = toNum(row.detection)
-    const rpnCurrent = toNum(row.rpn_current)
-    const rpn = toNum(row.rpn)
-    const doValue = oxdCurrent ?? (occurrence != null && detection != null ? occurrence * detection : null)
-    const rowRpn = rpnCurrent ?? rpn ?? (severity != null && doValue != null ? severity * doValue : null)
-
+  const risks = collectPfmeaCurrentOpenRisks((data ?? []) as PfmeaReportRiskRow[])
+  for (const risk of risks) {
+    const severity = risk.severity
+    const doValue = risk.doValue
+    const rowRpn = risk.rpn
     let color: RiskColor | null = null
     if (severity != null && doValue != null) {
       color = getRiskColorFor(severity, doValue, params.mode, params.thresholds, params.cells)
@@ -625,7 +613,7 @@ export async function fetchOpenRiskSummary(
   }
 
   return {
-    riskCount: (data ?? []).length,
+    riskCount: risks.length,
     openRiskAvgRpn: rpnCount > 0 ? Number((rpnSum / rpnCount).toFixed(1)) : null,
     riskColorCounts: counts,
   }

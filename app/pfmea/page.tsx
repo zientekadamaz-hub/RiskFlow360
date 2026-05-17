@@ -40,6 +40,7 @@ import {
   buildPfmeaBlockMergeInfoByHierarchy,
   buildPfmeaHierarchy,
   isPlaceholderRowId,
+  normalizePfmeaGroupId,
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
@@ -450,15 +451,31 @@ function PfmeaFullPageContent() {
     return buildPfmeaTableRows(displayOps, rowsSorted, workingRevisionId)
   }, [displayOps, rowsSorted, workingRevisionId])
 
+  const rowHierarchy = useMemo(() => buildPfmeaHierarchy(tableRows), [tableRows])
+
   const avgRpnSummary = useMemo(() => {
     return computePfmeaAverageRpnSummary(
-      rowsSorted,
-      (row) => computePfmeaDerivedFromContext(row).currentRisk,
+      tableRows,
+      (row) => {
+        const riskContext = computePfmeaDerivedFromContext(row)
+        return {
+          sev: riskContext.currentRisk.sev,
+          doVal: riskContext.derived.oxd_current,
+          rpn: riskContext.derived.rpn_current,
+        }
+      },
       getRiskColorFor,
-      getRiskColorForAverageRpn
+      getRiskColorForAverageRpn,
+      {
+        getRiskKey: (row, index) => {
+          const operationId = row.operation_id || row.operations?.id || 'operation'
+          const groupId = normalizePfmeaGroupId(row.action_plan_group_id)
+          return groupId ? `${operationId}:${groupId}` : (rowHierarchy[index]?.causeBlockKey ?? row.id)
+        },
+      }
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowsSorted, getRiskColorFor, getRiskColorForAverageRpn])
+  }, [tableRows, rowHierarchy, getRiskColorFor, getRiskColorForAverageRpn])
 
   const {
     addCauseContinuationRow,
@@ -527,7 +544,7 @@ function PfmeaFullPageContent() {
     project,
     projectId,
     resetPfmeaEditRuntimeState,
-    riskCount: rowsSorted.length,
+    riskCount: avgRpnSummary.count,
     rowsRef,
     saveBusy,
     setChangeDesc,
@@ -548,8 +565,6 @@ function PfmeaFullPageContent() {
   useEffect(() => {
     tableRowsMemo.current = tableRows
   }, [tableRows])
-
-  const rowHierarchy = useMemo(() => buildPfmeaHierarchy(tableRows), [tableRows])
 
   const rowHierarchyById = useMemo(() => {
     const out = new Map<string, PfmeaRowHierarchy>()
@@ -657,7 +672,7 @@ function PfmeaFullPageContent() {
       operationsCount={ops.length}
       processName={project?.name}
       revisionLabel={workingRevisionLabel}
-      rowsCount={rowsSorted.length}
+      riskCount={avgRpnSummary.count}
     />
   )
 

@@ -50,6 +50,22 @@ assert.equal(summary.color, 'orange')
 assert.equal(summary.count, 3)
 assertJsonEqual(summary.buckets, { green: 1, yellow: 1, orange: 1, red: 0 })
 
+const dedupedSummary = computePfmeaAverageRpnSummary(
+  [
+    { id: 'risk-a-action-1', riskKey: 'risk-a', currentRisk: { sev: 9, doVal: 49, rpn: 441 } },
+    { id: 'risk-a-action-2', riskKey: 'risk-a', currentRisk: { sev: 8, doVal: 36, rpn: 288 } },
+    { id: 'risk-b-action-1', riskKey: 'risk-b', currentRisk: { sev: 1, doVal: 4, rpn: 4 } },
+  ],
+  (row) => row.currentRisk,
+  (sev) => (sev === 8 ? 'orange' : 'green'),
+  (avg) => (avg >= 100 ? 'orange' : 'green'),
+  { getRiskKey: (row) => row.riskKey }
+)
+
+assert.equal(dedupedSummary.avg, (288 + 4) / 2)
+assert.equal(dedupedSummary.count, 2)
+assertJsonEqual(dedupedSummary.buckets, { green: 1, yellow: 0, orange: 1, red: 0 })
+
 const emptySummary = computePfmeaAverageRpnSummary(
   [{ id: 'empty', currentRisk: { sev: null, doVal: null, rpn: null } }],
   (row) => row.currentRisk,

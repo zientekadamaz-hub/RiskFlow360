@@ -1,12 +1,21 @@
 export type PfmeaReportRiskRow = {
   action_status?: string | null
+  action_plan_group_id?: string | null
+  created_at?: string | null
   detection?: number | string | null
   detection2?: number | string | null
+  failure_block_group_id?: string | null
+  failure_mode_group_id?: string | null
+  id?: string | null
+  operation_id?: string | null
   occurrence?: number | string | null
   occurrence2?: number | string | null
+  operations?: { id?: string | null; project_id?: string | null; active?: boolean | null } | Array<{ id?: string | null; project_id?: string | null; active?: boolean | null }> | null
   oxd_current?: number | string | null
+  revision_id?: string | null
   rpn?: number | string | null
   rpn_current?: number | string | null
+  row_no?: string | null
   severity?: number | string | null
 }
 
@@ -53,4 +62,67 @@ export function getPfmeaCurrentOpenRisk(row: PfmeaReportRiskRow) {
     rpn,
     severity,
   }
+}
+
+function normalizeRiskText(value: string | null | undefined) {
+  return (value ?? '').trim()
+}
+
+function operationIdForRiskKey(row: PfmeaReportRiskRow) {
+  const operationRelation = row.operations
+  const operation = Array.isArray(operationRelation) ? operationRelation[0] : operationRelation
+  return normalizeRiskText(row.operation_id) || normalizeRiskText(operation?.id) || 'operation'
+}
+
+function causeBlockKeyFromRowNo(rowNo: string | null | undefined) {
+  const normalized = normalizeRiskText(rowNo)
+  if (!normalized) return null
+  const parts = normalized.split('.').map((part) => part.trim())
+  if (parts.length < 4 || parts.slice(0, 4).some((part) => !part)) return null
+  return parts.slice(0, 4).join('.')
+}
+
+export function getPfmeaCurrentOpenRiskKey(row: PfmeaReportRiskRow, index = 0) {
+  const revisionId = normalizeRiskText(row.revision_id) || 'revision'
+  const operationId = operationIdForRiskKey(row)
+  const groupId = normalizeRiskText(row.action_plan_group_id)
+  if (groupId) return `${revisionId}:${operationId}:group:${groupId}`
+
+  const causeBlockKey = causeBlockKeyFromRowNo(row.row_no)
+  if (causeBlockKey) return `${revisionId}:${operationId}:row-no:${causeBlockKey}`
+
+  return `${revisionId}:${operationId}:row:${normalizeRiskText(row.id) || index}`
+}
+
+export type PfmeaCurrentOpenRiskEntry = {
+  doValue: number | null
+  key: string
+  row: PfmeaReportRiskRow
+  rpn: number | null
+  severity: number | null
+}
+
+export function collectPfmeaCurrentOpenRisks(rows: PfmeaReportRiskRow[]) {
+  const risksByKey = new Map<string, PfmeaCurrentOpenRiskEntry>()
+
+  rows.forEach((row, index) => {
+    const key = getPfmeaCurrentOpenRiskKey(row, index)
+    const previous = risksByKey.get(key)
+    const current = getPfmeaCurrentOpenRisk(row)
+    const severity = current.severity ?? previous?.severity ?? null
+    const doValue = current.doValue ?? previous?.doValue ?? null
+    const rpn = current.rpn ?? previous?.rpn ?? (severity != null && doValue != null ? severity * doValue : null)
+
+    if (severity == null && doValue == null && rpn == null) return
+
+    risksByKey.set(key, {
+      doValue,
+      key,
+      row,
+      rpn,
+      severity,
+    })
+  })
+
+  return Array.from(risksByKey.values()).filter((risk) => risk.rpn != null || (risk.severity != null && risk.doValue != null))
 }

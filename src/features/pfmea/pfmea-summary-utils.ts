@@ -17,16 +17,32 @@ export function computePfmeaAverageRpnSummary<T>(
   rows: T[],
   getCurrentRisk: (row: T) => PfmeaCurrentRiskMetrics,
   getRiskColorFor: (severity: number | null, occurrenceDetection: number | null) => RiskColor | null,
-  getRiskColorForAverageRpn: (averageRpn: number) => RiskColor | null
+  getRiskColorForAverageRpn: (averageRpn: number) => RiskColor | null,
+  options: {
+    getRiskKey?: (row: T, index: number) => string | null
+  } = {}
 ): PfmeaAverageRpnSummary {
   const buckets: Record<RiskColor, number> = { green: 0, yellow: 0, orange: 0, red: 0 }
-  const values: number[] = []
+  const currentRisksByKey = new Map<string, { color: RiskColor | null; rpn: number | null }>()
 
-  for (const row of rows) {
+  rows.forEach((row, index) => {
     const currentRisk = getCurrentRisk(row)
     const color = getRiskColorFor(currentRisk.sev, currentRisk.doVal)
+    const hasRpn = currentRisk.rpn != null && Number.isFinite(currentRisk.rpn)
+    if (!color && !hasRpn) return
+
+    const riskKey = options.getRiskKey?.(row, index) ?? `__row:${index}`
+    currentRisksByKey.set(riskKey, {
+      color,
+      rpn: hasRpn ? currentRisk.rpn : null,
+    })
+  })
+
+  const values: number[] = []
+  for (const currentRisk of currentRisksByKey.values()) {
+    const { color, rpn } = currentRisk
     if (color) buckets[color] += 1
-    if (currentRisk.rpn != null && Number.isFinite(currentRisk.rpn)) values.push(currentRisk.rpn)
+    if (rpn != null) values.push(rpn)
   }
 
   if (values.length === 0) {

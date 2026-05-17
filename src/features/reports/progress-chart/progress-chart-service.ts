@@ -5,8 +5,8 @@ import {
   fetchProjectsUserContext,
   fetchProjectsWithRevision,
 } from '@/features/projects/projects-service'
-import { PFMEA_REPORT_RISK_SELECT } from '@/features/reports/pfmea-report-query'
-import { getPfmeaCurrentOpenRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
+import { PFMEA_REPORT_RISK_SELECT_WITH_REVISION } from '@/features/reports/pfmea-report-query'
+import { collectPfmeaCurrentOpenRisks, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
 import { buildOpenReportProjectScope } from '@/features/reports/report-project-scope'
 import type {
   ProgressChartData,
@@ -136,16 +136,12 @@ function buildPoints(rows: PfmeaHistoryRow[], filters: ProgressChartFilters): Pr
     }))
 }
 
-function getCurrentOpenProjectRpn(row: PfmeaReportRiskRow) {
-  return getPfmeaCurrentOpenRisk(row).rpn
-}
-
 export function summarizeProgressCurrentRows(rows: PfmeaReportRiskRow[]) {
   let sum = 0
   let count = 0
 
-  for (const row of rows) {
-    const rpn = getCurrentOpenProjectRpn(row)
+  for (const risk of collectPfmeaCurrentOpenRisks(rows)) {
+    const rpn = risk.rpn
     if (rpn == null) continue
     sum += rpn
     count += 1
@@ -251,7 +247,7 @@ export async function fetchProgressChartData(
     const currentQuery = eligibleRevisionIds.length
       ? supabase
           .from('pfmea_rows')
-          .select(PFMEA_REPORT_RISK_SELECT)
+          .select(PFMEA_REPORT_RISK_SELECT_WITH_REVISION)
           .in('revision_id', eligibleRevisionIds)
       : Promise.resolve({ data: [], error: null })
 

@@ -24,7 +24,12 @@ function loadModule(relativePath) {
   return sandbox.module.exports
 }
 
-const { getPfmeaCurrentOpenRisk, getPfmeaReportRisk, toReportNumber } = loadModule(['src', 'features', 'reports', 'pfmea-report-risk-utils.ts'])
+const {
+  collectPfmeaCurrentOpenRisks,
+  getPfmeaCurrentOpenRisk,
+  getPfmeaReportRisk,
+  toReportNumber,
+} = loadModule(['src', 'features', 'reports', 'pfmea-report-risk-utils.ts'])
 
 assert.equal(toReportNumber('12'), 12)
 assert.equal(toReportNumber('x'), null)
@@ -68,5 +73,42 @@ assert.equal(currentRisk.rpn, 1000)
 currentRisk = getPfmeaCurrentOpenRisk({ severity: 8, occurrence: 9, detection: 9, oxd_current: 10, rpn_current: 80 })
 assert.equal(currentRisk.doValue, 10)
 assert.equal(currentRisk.rpn, 80)
+
+const collectedRisks = collectPfmeaCurrentOpenRisks([
+  {
+    id: 'risk-a-owner',
+    revision_id: 'rev-1',
+    operation_id: 'op-1',
+    action_plan_group_id: 'risk-a',
+    severity: 8,
+    occurrence: 9,
+    detection: 9,
+    oxd_current: 81,
+    rpn_current: 648,
+  },
+  {
+    id: 'risk-a-action',
+    revision_id: 'rev-1',
+    operation_id: 'op-1',
+    action_plan_group_id: 'risk-a',
+    oxd_current: 63,
+    rpn_current: 504,
+  },
+  {
+    id: 'risk-b-owner',
+    revision_id: 'rev-1',
+    operation_id: 'op-1',
+    action_plan_group_id: 'risk-b',
+    severity: 1,
+    occurrence: 2,
+    detection: 2,
+  },
+])
+
+assert.equal(collectedRisks.length, 2)
+assert.equal(collectedRisks[0].severity, 8)
+assert.equal(collectedRisks[0].doValue, 63)
+assert.equal(collectedRisks[0].rpn, 504)
+assert.equal(collectedRisks[1].rpn, 4)
 
 console.log('pfmea report risk utils smoke passed')
