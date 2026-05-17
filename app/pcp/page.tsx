@@ -36,13 +36,12 @@ import {
   sortPcpRows,
 } from '@/features/pcp/pcp-page-model'
 import { SummaryCard, TdClassPopup, TdRead, TdText, Th } from '@/features/pcp/pcp-table-cells'
+import { usePcpEditSessionActions } from '@/features/pcp/use-pcp-edit-session-actions'
 import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
 import {
   backfillPcpRowsFromPfmea,
-  deletePcpDraftRows,
   deletePcpEditSession,
   ensurePcpProcessDraft,
-  fetchCurrentPcpDraftRevisionId,
   fetchLatestPfmeaRevisionIdForPcp,
   fetchPcpEditSession,
   fetchPcpOperations,
@@ -50,7 +49,6 @@ import {
   fetchPcpRevisionHistory,
   fetchPcpRowsForRevision,
   fetchPcpSelectionThreshold,
-  fetchPcpSessionLock,
   fetchPcpUserProjectRole,
   fetchPfmeaPcpSeedRows,
   findEquivalentPcpRowInRevision,
@@ -59,7 +57,6 @@ import {
   publishPcpRevision,
   touchPcpEditSession,
   updatePcpRow,
-  upsertPcpEditSession,
   type PcpEditSession,
   type PcpHistoryEntry,
   type PcpProjectView as ProjectView,
@@ -414,64 +411,28 @@ function PcpPageContent() {
     }
   }, [projectId])
 
-  const startEditSession = useCallback(async () => {
-    if (!projectId || !userId || isObsolete) return
-    setSessionBusy(true)
-    setErr('')
-    setSessionMsg('')
-    try {
-      const nowIso = new Date().toISOString()
-      const lock = await fetchPcpSessionLock(supabase, projectId)
-      const otherOwner = lock?.lockedBy ?? null
-      const last = lock?.lastActivityAt ? new Date(lock.lastActivityAt).getTime() : 0
-      const hasActiveOther = !!otherOwner && otherOwner !== userId && sessionNow - last < EDIT_LOCK_MS
-      if (hasActiveOther && !isChampion) {
-        setErr('This PCP is currently locked by another user.')
-        return
-      }
-
-      if (otherOwner && otherOwner !== userId) {
-        const draftId = await fetchCurrentPcpDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
-        if (draftId) {
-          await deletePcpDraftRows(supabase, draftId)
-          setDraftRevisionIdOverride(null)
-          setDirtyIds([])
-          setDeletedIds([])
-        }
-        const reason = sessionNow - last >= EDIT_LOCK_MS ? '48h inactivity timeout' : 'session takeover by Champion'
-        setSessionMsg(`Previous PCP draft was discarded (${reason}).`)
-      }
-
-      await upsertPcpEditSession(supabase, projectId, userId, nowIso)
-      await loadEditSession()
-      await loadAll()
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    } finally {
-      setSessionBusy(false)
-    }
-  }, [projectId, userId, isObsolete, isChampion, sessionNow, loadEditSession, draftRevisionIdOverride, loadAll])
-
-  const discardDraftAndCloseSession = useCallback(async () => {
-    if (!projectId || !userId || !isEditOwner) return
-    setSessionBusy(true)
-    setErr('')
-    try {
-      const draftId = await fetchCurrentPcpDraftRevisionId(supabase, projectId) ?? draftRevisionIdOverride
-      if (draftId) await deletePcpDraftRows(supabase, draftId)
-      await deletePcpEditSession(supabase, projectId, userId)
-      setDraftRevisionIdOverride(null)
-      setDirtyIds([])
-      setDeletedIds([])
-      await loadEditSession()
-      await loadAll()
-      setSessionMsg('Draft discarded. Session closed without publishing.')
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    } finally {
-      setSessionBusy(false)
-    }
-  }, [projectId, userId, isEditOwner, draftRevisionIdOverride, loadEditSession, loadAll])
+  const {
+    discardDraftAndCloseSession,
+    startEditSession,
+  } = usePcpEditSessionActions({
+    draftRevisionIdOverride,
+    editLockMs: EDIT_LOCK_MS,
+    isChampion,
+    isEditOwner,
+    isObsolete,
+    loadAll,
+    loadEditSession,
+    projectId,
+    sessionNow,
+    setDeletedIds,
+    setDirtyIds,
+    setDraftRevisionIdOverride,
+    setError: setErr,
+    setSessionBusy,
+    setSessionMsg,
+    supabase,
+    userId,
+  })
 
   const updateRow = useCallback(async (row: PcpRow, patch: Partial<PcpRow>) => {
     if (readOnly) return

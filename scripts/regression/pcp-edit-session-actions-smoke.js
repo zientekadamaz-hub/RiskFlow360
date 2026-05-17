@@ -1,0 +1,25 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = path.join(__dirname, '..', '..')
+const pageSource = fs.readFileSync(path.join(root, 'app', 'pcp', 'page.tsx'), 'utf8')
+const hookSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'use-pcp-edit-session-actions.ts'), 'utf8')
+
+assert.match(hookSource, /export function usePcpEditSessionActions/, 'PCP edit session actions hook must be exported.')
+assert.match(hookSource, /fetchPcpSessionLock/, 'PCP edit session actions must own lock checks.')
+assert.match(hookSource, /fetchCurrentPcpDraftRevisionId/, 'PCP edit session actions must resolve the current draft revision.')
+assert.match(hookSource, /deletePcpDraftRows/, 'PCP edit session actions must own draft row discard.')
+assert.match(hookSource, /upsertPcpEditSession/, 'PCP edit session actions must own edit session start.')
+assert.match(hookSource, /deletePcpEditSession/, 'PCP edit session actions must own explicit session close.')
+assert.match(hookSource, /Previous PCP draft was discarded/, 'PCP edit session actions must preserve takeover timeout notice.')
+assert.match(hookSource, /Draft discarded\. Session closed without publishing\./, 'PCP edit session actions must preserve discard notice.')
+
+assert.match(pageSource, /usePcpEditSessionActions\(\{/, 'PCP page must use edit session actions hook.')
+assert.doesNotMatch(pageSource, /fetchPcpSessionLock/, 'PCP page should not check locks directly after action extraction.')
+assert.doesNotMatch(pageSource, /upsertPcpEditSession/, 'PCP page should not upsert edit sessions directly after action extraction.')
+assert.doesNotMatch(pageSource, /deletePcpDraftRows/, 'PCP page should not delete draft rows directly after action extraction.')
+assert.match(pageSource, /startEditSession/, 'PCP page must still expose start edit action to UI.')
+assert.match(pageSource, /discardDraftAndCloseSession/, 'PCP page must still expose discard action to UI.')
+
+console.log('pcp edit session actions smoke passed')
