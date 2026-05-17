@@ -7,7 +7,6 @@ import {
   PFMEA_COLUMNS,
   PFMEA_COLUMNS_BY_ID,
   PFMEA_COLUMN_FILTER_GROUPS,
-  PFMEA_EDITABLE_FIELDS,
   type PfmeaColumnId,
 } from '@/features/pfmea/pfmea-columns'
 import { PfmeaActionClosureCells } from '@/features/pfmea/pfmea-action-closure-cells'
@@ -38,22 +37,13 @@ import { usePfmeaEditSessionActions } from '@/features/pfmea/use-pfmea-edit-sess
 import { usePfmeaPendingCellUpdateQueue } from '@/features/pfmea/use-pfmea-pending-cell-update-queue'
 import { usePfmeaPendingCellValues } from '@/features/pfmea/use-pfmea-pending-cell-values'
 import { usePfmeaRiskMatrixConfig } from '@/features/pfmea/use-pfmea-risk-matrix-config'
+import { usePfmeaRowEditingController } from '@/features/pfmea/use-pfmea-row-editing-controller'
 import { usePfmeaRevisionController } from '@/features/pfmea/use-pfmea-revision-controller'
 import { usePfmeaScaleOptions } from '@/features/pfmea/use-pfmea-scale-options'
 import { usePfmeaSessionController } from '@/features/pfmea/use-pfmea-session-controller'
 import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-merged-cell-top'
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
 import { SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
-import { asInt1to10, computeDerived } from '@/features/pfmea/pfmea-risk-utils'
-import {
-  hasFailureModeContext,
-  hasPfmeaTextValue,
-  isCauseContinuationEmpty,
-  isEffectContinuationEmpty,
-  isFailureModeContinuationEmpty,
-  isRecommendedActionContinuationEmpty,
-  patchHasAnyValue,
-} from '@/features/pfmea/pfmea-continuation-utils'
 import {
   buildPfmeaActionPlanValidationRow,
   getPfmeaMissingActionPlanHighlightKeys,
@@ -63,39 +53,19 @@ import {
   buildPfmeaBlockMergeInfoByHierarchy,
   buildPfmeaHierarchy,
   isPlaceholderRowId,
-  normalizePfmeaRowNo,
-  pickPfmeaGroupIds,
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
   applyPersistedPfmeaRowOrderUpdates,
-  insertPfmeaRowAfterAnchorWithOrderMetadata,
-  insertPfmeaRowAtSortIndex,
   reindexPfmeaRows,
   sortPfmeaRows,
 } from '@/features/pfmea/pfmea-row-order-utils'
 import {
   computePfmeaDerivedFromContext as computePfmeaDerivedFromRowContext,
-  getPfmeaCauseContinuationSourceRow,
   getPfmeaFailureBlockSourceRowAtIndex,
   getPfmeaRecommendedActionContinuationSourceRow,
 } from '@/features/pfmea/pfmea-row-context-utils'
-import { findEquivalentPfmeaRow } from '@/features/pfmea/pfmea-row-match-utils'
-import { normalizeClassValue, normalizePfmeaPcpValue } from '@/features/pfmea/pfmea-value-utils'
-import { makeEmptyPfmeaPayload } from '@/features/pfmea/pfmea-row-factory-utils'
-import {
-  buildPfmeaCauseContinuationInsertPayload,
-  buildPfmeaEffectContinuationInsertPayload,
-  buildPfmeaFailureModeContinuationInsertPayload,
-  buildPfmeaRecommendedActionContinuationInsertPayload,
-} from '@/features/pfmea/pfmea-row-insert-payload-utils'
-import {
-  getEmptyPfmeaTransientRowIds,
-  isPfmeaTransientRowEmpty,
-  removePfmeaHighlightKeysForRows,
-  removePfmeaIdsFromList,
-  removePfmeaTransientIdsFromSets,
-} from '@/features/pfmea/pfmea-transient-row-utils'
+import { isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
 import { computePfmeaAverageRpnSummary } from '@/features/pfmea/pfmea-summary-utils'
 import { buildPfmeaDisplayOperations, buildPfmeaTableRows } from '@/features/pfmea/pfmea-visible-rows-utils'
 import { buildPfmeaTableRowModel } from '@/features/pfmea/pfmea-table-row-model'
@@ -109,9 +79,6 @@ import {
   getPreviousPfmeaCellPosition,
 } from '@/features/pfmea/pfmea-table-navigation-utils'
 import { usePfmeaSaveRevision } from '@/features/pfmea/use-pfmea-save-revision'
-import {
-  stripPfmeaGroupIdsFromPayload,
-} from '@/features/pfmea/pfmea-payload-utils'
 import {
   fetchPfmeaRevisionHistory,
   persistPfmeaRowOrderMetadata,
@@ -416,60 +383,6 @@ function PfmeaFullPageContent() {
     transientRecommendedActionContinuationIdsRef,
   ])
 
-  const cleanupEmptyTransientRows = useCallback(async () => {
-    const idsToDelete = getEmptyPfmeaTransientRowIds(
-      rowsRef.current,
-      {
-        causeContinuationIds: transientCauseContinuationIdsRef.current,
-        recommendedActionContinuationIds: transientRecommendedActionContinuationIdsRef.current,
-        failureModeContinuationIds: transientFailureModeContinuationIdsRef.current,
-        effectContinuationIds: transientEffectContinuationIdsRef.current,
-      },
-      applyPendingCellValues
-    )
-
-    if (idsToDelete.length === 0) return rowsRef.current
-
-    const deleteResults = await Promise.all(idsToDelete.map((id) => supabase.from('pfmea_rows').delete().eq('id', id)))
-    for (const result of deleteResults) {
-      if (result.error) throw result.error
-    }
-
-    const idsToDeleteSet = new Set(idsToDelete)
-    const nextTransientSets = removePfmeaTransientIdsFromSets(
-      {
-        causeContinuationIds: transientCauseContinuationIdsRef.current,
-        recommendedActionContinuationIds: transientRecommendedActionContinuationIdsRef.current,
-        failureModeContinuationIds: transientFailureModeContinuationIdsRef.current,
-        effectContinuationIds: transientEffectContinuationIdsRef.current,
-      },
-      idsToDeleteSet
-    )
-    transientCauseContinuationIdsRef.current = nextTransientSets.causeContinuationIds
-    transientRecommendedActionContinuationIdsRef.current = nextTransientSets.recommendedActionContinuationIds
-    transientFailureModeContinuationIdsRef.current = nextTransientSets.failureModeContinuationIds
-    transientEffectContinuationIdsRef.current = nextTransientSets.effectContinuationIds
-    clearPendingCellValuesForRows(idsToDelete)
-
-    const nextRows = reindexPfmeaRows(rowsRef.current.filter((row) => !idsToDeleteSet.has(row.id)))
-    rowsRef.current = nextRows
-    setRows(nextRows)
-    setDirtyPfmeaIds((prev) => removePfmeaIdsFromList(prev, idsToDeleteSet))
-    setDeletedPfmeaIds((prev) => removePfmeaIdsFromList(prev, idsToDeleteSet))
-    setHighlightedMissingCells((prev) => removePfmeaHighlightKeysForRows(prev, idsToDeleteSet))
-    setEdit((prev) => (prev && idsToDeleteSet.has(prev.rowId) ? null : prev))
-
-    return nextRows
-  }, [
-    applyPendingCellValues,
-    clearPendingCellValuesForRows,
-    rowsRef,
-    transientCauseContinuationIdsRef,
-    transientEffectContinuationIdsRef,
-    transientFailureModeContinuationIdsRef,
-    transientRecommendedActionContinuationIdsRef,
-  ])
-
   useEffect(() => {
     if (!expandedOperationId) return
     const onPointerDown = (event: MouseEvent) => {
@@ -483,181 +396,6 @@ function PfmeaFullPageContent() {
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [expandedOperationId])
 
-  async function deleteRow(id: string) {
-    if (readOnly) return
-    setConfirmDialog({
-      title: 'Delete PFMEA row',
-      body: 'Are you sure you want to delete this PFMEA row?',
-      dangerNote: 'DATA WILL BE PERMANENTLY LOST',
-      onConfirm: async () => {
-        setErr('')
-        try {
-          const currentRow = rowsRef.current.find((row) => row.id === id)
-          if (!currentRow) return true
-
-          const opId = currentRow.operation_id || currentRow.operations?.id || null
-          const rowsForOperation = rowsRef.current.filter(
-            (row) => !isPlaceholderRowId(row.id) && (row.operation_id || row.operations?.id || null) === opId
-          )
-          const removeRowLocally = () => {
-            const idsToRemove = new Set([id])
-            const nextTransientSets = removePfmeaTransientIdsFromSets(
-              {
-                causeContinuationIds: transientCauseContinuationIdsRef.current,
-                recommendedActionContinuationIds: transientRecommendedActionContinuationIdsRef.current,
-                failureModeContinuationIds: transientFailureModeContinuationIdsRef.current,
-                effectContinuationIds: transientEffectContinuationIdsRef.current,
-              },
-              idsToRemove
-            )
-            transientCauseContinuationIdsRef.current = nextTransientSets.causeContinuationIds
-            transientRecommendedActionContinuationIdsRef.current = nextTransientSets.recommendedActionContinuationIds
-            transientFailureModeContinuationIdsRef.current = nextTransientSets.failureModeContinuationIds
-            transientEffectContinuationIdsRef.current = nextTransientSets.effectContinuationIds
-            clearPendingCellValuesForRow(id)
-            setRows((prev) => reindexPfmeaRows(prev.filter((row) => row.id !== id)))
-            setDirtyPfmeaIds((prev) => removePfmeaIdsFromList(prev, idsToRemove))
-            setDeletedPfmeaIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
-            setHighlightedMissingCells((prev) => removePfmeaHighlightKeysForRows(prev, idsToRemove))
-            setEdit((prev) => (prev?.rowId === id ? null : prev))
-          }
-
-          // Last row for a process step cannot be removed; clear only PFMEA content.
-          if (rowsForOperation.length === 1) {
-            await ensureDraftIfNeeded()
-            const finalRev = draftRevisionIdOverride ?? project?.current_draft_revision_id ?? project?.current_open_revision_id ?? null
-            if (!finalRev) throw new Error('No working revision found.')
-
-            const clearedPatch = {
-              ...makeEmptyPfmeaPayload(currentRow.operation_id, finalRev, pickPfmeaGroupIds(currentRow)),
-              revision_id: currentRow.revision_id || finalRev,
-              operation_id: currentRow.operation_id,
-            }
-            const res = await supabase
-              .from('pfmea_rows')
-              .update({
-                failure_mode: clearedPatch.failure_mode,
-                effect: clearedPatch.effect,
-                severity: clearedPatch.severity,
-                characteristic: clearedPatch.characteristic,
-                pcp: clearedPatch.pcp,
-                class: clearedPatch.class,
-                cause: clearedPatch.cause,
-                occurrence: clearedPatch.occurrence,
-                current_prevention: clearedPatch.current_prevention,
-                current_detection: clearedPatch.current_detection,
-                detection: clearedPatch.detection,
-                rpn: clearedPatch.rpn,
-                oxd: clearedPatch.oxd,
-                recommended_action: clearedPatch.recommended_action,
-                responsible: clearedPatch.responsible,
-                target_date: clearedPatch.target_date,
-                action_status: clearedPatch.action_status,
-                occurrence2: clearedPatch.occurrence2,
-                detection2: clearedPatch.detection2,
-                rpn2: clearedPatch.rpn2,
-                oxd2: clearedPatch.oxd2,
-                rpn_current: clearedPatch.rpn_current,
-                oxd_current: clearedPatch.oxd_current,
-              })
-              .eq('id', id)
-            if (res.error) throw res.error
-
-            markPfmeaDirty(id)
-            setRows((prev) =>
-              prev.map((row) =>
-                row.id === id
-                  ? ({
-                      ...row,
-                      failure_mode: '',
-                      effect: '',
-                      severity: null,
-                      characteristic: '',
-                      pcp: null,
-                      class: null,
-                      cause: '',
-                      occurrence: null,
-                      current_prevention: '',
-                      current_detection: '',
-                      detection: null,
-                      rpn: null,
-                      oxd: null,
-                      recommended_action: '',
-                      responsible: '',
-                      target_date: null,
-                      action_status: null,
-                      occurrence2: null,
-                      detection2: null,
-                      rpn2: null,
-                      oxd2: null,
-                      rpn_current: null,
-                      oxd_current: null,
-                    } as PfmeaRow)
-                  : row
-              )
-            )
-            return true
-          }
-
-          await ensureDraftIfNeeded()
-
-          const res = await supabase.from('pfmea_rows').delete().eq('id', id)
-          if (res.error) throw res.error
-
-          removeRowLocally()
-          return true
-        } catch (e: any) {
-          setErr(e?.message ?? String(e))
-          return false
-        }
-      },
-    })
-  }
-
-  function getInsertedCreatedAtForAnchor(anchorRow: PfmeaRow) {
-    const opId = anchorRow.operation_id || anchorRow.operations?.id || null
-    const sourceRows = tableRows.some((item) => item.id === anchorRow.id) ? tableRows : sortPfmeaRows(rowsRef.current)
-    const visibleRows = sourceRows.filter((item) => {
-      if (isPlaceholderRowId(item.id)) return false
-      return (item.operation_id || item.operations?.id || null) === opId
-    })
-
-    const anchorIndex = visibleRows.findIndex((item) => item.id === anchorRow.id)
-    const currentTime = new Date(anchorRow.created_at || new Date().toISOString()).getTime()
-    const nextRow = anchorIndex >= 0 ? visibleRows[anchorIndex + 1] ?? null : null
-    const nextTime = nextRow ? new Date(nextRow.created_at || anchorRow.created_at || new Date().toISOString()).getTime() : Number.NaN
-
-    if (Number.isFinite(currentTime) && Number.isFinite(nextTime) && nextTime > currentTime) {
-      return new Date(currentTime + Math.max(1, Math.floor((nextTime - currentTime) / 2))).toISOString()
-    }
-    if (Number.isFinite(currentTime)) {
-      return new Date(currentTime + 1).toISOString()
-    }
-    return new Date().toISOString()
-  }
-
-  function commitInsertedPfmeaRow(finalRev: string, anchorRowId: string, nextRow: PfmeaRow) {
-    const visibleRows = tableRows.some((item) => item.id === anchorRowId) ? tableRows : sortPfmeaRows(rowsRef.current)
-    const { orderedRows, updates } = insertPfmeaRowAfterAnchorWithOrderMetadata(
-      visibleRows,
-      sortPfmeaRows(rowsRef.current),
-      anchorRowId,
-      nextRow
-    )
-
-    rowsRef.current = orderedRows
-    setRows(orderedRows)
-    void persistPfmeaRowOrder(finalRev, orderedRows, updates).catch((error: unknown) => {
-      setErr(error instanceof Error ? error.message : String(error))
-    })
-
-    return orderedRows
-  }
-
-  function getCauseContinuationSourceRow(row: PfmeaRow) {
-    return getPfmeaCauseContinuationSourceRow(row, tableRows, applyPendingCellValues)
-  }
-
   function getRecommendedActionContinuationSourceRow(row: PfmeaRow) {
     return getPfmeaRecommendedActionContinuationSourceRow(row, tableRows, applyPendingCellValues)
   }
@@ -669,482 +407,6 @@ function PfmeaFullPageContent() {
   function getFailureBlockSourceRowAtIndex(rowIndex: number) {
     return getPfmeaFailureBlockSourceRowAtIndex(rowIndex, tableRows, applyPendingCellValues)
   }
-
-  const resolveContinuationRowsForRevision = useCallback(
-    async (row: PfmeaRow, anchorRow: PfmeaRow, revisionId: string) => {
-      const rowAlreadyCurrent = row.revision_id === revisionId && rowsRef.current.some((item) => item.id === row.id)
-      const anchorAlreadyCurrent = anchorRow.revision_id === revisionId && rowsRef.current.some((item) => item.id === anchorRow.id)
-      if (rowAlreadyCurrent && anchorAlreadyCurrent) return { row, anchorRow }
-
-      await loadAll(revisionId)
-
-      const mapRow = (source: PfmeaRow) => {
-        if (source.revision_id === revisionId) {
-          const direct = rowsRef.current.find((item) => item.id === source.id)
-          if (direct) return direct
-        }
-
-        const inferredRowNo = normalizePfmeaRowNo(source.row_no) ?? rowHierarchyByIdRef.current.get(source.id)?.rowLabel ?? null
-        const sourceForMapping =
-          inferredRowNo && inferredRowNo !== source.row_no ? ({ ...source, row_no: inferredRowNo } as PfmeaRow) : source
-        const mapped = findEquivalentPfmeaRow(rowsRef.current, sourceForMapping)
-        if (!mapped) throw new Error('Failed to map PFMEA row into the current draft revision.')
-        return mapped
-      }
-
-      return {
-        anchorRow: mapRow(anchorRow),
-        row: mapRow(row),
-      }
-    },
-    [loadAll, rowsRef]
-  )
-
-  async function addCauseContinuationRow(row: PfmeaRow, anchorRow: PfmeaRow = row) {
-    if (readOnly || isPlaceholderRowId(row.id)) return
-    setErr('')
-
-    try {
-      const effectiveRow = applyPendingCellValues(row)
-      if (!hasPfmeaTextValue(effectiveRow.cause)) {
-        setEdit({ rowId: row.id, col: 'cause' })
-        return
-      }
-
-      const revId = await ensureDraftIfNeeded()
-      const finalRev = revId ?? workingRevisionId
-      if (!finalRev) throw new Error('No working revision found.')
-
-      const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
-      const targetSourceRow = getCauseContinuationSourceRow(targetRow)
-      const opId = targetRow.operation_id || targetRow.operations?.id || null
-      const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
-
-      const payload = buildPfmeaCauseContinuationInsertPayload(targetRow, targetSourceRow, finalRev, insertedCreatedAt)
-
-      const insertRes = await supabase
-        .from('pfmea_rows')
-        .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
-        .select('id')
-        .single()
-      if (insertRes.error) throw insertRes.error
-
-      const newId = insertRes.data?.id
-      if (!newId) throw new Error('Failed to create PFMEA row.')
-
-      markPfmeaDirty(newId)
-      transientCauseContinuationIdsRef.current.add(newId)
-      setExpandedOperationId(opId)
-      const nextRow = {
-        ...targetSourceRow,
-        ...payload,
-        id: newId,
-        revision_id: finalRev,
-        created_at: insertedCreatedAt,
-        __sortIndex: targetAnchorRow.__sortIndex,
-      } as PfmeaRow
-      commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
-      setEdit({ rowId: newId, col: 'cause' })
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    }
-  }
-
-  async function addFailureModeContinuationRow(row: PfmeaRow, anchorRow: PfmeaRow = row) {
-    if (readOnly || isPlaceholderRowId(row.id)) return
-    setErr('')
-
-    try {
-      const revId = await ensureDraftIfNeeded()
-      const finalRev = revId ?? workingRevisionId
-      if (!finalRev) throw new Error('No working revision found.')
-
-      const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
-      const opId = targetRow.operation_id || targetRow.operations?.id || null
-      const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
-
-      const payload = buildPfmeaFailureModeContinuationInsertPayload(targetRow, finalRev, insertedCreatedAt)
-
-      const insertRes = await supabase
-        .from('pfmea_rows')
-        .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
-        .select('id')
-        .single()
-      if (insertRes.error) throw insertRes.error
-
-      const newId = insertRes.data?.id
-      if (!newId) throw new Error('Failed to create PFMEA row.')
-
-      markPfmeaDirty(newId)
-      transientFailureModeContinuationIdsRef.current.add(newId)
-      setExpandedOperationId(opId)
-      const nextRow = {
-        ...targetRow,
-        ...payload,
-        id: newId,
-        revision_id: finalRev,
-        created_at: insertedCreatedAt,
-        __sortIndex: targetAnchorRow.__sortIndex,
-      } as PfmeaRow
-      commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
-      setEdit({ rowId: newId, col: 'failure_mode' })
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    }
-  }
-
-  async function addEffectContinuationRow(row: PfmeaRow, anchorRow: PfmeaRow = row) {
-    if (readOnly || isPlaceholderRowId(row.id)) return
-    setErr('')
-
-    try {
-      const effectiveRow = applyPendingCellValues(row)
-      if (!hasFailureModeContext(effectiveRow)) {
-        setEdit({ rowId: row.id, col: 'failure_mode' })
-        return
-      }
-
-      const revId = await ensureDraftIfNeeded()
-      const finalRev = revId ?? workingRevisionId
-      if (!finalRev) throw new Error('No working revision found.')
-
-      const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
-      const targetEffectiveRow = applyPendingCellValues(targetRow)
-      const opId = targetRow.operation_id || targetRow.operations?.id || null
-      const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
-
-      const payload = buildPfmeaEffectContinuationInsertPayload(targetRow, targetEffectiveRow, finalRev, insertedCreatedAt)
-
-      const insertRes = await supabase
-        .from('pfmea_rows')
-        .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
-        .select('id')
-        .single()
-      if (insertRes.error) throw insertRes.error
-
-      const newId = insertRes.data?.id
-      if (!newId) throw new Error('Failed to create PFMEA row.')
-
-      markPfmeaDirty(newId)
-      transientEffectContinuationIdsRef.current.add(newId)
-      setExpandedOperationId(opId)
-      const nextRow = {
-        ...targetRow,
-        ...payload,
-        id: newId,
-        revision_id: finalRev,
-        created_at: insertedCreatedAt,
-        __sortIndex: targetAnchorRow.__sortIndex,
-      } as PfmeaRow
-      commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
-      setEdit({ rowId: newId, col: 'effect' })
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    }
-  }
-
-  async function addRecommendedActionContinuationRow(row: PfmeaRow, anchorRow: PfmeaRow = row) {
-    if (readOnly || isPlaceholderRowId(row.id)) return
-    setErr('')
-
-    try {
-      const effectiveRow = applyPendingCellValues(row)
-      if (!hasPfmeaTextValue(effectiveRow.recommended_action)) {
-        setEdit({ rowId: row.id, col: 'recommended_action' })
-        return
-      }
-
-      const revId = await ensureDraftIfNeeded()
-      const finalRev = revId ?? workingRevisionId
-      if (!finalRev) throw new Error('No working revision found.')
-
-      const { row: targetRow, anchorRow: targetAnchorRow } = await resolveContinuationRowsForRevision(row, anchorRow, finalRev)
-      const targetSourceRow = getRecommendedActionContinuationSourceRow(targetRow)
-      const opId = targetRow.operation_id || targetRow.operations?.id || null
-      const insertedCreatedAt = getInsertedCreatedAtForAnchor(targetAnchorRow)
-
-      const payload = buildPfmeaRecommendedActionContinuationInsertPayload(targetRow, targetSourceRow, finalRev, insertedCreatedAt)
-
-      const insertRes = await supabase
-        .from('pfmea_rows')
-        .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
-        .select('id')
-        .single()
-      if (insertRes.error) throw insertRes.error
-
-      const newId = insertRes.data?.id
-      if (!newId) throw new Error('Failed to create PFMEA row.')
-
-      markPfmeaDirty(newId)
-      transientRecommendedActionContinuationIdsRef.current.add(newId)
-      setExpandedOperationId(opId)
-      const nextRow = {
-        ...targetSourceRow,
-        ...payload,
-        id: newId,
-        revision_id: finalRev,
-        created_at: insertedCreatedAt,
-        __sortIndex: targetAnchorRow.__sortIndex,
-      } as PfmeaRow
-      commitInsertedPfmeaRow(finalRev, targetAnchorRow.id, nextRow)
-      setEdit({ rowId: newId, col: 'recommended_action' })
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    }
-  }
-
-  async function updateCellWithDerived(row: PfmeaRow, patch: Partial<PfmeaRow>) {
-    if (readOnly) return
-    setErr('')
-
-    const task = (async () => {
-      try {
-      const guarded: Partial<PfmeaRow> = { ...patch }
-      ;(['severity', 'occurrence', 'detection', 'occurrence2', 'detection2'] as (keyof PfmeaRow)[]).forEach((k) => {
-        if (!(k in guarded)) return
-        const v = (guarded as any)[k]
-        if (v === null) return
-        const n = asInt1to10(v)
-        ;(guarded as any)[k] = n
-      })
-      if ('pcp' in guarded) {
-        guarded.pcp = normalizePfmeaPcpValue(guarded.pcp)
-      }
-      if ('class' in guarded) {
-        guarded.class = normalizeClassValue((guarded.class as string | null | undefined) ?? null)
-      }
-
-      const isPlaceholder = isPlaceholderRowId(row.id)
-      if (isPlaceholder && !patchHasAnyValue(guarded)) return
-
-      // ensure draft exists (editing is a change)
-      const hadDraftBeforeEdit = !!project?.current_draft_revision_id
-      const revId = await ensureDraftIfNeeded()
-      const finalRev = revId ?? workingRevisionId
-      if (!finalRev) throw new Error('No working revision found.')
-
-      let targetRow = row
-      let reloadedDraftRows = false
-      if (!isPlaceholder && row.revision_id !== finalRev) {
-        await loadAll(finalRev)
-        reloadedDraftRows = true
-        const inferredRowNo = normalizePfmeaRowNo(row.row_no) ?? rowHierarchyByIdRef.current.get(row.id)?.rowLabel ?? null
-        const rowForMapping = inferredRowNo && inferredRowNo !== row.row_no ? ({ ...row, row_no: inferredRowNo } as PfmeaRow) : row
-        const mappedRow = findEquivalentPfmeaRow(rowsRef.current, rowForMapping)
-        if (!mappedRow) throw new Error('Failed to map PFMEA row into the current draft revision.')
-        targetRow = mappedRow
-        clearPendingCellValuesForRow(row.id, { refresh: true })
-        setEdit((prev) => (prev && prev.rowId === row.id ? { ...prev, rowId: mappedRow.id } : prev))
-      }
-
-      const merged: PfmeaRow = { ...targetRow, ...(guarded as any) }
-      const localPatch: Partial<PfmeaRow> = { ...guarded, ...computePfmeaDerivedFromContext(merged).derived }
-
-      if (isPlaceholder) {
-        const payload = {
-          ...makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row)),
-          ...localPatch,
-        }
-        const insertRes = await supabase
-          .from('pfmea_rows')
-          .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
-          .select('id,created_at')
-          .single()
-        if (insertRes.error) throw insertRes.error
-        const newId = insertRes.data?.id
-        if (!newId) throw new Error('Failed to create PFMEA row.')
-
-        const createdAt =
-          ((insertRes.data as { created_at?: string | null } | null)?.created_at ?? '').trim() || new Date().toISOString()
-
-        markPfmeaDirty(newId)
-        placeholderMaterializedIdRef.current[row.id] = newId
-        clearPendingCellValuesForRow(row.id, { refresh: true })
-        setRows((prev) => {
-          if (prev.some((x) => x.id === newId)) return prev
-          const nextRow = {
-            ...row,
-            ...makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row)),
-            ...(localPatch as any),
-            id: newId,
-            revision_id: finalRev,
-            created_at: createdAt,
-            __sortIndex: row.__sortIndex,
-          } as PfmeaRow
-          return insertPfmeaRowAtSortIndex(prev, nextRow, row.__sortIndex)
-        })
-        setEdit((prev) => (prev && prev.rowId === row.id ? { ...prev, rowId: newId } : prev))
-      } else {
-        const res = await supabase
-          .from('pfmea_rows')
-          .update(pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(localPatch as Record<string, unknown>) : localPatch)
-          .eq('id', targetRow.id)
-          .eq('revision_id', finalRev)
-        if (res.error) throw res.error
-        if (transientCauseContinuationIdsRef.current.has(targetRow.id)) {
-          const nextRow = { ...targetRow, ...(localPatch as any) } as PfmeaRow
-          if (!isCauseContinuationEmpty(nextRow)) {
-            transientCauseContinuationIdsRef.current.delete(targetRow.id)
-          }
-        }
-        if (transientRecommendedActionContinuationIdsRef.current.has(targetRow.id)) {
-          const nextRow = { ...targetRow, ...(localPatch as any) } as PfmeaRow
-          if (!isRecommendedActionContinuationEmpty(nextRow)) {
-            transientRecommendedActionContinuationIdsRef.current.delete(targetRow.id)
-          }
-        }
-        if (transientFailureModeContinuationIdsRef.current.has(targetRow.id)) {
-          const nextRow = { ...targetRow, ...(localPatch as any) } as PfmeaRow
-          if (!isFailureModeContinuationEmpty(nextRow)) {
-            transientFailureModeContinuationIdsRef.current.delete(targetRow.id)
-          }
-        }
-        if (transientEffectContinuationIdsRef.current.has(targetRow.id)) {
-          const nextRow = { ...targetRow, ...(localPatch as any) } as PfmeaRow
-          if (!isEffectContinuationEmpty(nextRow)) {
-            transientEffectContinuationIdsRef.current.delete(targetRow.id)
-          }
-        }
-        markPfmeaDirty(targetRow.id)
-        const nextRows = rowsRef.current.map((x) => (x.id === targetRow.id ? ({ ...x, ...(localPatch as any) } as PfmeaRow) : x))
-        rowsRef.current = nextRows
-        setRows(nextRows)
-      }
-
-      // first edit after switching OPEN -> DRAFT can remap row ids on backend
-      if (reloadedDraftRows || !hadDraftBeforeEdit) await loadAll(finalRev)
-      } catch (e: any) {
-        setErr(e?.message ?? String(e))
-      }
-    })()
-
-    await runPendingCellUpdate(task)
-  }
-
-  const ensureRowForEditing = useCallback(
-    async (row: PfmeaRow) => {
-      if (!isPlaceholderRowId(row.id)) return row.id
-
-      const cached = placeholderMaterializedIdRef.current[row.id]
-      if (cached) return cached
-
-      const pending = placeholderMaterializeRef.current[row.id]
-      if (pending) return pending
-
-      const task = (async () => {
-        const revId = await ensureDraftIfNeeded()
-        const finalRev = revId ?? workingRevisionId
-        if (!finalRev) throw new Error('No working revision found.')
-
-        const effectiveRow = applyPendingCellValues(row)
-        const pendingPatch: Partial<PfmeaRow> = {}
-        for (const field of PFMEA_EDITABLE_FIELDS) {
-          ;(pendingPatch as any)[field] = (effectiveRow as any)[field]
-        }
-        ;(['severity', 'occurrence', 'detection', 'occurrence2', 'detection2'] as (keyof PfmeaRow)[]).forEach((field) => {
-          if (!(field in pendingPatch)) return
-          const value = (pendingPatch as any)[field]
-          if (value === null) return
-          ;(pendingPatch as any)[field] = asInt1to10(value)
-        })
-        if ('class' in pendingPatch) {
-          pendingPatch.class = normalizeClassValue((pendingPatch.class as string | null | undefined) ?? null)
-        }
-
-        const merged = { ...row, ...(pendingPatch as any) } as PfmeaRow
-        const payload = {
-          ...makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row)),
-          ...pendingPatch,
-          ...computeDerived(merged),
-        }
-        const ins = await supabase
-          .from('pfmea_rows')
-          .insert([pfmeaGroupIdsSupportedRef.current === false ? stripPfmeaGroupIdsFromPayload(payload as Record<string, unknown>) : payload])
-          .select('id,created_at')
-          .single()
-        if (ins.error) throw ins.error
-        const newId = ins.data?.id
-        if (!newId) throw new Error('Failed to create PFMEA row.')
-
-        const createdAt = ((ins.data as { created_at?: string | null } | null)?.created_at ?? '').trim() || new Date().toISOString()
-
-        markPfmeaDirty(newId)
-        clearPendingCellValuesForRow(row.id, { refresh: true })
-        setRows((prev) => {
-          if (prev.some((x) => x.id === newId)) return prev
-          const nextRow = {
-            ...row,
-            ...payload,
-            id: newId,
-            revision_id: finalRev,
-            created_at: createdAt,
-            __sortIndex: row.__sortIndex,
-          } as PfmeaRow
-          return insertPfmeaRowAtSortIndex(prev, nextRow, row.__sortIndex)
-        })
-        placeholderMaterializedIdRef.current[row.id] = newId
-        return newId
-      })()
-
-      placeholderMaterializeRef.current[row.id] = task
-      try {
-        return await task
-      } finally {
-        delete placeholderMaterializeRef.current[row.id]
-      }
-    },
-    [applyPendingCellValues, clearPendingCellValuesForRow, ensureDraftIfNeeded, workingRevisionId, markPfmeaDirty]
-  )
-
-  const startEditCell = useCallback(
-    async (row: PfmeaRow, col: keyof PfmeaRow) => {
-      const opId = row.operation_id || row.operations?.id || null
-      if (opId) setExpandedOperationId(opId)
-      if (readOnly) return
-      if (isPlaceholderRowId(row.id)) {
-        const cachedRowId = placeholderMaterializedIdRef.current[row.id]
-        const pendingRow = placeholderMaterializeRef.current[row.id]
-        if (cachedRowId || pendingRow) {
-          try {
-            const rowId = await ensureRowForEditing(row)
-            setEdit({ rowId, col })
-          } catch (e: any) {
-            setErr(e?.message ?? String(e))
-          }
-          return
-        }
-        setEdit({ rowId: row.id, col })
-        return
-      }
-      try {
-        const rowId = await ensureRowForEditing(row)
-        setEdit({ rowId, col })
-      } catch (e: any) {
-        setErr(e?.message ?? String(e))
-      }
-    },
-    [readOnly, ensureRowForEditing]
-  )
-
-  const materializePlaceholderRowForAdd = useCallback(
-    async (row: PfmeaRow) => {
-      if (!isPlaceholderRowId(row.id)) return applyPendingCellValues(row)
-
-      const effectiveRow = applyPendingCellValues(row)
-      const rowId = await ensureRowForEditing(row)
-      const materializedRow = rowsRef.current.find((item) => item.id === rowId)
-      if (materializedRow) return materializedRow
-
-      return {
-        ...row,
-        ...effectiveRow,
-        id: rowId,
-        revision_id: draftRevisionIdOverride ?? workingRevisionId ?? row.revision_id,
-        created_at: row.created_at || new Date().toISOString(),
-      } as PfmeaRow
-    },
-    [applyPendingCellValues, draftRevisionIdOverride, ensureRowForEditing, rowsRef, workingRevisionId]
-  )
 
   const loadRevisionHistory = useCallback(async () => {
     if (!projectId) {
@@ -1224,6 +486,51 @@ function PfmeaFullPageContent() {
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowsSorted, getRiskColorFor, getRiskColorForAverageRpn])
+
+  const {
+    addCauseContinuationRow,
+    addEffectContinuationRow,
+    addFailureModeContinuationRow,
+    addRecommendedActionContinuationRow,
+    cleanupEmptyTransientRows,
+    deleteRow,
+    materializePlaceholderRowForAdd,
+    startEditCell,
+    updateCellWithDerived,
+  } = usePfmeaRowEditingController({
+    applyPendingCellValues,
+    clearPendingCellValuesForRow,
+    clearPendingCellValuesForRows,
+    computeDerivedFromContext: (row) => computePfmeaDerivedFromContext(row),
+    draftRevisionIdOverride,
+    ensureDraftIfNeeded,
+    loadAll,
+    markPfmeaDirty,
+    persistPfmeaRowOrder,
+    pfmeaGroupIdsSupportedRef,
+    placeholderMaterializedIdRef,
+    placeholderMaterializeRef,
+    project,
+    readOnly,
+    rowHierarchyByIdRef,
+    rowsRef,
+    runPendingCellUpdate,
+    setConfirmDialog,
+    setDeletedPfmeaIds,
+    setDirtyPfmeaIds,
+    setEdit,
+    setErr,
+    setExpandedOperationId,
+    setHighlightedMissingCells,
+    setRows,
+    supabase,
+    tableRows,
+    transientCauseContinuationIdsRef,
+    transientEffectContinuationIdsRef,
+    transientFailureModeContinuationIdsRef,
+    transientRecommendedActionContinuationIdsRef,
+    workingRevisionId,
+  })
 
   const { handleSaveRevision } = usePfmeaSaveRevision({
     applyPendingCellValues,
