@@ -86,6 +86,7 @@ import {
   baseBtn,
   baseBtnDisabled,
 } from '@/features/pfd/pfd-page-styles'
+import { PfdConfirmDialog, type PfdConfirmDialogConfig } from '@/features/pfd/pfd-confirm-dialog'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PaletteButton } from '@/features/pfd/pfd-symbol-palette'
 import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
@@ -286,12 +287,7 @@ function PfdPageContent() {
   const [sessionMsg, setSessionMsg] = useState('')
   const [sessionBusy, setSessionBusy] = useState(false)
   const draftLoadedFor = useRef<string>('')
-  const [confirmDialog, setConfirmDialog] = useState<null | {
-    title: string
-    body: string
-    dangerNote?: string
-    onConfirm: () => Promise<boolean | void> | boolean | void
-  }>(null)
+  const [confirmDialog, setConfirmDialog] = useState<PfdConfirmDialogConfig | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [decisionConnectDialog, setDecisionConnectDialog] = useState<null | {
     params: Connection
@@ -1749,69 +1745,23 @@ function PfdPageContent() {
         updateMiniCell={updateMiniCell}
       />
 
-      {confirmDialog && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 80,
-          }}
-          onClick={() => (confirmBusy ? null : setConfirmDialog(null))}
-        >
-          <div
-            style={{
-              width: 520,
-              maxWidth: '92vw',
-              background: SURFACE_PANEL_BG,
-              borderRadius: SURFACE_RADIUS,
-              border: `1px solid ${SURFACE_BORDER}`,
-              boxShadow: '0 16px 36px rgba(0,0,0,0.2)',
-              padding: 20,
-              color: SURFACE_TEXT,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 10 }}>{confirmDialog.title}</div>
-            <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.5, marginBottom: 10 }}>{confirmDialog.body}</div>
-            {confirmDialog.dangerNote ? (
-              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.4, color: '#ef4444', marginBottom: 16 }}>
-                {confirmDialog.dangerNote}
-              </div>
-            ) : null}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => (confirmBusy ? null : setConfirmDialog(null))}
-                disabled={confirmBusy}
-                style={{ ...baseBtn, height: 28, padding: '0 12px' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (confirmBusy) return
-                  setConfirmBusy(true)
-                  try {
-                    const shouldClose = await confirmDialog.onConfirm()
-                    if (shouldClose !== false) setConfirmDialog(null)
-                  } catch (e: any) {
-                    setErr(e?.message ?? String(e))
-                  } finally {
-                    setConfirmBusy(false)
-                  }
-                }}
-                disabled={confirmBusy}
-                style={{ ...baseBtn, height: 28, padding: '0 12px' }}
-              >
-                Yes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PfdConfirmDialog
+        busy={confirmBusy}
+        dialog={confirmDialog}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={async () => {
+          if (!confirmDialog || confirmBusy) return
+          setConfirmBusy(true)
+          try {
+            const shouldClose = await confirmDialog.onConfirm()
+            if (shouldClose !== false) setConfirmDialog(null)
+          } catch (e: any) {
+            setErr(e?.message ?? String(e))
+          } finally {
+            setConfirmBusy(false)
+          }
+        }}
+      />
 
       {decisionConnectDialog && (
         <div
