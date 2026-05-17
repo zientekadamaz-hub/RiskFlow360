@@ -34,6 +34,7 @@ Katalog `db/` traktuj jako archiwum/manual SQL, dopoki starsze pliki nie zostana
    - `npm run build`
 5. Sprawdz liste migracji:
    - `Get-ChildItem supabase/migrations -Filter *.sql | Sort-Object Name`
+   - `npm run supabase:migration-drift`
 6. Przeczytaj kazda nowa migracje przed uruchomieniem.
    - Szukaj `drop`, `delete`, `truncate`, `alter table ... drop column`, `revoke`, `grant`, zmian RLS i funkcji `security definer`.
 

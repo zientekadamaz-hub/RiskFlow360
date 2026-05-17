@@ -17,7 +17,7 @@ const eslintConfig = defineConfig([
   ]),
 
   {
-    files: ['scripts/regression/**/*.js'],
+    files: ['scripts/regression/**/*.js', 'scripts/supabase/**/*.js'],
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
     },

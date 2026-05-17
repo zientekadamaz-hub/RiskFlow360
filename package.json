@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run regression:shared && npm run build",
+    "supabase:migration-drift": "node scripts/supabase/migration-drift-report.js",
     "regression:all": "node scripts/regression/run-all.js",
     "regression:preflight": "node scripts/regression/preflight.js",
     "regression:verify-project": "node scripts/regression/verify-project-access.js",
