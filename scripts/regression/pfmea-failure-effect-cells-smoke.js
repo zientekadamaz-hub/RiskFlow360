@@ -8,6 +8,10 @@ const failureEffectCellsSource = fs.readFileSync(
   path.join(root, 'src', 'features', 'pfmea', 'pfmea-failure-effect-cells.tsx'),
   'utf8'
 )
+const scaleSelectCellSource = fs.readFileSync(
+  path.join(root, 'src', 'features', 'pfmea', 'pfmea-scale-select-cell.tsx'),
+  'utf8'
+)
 
 assert.match(failureEffectCellsSource, /export function PfmeaFailureEffectCells/, 'PFMEA failure effect cells component must be exported.')
 assert.match(failureEffectCellsSource, /if \(failureBlockSpan <= 0\) return null/, 'PFMEA failure effect cells must not render non-owner merged rows.')
@@ -21,6 +25,9 @@ assert.match(failureEffectCellsSource, /cellKey="effect"/, 'PFMEA effect cell ke
 assert.match(failureEffectCellsSource, /cellKey="severity"/, 'PFMEA severity cell key must be preserved.')
 assert.match(failureEffectCellsSource, /flash=\{isMissingHighlighted\('effect'\)\}/, 'PFMEA effect missing highlight must be preserved.')
 assert.match(failureEffectCellsSource, /flash=\{isMissingHighlighted\('severity'\)\}/, 'PFMEA severity missing highlight must be preserved.')
+assert.match(scaleSelectCellSource, /selectedDetailsPopup/, 'PFMEA scale selector must show descriptions in non-edit mode.')
+assert.match(scaleSelectCellSource, /onMouseEnter=\{startHoverDelay\}/, 'PFMEA scale selector must open description popup on hover.')
+assert.match(scaleSelectCellSource, /ref=\{setCellAnchorEl\}/, 'PFMEA scale selector must anchor view-mode popup to the cell.')
 
 assert.match(tableBodySource, /import \{ PfmeaFailureEffectCells \}/, 'PFMEA table body must import PfmeaFailureEffectCells.')
 assert.match(tableBodySource, /<PfmeaFailureEffectCells[\s\S]*effectiveFailureBlockOwnerRow=\{effectiveFailureBlockOwnerRow\}/, 'PFMEA table body must pass failure block owner row.')

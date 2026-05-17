@@ -93,13 +93,54 @@ export function TdScaleSelect(props: {
     stopOptionHover()
     props.stopEdit()
   }, [props, stopOptionHover])
+  const selectedDetailsPopup =
+    hoverOpen && cellAnchorEl && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            data-pfmea-popup="true"
+            style={{
+              ...anchoredPopupStyle(cellAnchorEl, 360, 0, 280),
+              zIndex: 130,
+              overflowY: 'auto',
+              borderRadius: 10,
+              border: `1px solid ${SURFACE_BORDER}`,
+              background: 'rgb(52, 57, 69)',
+              boxShadow: '0 14px 30px rgba(0,0,0,0.18)',
+              padding: 10,
+              textAlign: 'left',
+              position: 'fixed',
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#d9a86c', marginBottom: 6 }}>
+              {selected ? `${selected.level} - ${selected.label}` : 'Examples'}
+            </div>
+            <div style={{ display: 'grid', gap: 4 }}>
+              {hoverExamples.map((ex, idx) => (
+                <div key={`${selected?.level ?? 'x'}-ex-${idx}`} style={{ fontSize: 12, color: '#d9a86c', lineHeight: 1.3, fontWeight: 400 }}>
+                  - {ex}
+                </div>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )
+      : null
 
   if (props.disabled) {
     return (
-      <td data-pfmea-col={props.cellKey} rowSpan={props.rowSpan} className={`pfmeaTd center gray singleLine scaleValue ${props.flash ? 'flashMissing' : ''}`} style={mergedCellTdStyle(props.rowSpan)}>
+      <td
+        data-pfmea-col={props.cellKey}
+        rowSpan={props.rowSpan}
+        ref={setCellAnchorEl}
+        className={`pfmeaTd center gray singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
+        style={mergedCellTdStyle(props.rowSpan)}
+        onMouseEnter={startHoverDelay}
+        onMouseLeave={stopHover}
+      >
         <MergedCellInner rowSpan={props.rowSpan} gap={0}>
           <span>{props.value == null ? '' : String(props.value)}</span>
         </MergedCellInner>
+        {selectedDetailsPopup}
       </td>
     )
   }
@@ -122,37 +163,7 @@ export function TdScaleSelect(props: {
         <MergedCellInner rowSpan={props.rowSpan} gap={0}>
           <span>{props.value == null ? '' : String(props.value)}</span>
         </MergedCellInner>
-        {hoverOpen && cellAnchorEl && typeof document !== 'undefined'
-          ? createPortal(
-              <div
-                data-pfmea-popup="true"
-                style={{
-                  ...anchoredPopupStyle(cellAnchorEl, 360, 0, 280),
-                  zIndex: 130,
-                  overflowY: 'auto',
-                  borderRadius: 10,
-                  border: `1px solid ${SURFACE_BORDER}`,
-                  background: 'rgb(52, 57, 69)',
-                  boxShadow: '0 14px 30px rgba(0,0,0,0.18)',
-                  padding: 10,
-                  textAlign: 'left',
-                  position: 'fixed',
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#d9a86c', marginBottom: 6 }}>
-                  {selected ? `${selected.level} - ${selected.label}` : 'Examples'}
-                </div>
-                <div style={{ display: 'grid', gap: 4 }}>
-                  {hoverExamples.map((ex, idx) => (
-                    <div key={`${selected?.level ?? 'x'}-ex-${idx}`} style={{ fontSize: 12, color: '#d9a86c', lineHeight: 1.3, fontWeight: 400 }}>
-                      - {ex}
-                    </div>
-                  ))}
-                </div>
-              </div>,
-              document.body
-            )
-          : null}
+        {selectedDetailsPopup}
       </td>
     )
   }

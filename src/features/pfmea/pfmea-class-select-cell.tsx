@@ -48,8 +48,10 @@ export function TdClassSelect(props: {
   const [cellAnchorEl, setCellAnchorEl] = useState<HTMLTableCellElement | null>(null)
   const [popupAnchorEl, setPopupAnchorEl] = useState<HTMLButtonElement | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const valueHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hoveredOption, setHoveredOption] = useState<SelectOption | null>(null)
   const [optionHoverOpen, setOptionHoverOpen] = useState(false)
+  const [valueHoverOpen, setValueHoverOpen] = useState(false)
   useEffect(() => {
     if (!props.editing) return
     setTimeout(() => triggerRef.current?.focus(), 0)
@@ -67,6 +69,25 @@ export function TdClassSelect(props: {
     setHoveredOption(null)
   }, [clearHoverTimer])
 
+  const clearValueHoverTimer = useCallback(() => {
+    if (!valueHoverTimerRef.current) return
+    clearTimeout(valueHoverTimerRef.current)
+    valueHoverTimerRef.current = null
+  }, [])
+
+  const startValueHoverDelay = useCallback(() => {
+    if (!props.value || !CLASS_OPTION_DETAILS[props.value]) return
+    clearValueHoverTimer()
+    valueHoverTimerRef.current = setTimeout(() => {
+      setValueHoverOpen(true)
+    }, 700)
+  }, [clearValueHoverTimer, props.value])
+
+  const stopValueHover = useCallback(() => {
+    clearValueHoverTimer()
+    setValueHoverOpen(false)
+  }, [clearValueHoverTimer])
+
   const startOptionHoverDelay = useCallback(
     (opt: SelectOption) => {
       clearHoverTimer()
@@ -78,20 +99,67 @@ export function TdClassSelect(props: {
     [clearHoverTimer]
   )
 
-  useEffect(() => () => clearHoverTimer(), [clearHoverTimer])
+  useEffect(() => {
+    return () => {
+      clearHoverTimer()
+      clearValueHoverTimer()
+    }
+  }, [clearHoverTimer, clearValueHoverTimer])
   const hoveredOptionDetails = hoveredOption ? CLASS_OPTION_DETAILS[hoveredOption.value] : null
+  const selectedDetails = props.value ? CLASS_OPTION_DETAILS[props.value] : null
   const popupAnchorWidth = popupAnchorEl?.getBoundingClientRect().width ?? 300
   const setTriggerRefs = useCallback((node: HTMLButtonElement | null) => {
     triggerRef.current = node
     setPopupAnchorEl((current) => (current === node ? current : node))
   }, [])
+  const selectedDetailsPopup =
+    valueHoverOpen && cellAnchorEl && selectedDetails && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            data-pfmea-popup="true"
+            style={{
+              ...anchoredPopupStyle(cellAnchorEl, 360, 0, 280),
+              zIndex: 130,
+              overflowY: 'auto',
+              borderRadius: 10,
+              border: `1px solid ${SURFACE_BORDER}`,
+              background: 'rgb(52, 57, 69)',
+              boxShadow: '0 14px 30px rgba(0,0,0,0.18)',
+              padding: 10,
+              textAlign: 'left',
+              position: 'fixed',
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#d9a86c', marginBottom: 6 }}>
+              {selectedDetails.title}
+            </div>
+            <div style={{ display: 'grid', gap: 4 }}>
+              {selectedDetails.description.map((line, idx) => (
+                <div key={`${props.value ?? 'class'}-selected-detail-${idx}`} style={{ fontSize: 12, color: '#d9a86c', lineHeight: 1.35, fontWeight: 400 }}>
+                  - {line}
+                </div>
+              ))}
+            </div>
+          </div>,
+          document.body
+        )
+      : null
 
   if (props.disabled) {
     return (
-      <td data-pfmea-col={props.cellKey} rowSpan={props.rowSpan} className="pfmeaTd center singleLine scaleValue" style={mergedCellTdStyle(props.rowSpan)}>
+      <td
+        data-pfmea-col={props.cellKey}
+        rowSpan={props.rowSpan}
+        ref={setCellAnchorEl}
+        className="pfmeaTd center singleLine scaleValue scaleSelectCell"
+        style={mergedCellTdStyle(props.rowSpan)}
+        onMouseEnter={startValueHoverDelay}
+        onMouseLeave={stopValueHover}
+      >
         <MergedCellInner rowSpan={props.rowSpan} gap={0}>
           <span>{props.value ?? ''}</span>
         </MergedCellInner>
+        {selectedDetailsPopup}
       </td>
     )
   }
@@ -104,10 +172,14 @@ export function TdClassSelect(props: {
         className="pfmeaTd editable center singleLine scaleValue scaleSelectCell"
         style={mergedCellTdStyle(props.rowSpan)}
         onClick={props.onStart}
+        onMouseEnter={startValueHoverDelay}
+        onMouseLeave={stopValueHover}
+        ref={setCellAnchorEl}
       >
         <MergedCellInner rowSpan={props.rowSpan} gap={0}>
           <span>{props.value ?? ''}</span>
         </MergedCellInner>
+        {selectedDetailsPopup}
       </td>
     )
   }
@@ -195,6 +267,32 @@ export function TdClassSelect(props: {
                   </button>
                 )
               })}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={stopOptionHover}
+                onClick={() => {
+                  stopOptionHover()
+                  props.stopEdit()
+                  props.onCommit(null)
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  border: '1px solid transparent',
+                  borderRadius: 8,
+                  background: props.value == null ? 'rgba(255,255,255,0.12)' : 'transparent',
+                  color: '#d9a86c',
+                  padding: '7px 8px',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  lineHeight: 1.25,
+                  marginTop: 4,
+                }}
+              >
+                (clear)
+              </button>
             </div>,
             document.body
           )
