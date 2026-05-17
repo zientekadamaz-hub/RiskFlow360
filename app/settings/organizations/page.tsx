@@ -34,112 +34,24 @@ import {
   projectsSummaryValueStyle,
   projectsTableViewportScrollerStyle,
 } from '@/features/projects/view-styles'
-
-type HeaderRow = {
-  global_role?: string | null
-}
-
-type OrganizationRow = {
-  organization_id: string
-  organization_name: string
-  active: boolean
-  created_at: string | null
-  seats_purchased: number | null
-  invites_allowed_total: number | null
-  valid_to: string | null
-  champion_email: string | null
-  champion_first_name: string | null
-  champion_last_name: string | null
-  champion_status: string | null
-  champion_source: string | null
-  champion_invitation_token?: string | null
-}
-
-type CreateOrganizationResult = {
-  organization_id: string
-  organization_name: string
-  champion_email: string
-  champion_first_name: string | null
-  champion_last_name: string | null
-  champion_status: string
-  invitation_id: string | null
-  invitation_token: string | null
-}
-
-type LatestInviteLink = {
-  email: string
-  url: string
-}
-
-type AccessRequestRow = {
-  request_id: string
-  company_name: string
-  requester_email: string
-  first_name: string | null
-  last_name: string | null
-  requested_invites: number | null
-  status: string | null
-  notes_admin: string | null
-  created_at: string | null
-  handled_at: string | null
-  handled_by: string | null
-  handled_by_name: string | null
-}
-
-type SortDirection = 'asc' | 'desc'
-type OrganizationColumnKey = 'champion' | 'created' | 'invites' | 'organization' | 'seats' | 'status' | 'validTo'
-type OrganizationLayoutColumnKey = OrganizationColumnKey | 'actions'
-type OrganizationHiddenColumns = Record<OrganizationColumnKey, boolean>
-type OrganizationSortState = { column: OrganizationColumnKey; direction: SortDirection }
-
-type OrganizationTableRow =
-  | {
-      kind: 'organization'
-      key: string
-      organization: OrganizationRow
-      organizationName: string
-      championName: string
-      championEmail: string | null
-      status: string
-      seats: number | null
-      invites: number | null
-      validTo: string | null
-      createdAt: string | null
-    }
-  | {
-      kind: 'request'
-      key: string
-      request: AccessRequestRow
-      organizationName: string
-      championName: string
-      championEmail: string | null
-      status: 'NEW'
-      seats: number | null
-      invites: number | null
-      validTo: string | null
-      createdAt: string | null
-    }
-
-const DEFAULT_ORGANIZATION_HIDDEN_COLUMNS: OrganizationHiddenColumns = {
-  champion: false,
-  created: false,
-  invites: false,
-  organization: false,
-  seats: false,
-  status: false,
-  validTo: false,
-}
-
-const BASE_ORGANIZATION_COLUMN_WIDTHS: Record<OrganizationLayoutColumnKey, number> = {
-  organization: 240,
-  champion: 300,
-  status: 140,
-  seats: 92,
-  invites: 100,
-  validTo: 130,
-  created: 130,
-  actions: 180,
-}
+import {
+  BASE_ORGANIZATION_COLUMN_WIDTHS,
+  DEFAULT_ORGANIZATION_HIDDEN_COLUMNS,
+  buildOrganizationTableRows,
+  formatDate,
+  getDisplayedOrganizations,
+  getOrganizationFilterOptions,
+  getOrganizationSummary,
+  normalizeBasePath,
+  type AccessRequestRow,
+  type CreateOrganizationResult,
+  type HeaderRow,
+  type LatestInviteLink,
+  type OrganizationColumnKey,
+  type OrganizationHiddenColumns,
+  type OrganizationRow,
+  type OrganizationSortState,
+} from '@/features/settings/organizations-page-model'
 
 const tableEmptyCellStyle: React.CSSProperties = {
   ...settingsTableCellStyle,
@@ -174,59 +86,6 @@ const inviteLinkInputStyle: React.CSSProperties = {
   maxWidth: '42vw',
 }
 
-function normalizeBasePath(value: string | undefined) {
-  const raw = value?.trim() ?? ''
-  if (!raw || raw === '/') return ''
-  const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`
-  return withLeadingSlash.replace(/\/+$/, '')
-}
-
-function uniqueSorted(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((left, right) =>
-    left.localeCompare(right, undefined, { sensitivity: 'base' })
-  )
-}
-
-function formatDate(value: string | null) {
-  if (!value) return '-'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return '-'
-  return parsed.toLocaleDateString('pl-PL', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-}
-
-function compareNullableDate(left: string | null, right: string | null) {
-  const leftTime = left ? new Date(left).getTime() : 0
-  const rightTime = right ? new Date(right).getTime() : 0
-  return (Number.isFinite(leftTime) ? leftTime : 0) - (Number.isFinite(rightTime) ? rightTime : 0)
-}
-
-function compareNumbers(left: number | null, right: number | null) {
-  return (left ?? 0) - (right ?? 0)
-}
-
-function formatChampionName(row: OrganizationRow) {
-  const full = `${row.champion_first_name ?? ''} ${row.champion_last_name ?? ''}`.trim()
-  if (full) return full
-  return row.champion_email ?? '-'
-}
-
-function requesterName(row: AccessRequestRow) {
-  return `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.requester_email
-}
-
-function statusLabel(value: string | null) {
-  return (value ?? '-').toUpperCase()
-}
-
-function isOpenAccessRequestStatus(value: string | null) {
-  const normalized = statusLabel(value)
-  return normalized === '-' || normalized === 'NEW' || normalized === 'PENDING'
-}
-
 export default function SettingsOrganizationsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -258,17 +117,9 @@ export default function SettingsOrganizationsPage() {
 
   const basePath = useMemo(() => normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH), [])
 
-  const pendingChampionCount = useMemo(
-    () => rows.filter((row) => statusLabel(row.champion_status) === 'PENDING').length,
-    [rows]
-  )
-  const assignedChampionCount = useMemo(
-    () => rows.filter((row) => statusLabel(row.champion_status) === 'ASSIGNED').length,
-    [rows]
-  )
-  const pendingAccessRequestCount = useMemo(
-    () => accessRequests.filter((row) => isOpenAccessRequestStatus(row.status)).length,
-    [accessRequests]
+  const { assignedChampionCount, pendingAccessRequestCount, pendingChampionCount } = useMemo(
+    () => getOrganizationSummary(rows, accessRequests),
+    [accessRequests, rows]
   )
 
   const organizationColumnWidths = useMemo(() => {
@@ -291,81 +142,35 @@ export default function SettingsOrganizationsPage() {
     width: settingsHiddenTableColumnWidthPx,
   }
 
-  const organizationTableRows = useMemo<OrganizationTableRow[]>(() => {
-    const organizationRows: OrganizationTableRow[] = rows.map((row) => ({
-      kind: 'organization',
-      key: `organization-${row.organization_id}`,
-      organization: row,
-      organizationName: row.organization_name,
-      championName: formatChampionName(row),
-      championEmail: row.champion_email,
-      status: statusLabel(row.champion_status),
-      seats: row.seats_purchased,
-      invites: row.invites_allowed_total,
-      validTo: row.valid_to,
-      createdAt: row.created_at,
-    }))
+  const organizationTableRows = useMemo(() => buildOrganizationTableRows(rows, accessRequests), [accessRequests, rows])
 
-    const requestRows: OrganizationTableRow[] = accessRequests
-      .filter((row) => isOpenAccessRequestStatus(row.status))
-      .map((row) => ({
-        kind: 'request',
-        key: `request-${row.request_id}`,
-        request: row,
-        organizationName: row.company_name,
-        championName: requesterName(row),
-        championEmail: row.requester_email,
-        status: 'NEW',
-        seats: row.requested_invites,
-        invites: row.requested_invites,
-        validTo: null,
-        createdAt: row.created_at,
-      }))
+  const {
+    championOptions,
+    championStatusOptions,
+    createdDateOptions,
+    inviteOptions,
+    organizationOptions,
+    seatOptions,
+    validDateOptions,
+  } = useMemo(() => getOrganizationFilterOptions(organizationTableRows), [organizationTableRows])
 
-    return [...organizationRows, ...requestRows]
-  }, [accessRequests, rows])
-
-  const organizationOptions = useMemo(() => uniqueSorted(organizationTableRows.map((row) => row.organizationName)), [organizationTableRows])
-  const championOptions = useMemo(() => uniqueSorted(organizationTableRows.map((row) => row.championName)), [organizationTableRows])
-  const championStatusOptions = useMemo(() => uniqueSorted(organizationTableRows.map((row) => row.status)), [organizationTableRows])
-  const seatOptions = useMemo(() => uniqueSorted(organizationTableRows.map((row) => String(row.seats ?? '-'))), [organizationTableRows])
-  const inviteOptions = useMemo(() => uniqueSorted(organizationTableRows.map((row) => String(row.invites ?? '-'))), [organizationTableRows])
-  const validDateOptions = useMemo(() => uniqueSorted(organizationTableRows.map((row) => formatDate(row.validTo))), [organizationTableRows])
-  const createdDateOptions = useMemo(() => uniqueSorted(organizationTableRows.map((row) => formatDate(row.createdAt))), [organizationTableRows])
-
-  const displayedOrganizations = useMemo(() => {
-    const organizationSet = selectedOrganizations === null ? null : new Set(selectedOrganizations)
-    const championSet = selectedChampions === null ? null : new Set(selectedChampions)
-    const statusSet = selectedChampionStatuses === null ? null : new Set(selectedChampionStatuses)
-    const seatSet = selectedSeats === null ? null : new Set(selectedSeats)
-    const inviteSet = selectedInvites === null ? null : new Set(selectedInvites)
-    const validSet = selectedValidDates === null ? null : new Set(selectedValidDates)
-    const createdSet = selectedCreatedDates === null ? null : new Set(selectedCreatedDates)
-
-    const filtered = organizationTableRows.filter((row) => {
-      return (
-        (organizationSet === null || organizationSet.has(row.organizationName)) &&
-        (championSet === null || championSet.has(row.championName)) &&
-        (statusSet === null || statusSet.has(row.status)) &&
-        (seatSet === null || seatSet.has(String(row.seats ?? '-'))) &&
-        (inviteSet === null || inviteSet.has(String(row.invites ?? '-'))) &&
-        (validSet === null || validSet.has(formatDate(row.validTo))) &&
-        (createdSet === null || createdSet.has(formatDate(row.createdAt)))
-      )
-    })
-
-    return [...filtered].sort((left, right) => {
-      let comparison = 0
-      if (organizationSortState.column === 'organization') comparison = left.organizationName.localeCompare(right.organizationName, undefined, { sensitivity: 'base' })
-      else if (organizationSortState.column === 'champion') comparison = left.championName.localeCompare(right.championName, undefined, { sensitivity: 'base' })
-      else if (organizationSortState.column === 'status') comparison = left.status.localeCompare(right.status, undefined, { sensitivity: 'base' })
-      else if (organizationSortState.column === 'seats') comparison = compareNumbers(left.seats, right.seats)
-      else if (organizationSortState.column === 'invites') comparison = compareNumbers(left.invites, right.invites)
-      else if (organizationSortState.column === 'validTo') comparison = compareNullableDate(left.validTo, right.validTo)
-      else comparison = compareNullableDate(left.createdAt, right.createdAt)
-      return organizationSortState.direction === 'asc' ? comparison : -comparison
-    })
-  }, [organizationSortState, organizationTableRows, selectedChampionStatuses, selectedChampions, selectedCreatedDates, selectedInvites, selectedOrganizations, selectedSeats, selectedValidDates])
+  const displayedOrganizations = useMemo(
+    () =>
+      getDisplayedOrganizations(
+        organizationTableRows,
+        {
+          selectedChampionStatuses,
+          selectedChampions,
+          selectedCreatedDates,
+          selectedInvites,
+          selectedOrganizations,
+          selectedSeats,
+          selectedValidDates,
+        },
+        organizationSortState
+      ),
+    [organizationSortState, organizationTableRows, selectedChampionStatuses, selectedChampions, selectedCreatedDates, selectedInvites, selectedOrganizations, selectedSeats, selectedValidDates]
+  )
 
   function buildInviteUrl(token: string) {
     const path = `${basePath}/waiting-for-invite?token=${encodeURIComponent(token)}`
