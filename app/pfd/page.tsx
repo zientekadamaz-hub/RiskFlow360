@@ -77,9 +77,7 @@ import {
   startPfdEditSession,
 } from '@/features/pfd/pfd-service'
 import {
-  SURFACE_BORDER,
   SURFACE_RADIUS,
-  baseBtn,
 } from '@/features/pfd/pfd-page-styles'
 import { PfdConfirmDialog, type PfdConfirmDialogConfig } from '@/features/pfd/pfd-confirm-dialog'
 import {
@@ -89,6 +87,7 @@ import {
 import { PfdHistoryDialog } from '@/features/pfd/pfd-history-dialog'
 import { PfdLeftRail } from '@/features/pfd/pfd-left-rail'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
+import { PfdRightNav } from '@/features/pfd/pfd-right-nav'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
 import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
 
@@ -1426,53 +1425,13 @@ function PfdPageContent() {
         onToggleLasso={() => setLassoEnabled((value) => !value)}
         onZoomStep={setZoomByStep}
       />
-{/* FLOW */}
+      {/* FLOW */}
       <div
         style={{ width: '100%', height: flowHeight, transition: 'height 180ms ease', position: 'relative' }}
         ref={flowWrapRef}
         onWheel={onWheelZoom}
       >
-        <div
-          style={{
-            position: 'absolute',
-            right: 12,
-            top: 12,
-            zIndex: 25,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          <div
-            style={{
-              background: 'rgba(255,255,255,0.08)',
-              border: `1px solid ${SURFACE_BORDER}`,
-              borderRadius: SURFACE_RADIUS,
-              padding: 10,
-              boxShadow: '0 18px 40px rgba(0,0,0,0.18)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
-            <Link
-              href={`/pfmea?project=${projectId}`}
-              className="btn btnGreen"
-              style={{ ...baseBtn, width: 180 }}
-            >
-              PFMEA
-            </Link>
-            <Link
-              href={`/pcp?project=${projectId}`}
-              className="btn btnGreen"
-              style={{ ...baseBtn, width: 180 }}
-            >
-              PCP
-            </Link>
-          </div>
-        </div>
+        <PfdRightNav projectId={projectId} />
         <ReactFlow
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
