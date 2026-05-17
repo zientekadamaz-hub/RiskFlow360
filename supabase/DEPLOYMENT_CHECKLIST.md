@@ -42,6 +42,13 @@ Katalog `db/` traktuj jako archiwum/manual SQL, dopoki starsze pliki nie zostana
 1. Staging/test project.
 2. Advisor security/performance.
 3. `supabase db lint --linked`.
+   - If CLI reports `SUPABASE_DB_PASSWORD` or temporary pooler auth blocking, stop retrying.
+   - Wait for the block to clear, then set the password only in the current PowerShell session:
+     ```powershell
+     $env:SUPABASE_DB_PASSWORD='<database-password>'
+     npx supabase db lint --linked --schema public --fail-on none
+     ```
+   - Never commit or paste the database password into reports or chat.
 4. Smoke test aplikacji:
    - login/logout,
    - Projects,
