@@ -163,6 +163,51 @@ try {
       ['b', '2026-04-01T00:00:00.000Z'],
     ]
   )
+
+  const stableVisibleOrder = buildPfmeaRowsWithStableOrderMetadata(
+    [
+      {
+        id: 'visible-first',
+        operation_id: 'op1',
+        row_no: '10.1.1.1.1',
+        failure_mode_group_id: 'fm-visible',
+        failure_block_group_id: 'fb-visible',
+        action_plan_group_id: 'ap-visible',
+        created_at: '2026-04-01T00:00:30.000Z',
+        operations: { id: 'op1', operation_number: 10 },
+      },
+      {
+        id: 'visible-inserted',
+        operation_id: 'op1',
+        row_no: '10.1.1.1.2',
+        failure_mode_group_id: 'fm-visible',
+        failure_block_group_id: 'fb-visible',
+        action_plan_group_id: 'ap-visible',
+        created_at: '2026-04-01T00:00:05.000Z',
+        operations: { id: 'op1', operation_number: 10 },
+      },
+      {
+        id: 'visible-third',
+        operation_id: 'op1',
+        row_no: '10.1.1.1.3',
+        failure_mode_group_id: 'fm-visible',
+        failure_block_group_id: 'fb-visible',
+        action_plan_group_id: 'ap-visible',
+        created_at: '2026-04-01T00:00:10.000Z',
+        operations: { id: 'op1', operation_number: 10 },
+      },
+    ],
+    { preserveInputOrder: true }
+  )
+  assertJsonEqual(
+    stableVisibleOrder.orderedRows.map((row) => [row.id, row.row_no, row.created_at]),
+    [
+      ['visible-first', '10.1.1.1.1', '2026-05-02T11:59:59.998Z'],
+      ['visible-inserted', '10.1.1.1.2', '2026-05-02T11:59:59.999Z'],
+      ['visible-third', '10.1.1.1.3', '2026-05-02T12:00:00.000Z'],
+    ]
+  )
+
   assertJsonEqual(
     stable.updates.map((row) => [row.id, row.row_no, row.failure_mode_group_id, row.failure_block_group_id, row.action_plan_group_id]),
     [

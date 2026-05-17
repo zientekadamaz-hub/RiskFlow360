@@ -127,12 +127,18 @@ export function buildPfmeaCreatedAtOrder<T extends PfmeaOrderRow>(rows: T[]) {
   }))
 }
 
-export function buildPfmeaStableOrderMetadata<T extends PfmeaOrderRow>(rows: T[]) {
+export function buildPfmeaStableOrderMetadata<T extends PfmeaOrderRow>(
+  rows: T[],
+  options: { rewriteCreatedAt?: boolean } = {}
+) {
   const baseTime = Date.now() - Math.max(rows.length - 1, 0)
   const { hierarchy, normalizedRows } = buildPfmeaHierarchyFromCurrentOrder(rows)
   return rows.map((row, index) => ({
     id: row.id,
-    created_at: (row.created_at ?? '').trim() || new Date(baseTime + index).toISOString(),
+    created_at:
+      options.rewriteCreatedAt
+        ? new Date(baseTime + index).toISOString()
+        : (row.created_at ?? '').trim() || new Date(baseTime + index).toISOString(),
     row_no: hierarchy[index]?.rowLabel ?? null,
     ...createPfmeaGroupIds(pickPfmeaGroupIds(normalizedRows[index] ?? row)),
   }))
@@ -207,7 +213,7 @@ export function buildPfmeaRowsWithStableOrderMetadata<T extends PfmeaOrderRow>(
   const orderedRows = (options.preserveInputOrder ? reindexPfmeaRows(rows) : sortPfmeaRows(rows)).filter(
     (row) => !isPlaceholderRowId(row.id)
   )
-  const updates = buildPfmeaStableOrderMetadata(orderedRows)
+  const updates = buildPfmeaStableOrderMetadata(orderedRows, { rewriteCreatedAt: options.preserveInputOrder })
   const updateById = new Map(updates.map((item) => [item.id, item] as const))
 
   return {
