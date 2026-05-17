@@ -49,8 +49,6 @@ import {
   type PfdFlowEdge,
 } from '@/features/pfd/pfd-flow-utils'
 import {
-  clampPfmeaMiniScore,
-  computePfmeaMiniDerived,
   createPfmeaMiniRow,
   fetchPfmeaMiniRows,
   updatePfmeaMiniRow,
@@ -79,8 +77,6 @@ import {
   startPfdEditSession,
 } from '@/features/pfd/pfd-service'
 import {
-  PFMEA_ACCENT,
-  PFMEA_CELL_TEXT,
   SURFACE_BG,
   SURFACE_BORDER,
   SURFACE_MUTED,
@@ -89,10 +85,8 @@ import {
   SURFACE_TEXT,
   baseBtn,
   baseBtnDisabled,
-  td,
-  th,
 } from '@/features/pfd/pfd-page-styles'
-import { ExcelNumberCell, ExcelTextCell } from '@/features/pfd/pfd-mini-table-cells'
+import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PaletteButton } from '@/features/pfd/pfd-symbol-palette'
 import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
 
@@ -1737,157 +1731,23 @@ function PfdPageContent() {
         </ReactFlow>
       </div>
 
-      {/* PFMEA MINI PANEL */}
-      <div
-        style={{
-          width: '100%',
-          height: panelHeight,
-          transition: 'height 180ms ease',
-          overflow: 'hidden',
-          background: pfmeaOpen ? 'rgba(255,255,255,0.08)' : 'transparent',
-          borderTop: pfmeaOpen ? `1px solid ${SURFACE_BORDER}` : 'none',
-          boxShadow: pfmeaOpen ? '0 -10px 30px rgba(0,0,0,0.22)' : 'none',
-          backdropFilter: pfmeaOpen ? 'blur(12px)' : undefined,
-          WebkitBackdropFilter: pfmeaOpen ? 'blur(12px)' : undefined,
-        }}
-      >
-        {pfmeaOpen && (
-          <div style={{ height: '100%', padding: 14, display: 'flex', flexDirection: 'column', color: SURFACE_TEXT }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 12, color: SURFACE_MUTED, fontWeight: 700 }}>PFMEA</div>
-                <h3 style={{ margin: 0, fontSize: 16, color: SURFACE_TEXT }}>{selectedOperationLabel}</h3>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button className="btn btnGreen" style={baseBtn} onClick={addMiniRow}>
-                  + Add row
-                </button>
-                <Link href={`/pfmea?project=${projectId}&op=${pfmeaOpenOperationId}`} className="btn btnGreen" style={baseBtn}>
-                  Open full PFMEA →
-                </Link>
-                <button className="btn btnGreen" style={baseBtn} onClick={() => setPfmeaOpenOperationId(null)}>
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 10, flex: 1, overflow: 'auto', border: `1px solid ${SURFACE_BORDER}`, borderRadius: 12, background: SURFACE_PANEL_BG }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed', background: SURFACE_PANEL_BG }}>
-                <thead>
-                  <tr>
-                    <th style={th({ width: 260 })}>Failure mode</th>
-                    <th style={th({ width: 260 })}>Effect</th>
-                    <th style={th({ width: 260 })}>Cause</th>
-                    <th style={th({ width: 56, textAlign: 'center' })}>S</th>
-                    <th style={th({ width: 56, textAlign: 'center' })}>O</th>
-                    <th style={th({ width: 56, textAlign: 'center' })}>D</th>
-                    <th style={th({ width: 72, textAlign: 'center' })}>RPN</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {pfmeaMiniRows.map((row, rowIndex) => (
-                    <tr key={row.id}>
-                      <td style={td()}>
-                        <ExcelTextCell
-                          value={row.failure_mode}
-                          editing={edit?.rowId === row.id && edit?.col === 'failure_mode'}
-                          onStart={() => startEdit(row.id, 'failure_mode')}
-                          onChange={(v) => updateMiniCell(row, { failure_mode: v })}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('failure_mode'), true)}
-                          onBlur={stopEdit}
-                          editorRef={editRef}
-                        />
-                      </td>
-
-                      <td style={td()}>
-                        <ExcelTextCell
-                          value={row.effect}
-                          editing={edit?.rowId === row.id && edit?.col === 'effect'}
-                          onStart={() => startEdit(row.id, 'effect')}
-                          onChange={(v) => updateMiniCell(row, { effect: v })}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('effect'), true)}
-                          onBlur={stopEdit}
-                          editorRef={editRef}
-                        />
-                      </td>
-
-                      <td style={td()}>
-                        <ExcelTextCell
-                          value={row.cause}
-                          editing={edit?.rowId === row.id && edit?.col === 'cause'}
-                          onStart={() => startEdit(row.id, 'cause')}
-                          onChange={(v) => updateMiniCell(row, { cause: v })}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('cause'), true)}
-                          onBlur={stopEdit}
-                          editorRef={editRef}
-                        />
-                      </td>
-
-                      <td style={td({ textAlign: 'center' })}>
-                        <ExcelNumberCell
-                          value={row.severity ?? 1}
-                          editing={edit?.rowId === row.id && edit?.col === 'severity'}
-                          onStart={() => startEdit(row.id, 'severity')}
-                          onChange={(v) => updateMiniCell(row, { severity: clampPfmeaMiniScore(v) })}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('severity'), false)}
-                          onBlur={stopEdit}
-                          editorRef={editRef}
-                        />
-                      </td>
-
-                      <td style={td({ textAlign: 'center' })}>
-                        <ExcelNumberCell
-                          value={row.occurrence ?? 1}
-                          editing={edit?.rowId === row.id && edit?.col === 'occurrence'}
-                          onStart={() => startEdit(row.id, 'occurrence')}
-                          onChange={(v) => updateMiniCell(row, { occurrence: clampPfmeaMiniScore(v) })}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('occurrence'), false)}
-                          onBlur={stopEdit}
-                          editorRef={editRef}
-                        />
-                      </td>
-
-                      <td style={td({ textAlign: 'center' })}>
-                        <ExcelNumberCell
-                          value={row.detection ?? 1}
-                          editing={edit?.rowId === row.id && edit?.col === 'detection'}
-                          onStart={() => startEdit(row.id, 'detection')}
-                          onChange={(v) => updateMiniCell(row, { detection: clampPfmeaMiniScore(v) })}
-                          onKeyDown={(e) => handleCellKeyDown(e, rowIndex, colIndex('detection'), false)}
-                          onBlur={stopEdit}
-                          editorRef={editRef}
-                        />
-                      </td>
-
-                      <td
-                        style={td({
-                          textAlign: 'center',
-                          fontWeight: 900,
-                          background: 'rgba(255,255,255,0.08)',
-                          color: PFMEA_ACCENT,
-                          fontSize: 15,
-                        })}
-                      >
-                        {row.rpn ?? computePfmeaMiniDerived(row).rpn ?? ''}
-                      </td>
-                    </tr>
-                  ))}
-
-                  {pfmeaMiniRows.length === 0 && (
-                    <tr>
-                      <td colSpan={7} style={{ padding: 16, color: PFMEA_CELL_TEXT }}>
-                        No PFMEA rows yet. Click <b>+ Add row</b>.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
+      <PfdMiniPfmeaPanel
+        addMiniRow={addMiniRow}
+        colIndex={colIndex}
+        edit={edit}
+        editRef={editRef}
+        handleCellKeyDown={handleCellKeyDown}
+        onClose={() => setPfmeaOpenOperationId(null)}
+        panelHeight={panelHeight}
+        pfmeaOpen={pfmeaOpen}
+        pfmeaOpenOperationId={pfmeaOpenOperationId}
+        projectId={projectId}
+        rows={pfmeaMiniRows}
+        selectedOperationLabel={selectedOperationLabel}
+        startEdit={startEdit}
+        stopEdit={stopEdit}
+        updateMiniCell={updateMiniCell}
+      />
 
       {confirmDialog && (
         <div
