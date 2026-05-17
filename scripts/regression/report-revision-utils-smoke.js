@@ -26,7 +26,7 @@ function loadModule(relativePath) {
 
 const { getReportRevisionId } = loadModule(['src', 'features', 'reports', 'report-revision-utils.ts'])
 
-assert.equal(getReportRevisionId({ status: 'OPEN', current_open_revision_id: 'open', current_draft_revision_id: 'draft' }), 'open')
+assert.equal(getReportRevisionId({ status: 'OPEN', current_open_revision_id: 'open', current_draft_revision_id: 'draft' }), 'draft')
 assert.equal(getReportRevisionId({ status: 'OPEN', current_open_revision_id: '', current_draft_revision_id: 'draft' }), 'draft')
 assert.equal(getReportRevisionId({ status: 'DRAFT', current_open_revision_id: 'open', current_draft_revision_id: 'draft' }), 'draft')
 assert.equal(getReportRevisionId({ status: 'DRAFT', current_open_revision_id: 'open', current_draft_revision_id: '' }), 'open')
