@@ -37,10 +37,10 @@ import {
 } from '@/features/pcp/pcp-page-model'
 import { SummaryCard, TdClassPopup, TdRead, TdText, Th } from '@/features/pcp/pcp-table-cells'
 import { usePcpEditSessionActions } from '@/features/pcp/use-pcp-edit-session-actions'
+import { usePcpSaveRevision } from '@/features/pcp/use-pcp-save-revision'
 import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
 import {
   backfillPcpRowsFromPfmea,
-  deletePcpEditSession,
   ensurePcpProcessDraft,
   fetchLatestPfmeaRevisionIdForPcp,
   fetchPcpEditSession,
@@ -54,7 +54,6 @@ import {
   findEquivalentPcpRowInRevision,
   hydratePcpDraftRows,
   insertPcpRow,
-  publishPcpRevision,
   touchPcpEditSession,
   updatePcpRow,
   type PcpEditSession,
@@ -93,7 +92,6 @@ function PcpPageContent() {
 
   const [dirtyIds, setDirtyIds] = useState<string[]>([])
   const [deletedIds, setDeletedIds] = useState<string[]>([])
-  const [saveBusy, setSaveBusy] = useState(false)
 
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -506,46 +504,24 @@ function PcpPageContent() {
     }
   }, [readOnly, ensureDraftIfNeeded, project?.current_draft_revision_id, project?.current_open_revision_id, workingRevisionId, markDirty, loadAll, ensureDraftRowsHydrated, findEquivalentRowInRevision])
 
-  const handleSaveRevision = useCallback(async (descInput?: string) => {
-    if (saveBusy) return false
-    if (!isDirty) {
-      return false
-    }
-    const desc = (descInput ?? '').trim()
-    if (!desc) {
-      setErr('Change description is required.')
-      return false
-    }
-    try {
-      setSaveBusy(true)
-      setErr('')
-      const { data: sess } = await supabase.auth.getSession()
-      const uid = sess?.session?.user?.id
-      if (!uid) throw new Error('Not authenticated.')
-
-      await publishPcpRevision(supabase, {
-        authorId: uid,
-        authorName: currentAuthorName || 'Unknown user',
-        changeDescription: desc,
-        controlCount: rowsSorted.length,
-        projectId,
-      })
-
-      setDirtyIds([])
-      setDeletedIds([])
-      setDraftRevisionIdOverride(null)
-      if (projectId && userId) await deletePcpEditSession(supabase, projectId, userId)
-      await loadAll()
-      await loadRevisionHistory()
-      await loadEditSession()
-      return true
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-      return false
-    } finally {
-      setSaveBusy(false)
-    }
-  }, [saveBusy, isDirty, projectId, currentAuthorName, rowsSorted.length, userId, loadRevisionHistory, loadEditSession, loadAll])
+  const {
+    handleSaveRevision,
+    saveBusy,
+  } = usePcpSaveRevision({
+    currentAuthorName,
+    isDirty,
+    loadAll,
+    loadEditSession,
+    loadRevisionHistory,
+    projectId,
+    rowCount: rowsSorted.length,
+    setDeletedIds,
+    setDirtyIds,
+    setDraftRevisionIdOverride,
+    setError: setErr,
+    supabase,
+    userId,
+  })
 
   useEffect(() => {
     let alive = true

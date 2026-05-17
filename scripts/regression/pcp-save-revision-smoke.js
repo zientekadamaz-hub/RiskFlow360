@@ -1,0 +1,23 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = path.join(__dirname, '..', '..')
+const pageSource = fs.readFileSync(path.join(root, 'app', 'pcp', 'page.tsx'), 'utf8')
+const hookSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'use-pcp-save-revision.ts'), 'utf8')
+
+assert.match(hookSource, /export function usePcpSaveRevision/, 'PCP save revision hook must be exported.')
+assert.match(hookSource, /publishPcpRevision/, 'PCP save revision hook must own publish calls.')
+assert.match(hookSource, /deletePcpEditSession/, 'PCP save revision hook must close edit session after publish.')
+assert.match(hookSource, /Change description is required\./, 'PCP save revision hook must preserve required description validation.')
+assert.match(hookSource, /Not authenticated\./, 'PCP save revision hook must preserve auth validation.')
+assert.match(hookSource, /setDirtyIds\(\[\]\)[\s\S]*setDeletedIds\(\[\]\)[\s\S]*setDraftRevisionIdOverride\(null\)/, 'PCP save revision hook must clear dirty, deleted and draft state after publish.')
+assert.match(hookSource, /await loadAll\(\)[\s\S]*await loadRevisionHistory\(\)[\s\S]*await loadEditSession\(\)/, 'PCP save revision hook must preserve post-save refresh order.')
+
+assert.match(pageSource, /usePcpSaveRevision\(\{/, 'PCP page must use save revision hook.')
+assert.doesNotMatch(pageSource, /publishPcpRevision/, 'PCP page should not publish revisions directly after save extraction.')
+assert.doesNotMatch(pageSource, /deletePcpEditSession/, 'PCP page should not close sessions directly after save extraction.')
+assert.match(pageSource, /handleSaveRevision\(saveDescription\)/, 'PCP page must keep save dialog wired to save handler.')
+assert.match(pageSource, /saveBusy/, 'PCP page must still use save busy state from hook.')
+
+console.log('pcp save revision smoke passed')
