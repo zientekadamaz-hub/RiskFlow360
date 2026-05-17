@@ -40,8 +40,6 @@ import {
   isLinearStepNode,
   isOperationId,
   isOperationNode,
-  sanitizeEdges,
-  sanitizeNodes,
   sortLinearSteps,
   sortOperationsByNumber,
   type PfdFlowEdge,
@@ -55,10 +53,7 @@ import {
 } from '@/features/pfd/pfd-operations-service'
 import {
   discardPfdDraftAndCloseSession,
-  fetchOwnPfdDraft,
-  fetchPfdCanvasData,
   publishPfdDiagram,
-  savePfdDraft,
   startPfdEditSession,
 } from '@/features/pfd/pfd-service'
 import {
@@ -74,6 +69,7 @@ import { PfdHistoryDialog } from '@/features/pfd/pfd-history-dialog'
 import { PfdLeftRail } from '@/features/pfd/pfd-left-rail'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
+import { usePfdCanvasDataController } from '@/features/pfd/use-pfd-canvas-data-controller'
 import { usePfdMiniPfmeaController } from '@/features/pfd/use-pfd-mini-pfmea-controller'
 import { usePfdProjectDataController } from '@/features/pfd/use-pfd-project-data-controller'
 import { usePfdSessionController } from '@/features/pfd/use-pfd-session-controller'
@@ -128,7 +124,6 @@ function PfdPageContent() {
   const sp = useSearchParams()
   const projectId = sp.get('project') ?? ''
 
-  const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
   const [nodes, setNodes, onNodesChangeRaw] = useNodesState<PfdData>([])
@@ -186,7 +181,6 @@ function PfdPageContent() {
   const [saveDesc, setSaveDesc] = useState('')
   const [saveBusy, setSaveBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const draftLoadedFor = useRef<string>('')
   const [confirmDialog, setConfirmDialog] = useState<PfdConfirmDialogConfig | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [decisionConnectDialog, setDecisionConnectDialog] = useState<PfdDecisionConnectDialogConfig | null>(null)
@@ -213,6 +207,27 @@ function PfdPageContent() {
     loadRevisionLabel,
     processOptions,
   } = usePfdProjectDataController({ projectId, supabase })
+  const {
+    loading,
+    loadAll,
+    resetDraftLoad,
+  } = usePfdCanvasDataController({
+    currentUserId,
+    edges,
+    editSessionStartedAt: editSession?.startedAt,
+    isEditOwner,
+    moduleAccessState,
+    nodes,
+    operationGap: OPS_GAP,
+    operationX: OPS_X,
+    operationY0: OPS_Y0,
+    projectId,
+    setEdges,
+    setError: setErr,
+    setNodes,
+    supabase,
+    triggerCenterView,
+  })
 
   const canWork = !!projectId
 
@@ -264,52 +279,13 @@ function PfdPageContent() {
       }
 
       await loadEditSession()
-      draftLoadedFor.current = ''
+      resetDraftLoad()
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     } finally {
       setSessionBusy(false)
     }
-  }, [projectId, currentUserId, nodes, edges, loadEditSession, editLockMs, setSessionBusy, setSessionMsg])
-
-  const loadAll = useCallback(async () => {
-    if (!projectId) return
-    setLoading(true)
-    setErr('')
-    try {
-      const data = await fetchPfdCanvasData(supabase, projectId)
-      if (data.diagram?.nodes && data.diagram?.edges) {
-        const cleanNodes = sanitizeNodes(data.diagram.nodes as Node<PfdData>[])
-        const nodeIds = new Set(cleanNodes.map((n) => n.id))
-        setNodes(cleanNodes)
-        setEdges(sanitizeEdges(data.diagram.edges as Edge[]).filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)))
-        setLoading(false)
-        triggerCenterView()
-        return
-      }
-
-      const startNodes: Node<PfdData>[] = data.operations.map((operation, index) => ({
-        id: operation.id,
-        type: 'operation',
-        position: { x: OPS_X, y: OPS_Y0 + index * OPS_GAP },
-        data: {
-          kind: 'operation',
-          name: operation.name ?? '',
-          opNo: operation.operation_number ?? 0,
-          station: operation.machine ?? '',
-          operation: operation.operation ?? '',
-        },
-      }))
-
-      setNodes(sanitizeNodes(startNodes))
-      setEdges([])
-      setLoading(false)
-      triggerCenterView()
-    } catch (error: any) {
-      setErr(error?.message ?? String(error))
-      setLoading(false)
-    }
-  }, [projectId, setEdges, setNodes, triggerCenterView])
+  }, [projectId, currentUserId, nodes, edges, loadEditSession, editLockMs, resetDraftLoad, setSessionBusy, setSessionMsg])
 
   const discardDraftAndCloseSession = useCallback(async () => {
     if (!projectId || !currentUserId || !isEditOwner) return
@@ -317,7 +293,7 @@ function PfdPageContent() {
     setErr('')
     try {
       await discardPfdDraftAndCloseSession(supabase, { projectId, currentUserId })
-      draftLoadedFor.current = ''
+      resetDraftLoad()
       await loadEditSession()
       await loadAll()
       setSessionMsg('Draft discarded. Session closed without publishing.')
@@ -326,60 +302,7 @@ function PfdPageContent() {
     } finally {
       setSessionBusy(false)
     }
-  }, [projectId, currentUserId, isEditOwner, loadEditSession, loadAll, setSessionBusy, setSessionMsg])
-
-  useEffect(() => {
-    if (!projectId) return
-    if (moduleAccessState !== 'allowed') return
-    loadAll()
-  }, [projectId, loadAll, moduleAccessState])
-
-  useEffect(() => {
-    if (!projectId || !currentUserId || !isEditOwner || !nodes.length) return
-    const key = `${projectId}:${currentUserId}:${editSession?.startedAt ?? ''}`
-    if (draftLoadedFor.current === key) return
-    draftLoadedFor.current = key
-    void (async () => {
-      const draft = await fetchOwnPfdDraft(supabase, { projectId, currentUserId })
-      if (!draft?.nodes || !draft?.edges) return
-      const cleanNodes = sanitizeNodes(draft.nodes as Node<PfdData>[])
-      const nodeIds = new Set(cleanNodes.map((n) => n.id))
-      setNodes(cleanNodes)
-      setEdges(sanitizeEdges(draft.edges as Edge[]).filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target)))
-      triggerCenterView()
-    })()
-  }, [projectId, currentUserId, isEditOwner, editSession?.startedAt, nodes.length, setEdges, setNodes, triggerCenterView])
-
-  const prevOwnerRef = useRef(false)
-  useEffect(() => {
-    if (prevOwnerRef.current && !isEditOwner) {
-      draftLoadedFor.current = ''
-      void loadAll()
-    }
-    prevOwnerRef.current = isEditOwner
-  }, [isEditOwner, loadAll])
-
-  const saveTimer = useRef<any>(null)
-  const scheduleSaveDiagram = useCallback(
-    (nextNodes: Node<PfdData>[], nextEdges: Edge[]) => {
-      if (!projectId || !currentUserId || !isEditOwner) return
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(async () => {
-        await savePfdDraft(supabase, {
-          projectId,
-          currentUserId,
-          nodes: nextNodes,
-          edges: nextEdges,
-        })
-      }, 450)
-    },
-    [projectId, currentUserId, isEditOwner]
-  )
-
-  useEffect(() => {
-    if (!projectId || !isEditOwner) return
-    scheduleSaveDiagram(nodes, edges)
-  }, [nodes, edges, projectId, isEditOwner, scheduleSaveDiagram])
+  }, [projectId, currentUserId, isEditOwner, loadEditSession, loadAll, resetDraftLoad, setSessionBusy, setSessionMsg])
 
   const patchOperation = useCallback(
     async (operationId: string, patch: Partial<PfdData>) => {
