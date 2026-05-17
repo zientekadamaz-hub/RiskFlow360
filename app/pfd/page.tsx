@@ -3,9 +3,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import ReactFlow, {
-  Background,
-  MiniMap,
+import {
   MarkerType,
   useEdgesState,
   useNodesState,
@@ -84,17 +82,17 @@ import {
   PfdDecisionConnectDialog,
   type PfdDecisionConnectDialogConfig,
 } from '@/features/pfd/pfd-decision-connect-dialog'
+import { PfdFlowCanvas } from '@/features/pfd/pfd-flow-canvas'
 import { PfdHistoryDialog } from '@/features/pfd/pfd-history-dialog'
 import { PfdLeftRail } from '@/features/pfd/pfd-left-rail'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
-import { PfdRightNav } from '@/features/pfd/pfd-right-nav'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
 import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
 
 // ✅ biblioteka symboli obok route
 import { nodeTypes, type PfdData } from './_lib/nodes'
 import OrthEdge from './_lib/edges/OrthEdge'
-import { UI_FONT, S, OP_WIDTH, OP_HEIGHT, DEC_H, DEC_W, CIRCLE_D, HIT, START_W, START_H, TRI_W, TRI_H } from './_lib/ui/const'
+import { UI_FONT, S, OP_WIDTH, OP_HEIGHT, DEC_H, DEC_W, CIRCLE_D, START_W, START_H, TRI_W, TRI_H } from './_lib/ui/const'
 
 /**
  * PFD + PFMEA mini panel (Supabase)
@@ -1425,58 +1423,41 @@ function PfdPageContent() {
         onToggleLasso={() => setLassoEnabled((value) => !value)}
         onZoomStep={setZoomByStep}
       />
-      {/* FLOW */}
-      <div
-        style={{ width: '100%', height: flowHeight, transition: 'height 180ms ease', position: 'relative' }}
-        ref={flowWrapRef}
-        onWheel={onWheelZoom}
-      >
-        <PfdRightNav projectId={projectId} />
-        <ReactFlow
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          defaultEdgeOptions={defaultEdgeOptions}
-          nodes={nodesWithHandlers}
-          edges={edgesStyled}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          connectOnClick={isEditOwner}
-          connectionRadius={Math.round(HIT * 1.6)}
-          onNodeDrag={onNodeDrag}
-          onEdgeUpdate={onEdgeUpdate}
-          onEdgeUpdateEnd={onEdgeUpdateEnd}
-          edgeUpdaterRadius={isEditOwner ? 18 : 0}  
-
-          onPaneClick={onPaneClick}
-          onNodeClick={onNodeClick}
-          onEdgeClick={onEdgeClick}
-          onSelectionChange={onSelectionChange}
-          onInit={(inst) => {
-            rfRef.current = inst
-            inst.setViewport?.({ x: 0, y: 0, zoom: ZOOM_BASE }, { duration: 0 })
-            viewportRef.current = { x: 0, y: 0, zoom: ZOOM_BASE }
-            setZoomPct(100)
+      <PfdFlowCanvas
+        defaultEdgeOptions={defaultEdgeOptions}
+        edges={edgesStyled}
+        edgeTypes={edgeTypes}
+        flowHeight={flowHeight}
+        flowWrapRef={flowWrapRef}
+        isEditOwner={isEditOwner}
+        lassoEnabled={lassoEnabled}
+        nodes={nodesWithHandlers}
+        nodeTypes={nodeTypes}
+        projectId={projectId}
+        onConnect={onConnect}
+        onEdgeClick={onEdgeClick}
+        onEdgeUpdate={onEdgeUpdate}
+        onEdgeUpdateEnd={onEdgeUpdateEnd}
+        onEdgesChange={onEdgesChange}
+        onInit={(inst) => {
+          rfRef.current = inst
+          inst.setViewport?.({ x: 0, y: 0, zoom: ZOOM_BASE }, { duration: 0 })
+          viewportRef.current = { x: 0, y: 0, zoom: ZOOM_BASE }
+          setZoomPct(100)
+          requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                centerAll()
-              })
+              centerAll()
             })
-          }}
-          onMove={onViewportMove}
-          minZoom={0.35}
-          maxZoom={3}
-          zoomOnScroll={false}
-          nodesDraggable={isEditOwner}
-          elementsSelectable
-          selectNodesOnDrag={lassoEnabled && isEditOwner}
-          selectionOnDrag={lassoEnabled && isEditOwner}
-          panOnDrag={[2]}
-        >
-          <MiniMap />
-          <Background />
-        </ReactFlow>
-      </div>
+          })
+        }}
+        onMove={onViewportMove}
+        onNodeClick={onNodeClick}
+        onNodeDrag={onNodeDrag}
+        onNodesChange={onNodesChange}
+        onPaneClick={onPaneClick}
+        onSelectionChange={onSelectionChange}
+        onWheel={onWheelZoom}
+      />
 
       <PfdMiniPfmeaPanel
         addMiniRow={addMiniRow}
