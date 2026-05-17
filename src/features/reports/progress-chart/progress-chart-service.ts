@@ -5,7 +5,7 @@ import {
   fetchProjectsUserContext,
   fetchProjectsWithRevision,
 } from '@/features/projects/projects-service'
-import { PFMEA_REPORT_RISK_SELECT_WITH_ACTIVE_OPERATION } from '@/features/reports/pfmea-report-query'
+import { PFMEA_REPORT_RISK_SELECT } from '@/features/reports/pfmea-report-query'
 import { toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
 import { buildOpenReportProjectScope } from '@/features/reports/report-project-scope'
 import type {
@@ -260,9 +260,8 @@ export async function fetchProgressChartData(
     const currentQuery = eligibleRevisionIds.length
       ? supabase
           .from('pfmea_rows')
-          .select(PFMEA_REPORT_RISK_SELECT_WITH_ACTIVE_OPERATION)
+          .select(PFMEA_REPORT_RISK_SELECT)
           .in('revision_id', eligibleRevisionIds)
-          .eq('operations.active', true)
       : Promise.resolve({ data: [], error: null })
 
     const [historyRes, currentRes] = await Promise.all([

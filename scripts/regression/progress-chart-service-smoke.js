@@ -43,8 +43,9 @@ function loadModule(relativePath) {
 
 const { summarizeProgressCurrentRows } = loadModule(['src', 'features', 'reports', 'progress-chart', 'progress-chart-service.ts'])
 
-assert.match(serviceSource, /PFMEA_REPORT_RISK_SELECT_WITH_ACTIVE_OPERATION/, 'Progress Chart current summary must request operation active state.')
-assert.match(serviceSource, /\.eq\('operations\.active', true\)/, 'Progress Chart current summary must align with Projects by excluding inactive operations.')
+assert.match(serviceSource, /PFMEA_REPORT_RISK_SELECT/, 'Progress Chart current summary must use the same PFMEA row scope as RPN Matrix.')
+assert.doesNotMatch(serviceSource, /\.eq\('operations\.active', true\)/, 'Progress Chart must not exclude historical PFMEA rows from open-project trend scope.')
+assert.match(serviceSource, /const now = new Date\(\)/, 'Progress Chart must project the current open-risk state into the current date bucket.')
 
 const summary = summarizeProgressCurrentRows([
   { severity: 10, occurrence: 10, detection: 10, rpn_current: 72 },

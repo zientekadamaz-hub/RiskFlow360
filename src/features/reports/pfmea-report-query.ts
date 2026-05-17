@@ -5,4 +5,3 @@ export const PFMEA_REPORT_RISK_FIELDS =
 // PFMEA may still show historical revision rows even when the linked operation was later deactivated.
 export const PFMEA_REPORT_RISK_SELECT = `${PFMEA_REPORT_RISK_FIELDS},operations!inner(project_id)`
 export const PFMEA_REPORT_RISK_SELECT_WITH_REVISION = `revision_id,${PFMEA_REPORT_RISK_SELECT}`
-export const PFMEA_REPORT_RISK_SELECT_WITH_ACTIVE_OPERATION = `${PFMEA_REPORT_RISK_FIELDS},operations!inner(project_id,active)`
