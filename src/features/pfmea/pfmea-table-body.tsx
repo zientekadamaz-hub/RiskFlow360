@@ -95,6 +95,8 @@ export function PfmeaTableBody(props: {
           pcpChecked,
           pcpDisabled,
           pcpSourceRow,
+          currentRiskMuted,
+          residualRiskMuted,
           residualRisk: a2,
           riskRpn2Style,
           riskRpnStyle,
@@ -284,6 +286,7 @@ export function PfmeaTableBody(props: {
                     }
                   : undefined
               }
+              currentRiskMuted={currentRiskMuted}
               detectionOptions={props.detectionOptions}
               disabled={props.readOnly}
               edit={props.edit}
@@ -398,6 +401,7 @@ export function PfmeaTableBody(props: {
               onStart={runActionPlanStart}
               operationId={r.operation_id || r.operations?.id || null}
               occurrenceOptions={props.occurrenceOptions}
+              residualRiskMuted={residualRiskMuted}
               residualRpn={a2.rpn}
               riskRpn2Style={riskRpn2Style}
               rowId={r.id}

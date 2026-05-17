@@ -27,11 +27,14 @@ for (const key of cellKeys) {
 
 assert.match(causeCurrentControlCellsSource, /rowSpan=\{actionPlanBlockSpan\}/, 'PFMEA cause/current control cells must preserve action plan rowSpan.')
 assert.match(causeCurrentControlCellsSource, /sideAction=\{causeSideAction\}/, 'PFMEA cause plus action must be injected unchanged from the page.')
+assert.match(causeCurrentControlCellsSource, /currentRiskMuted\?: boolean/, 'PFMEA cause/current control cells must accept closed-risk muted state.')
+assert.match(causeCurrentControlCellsSource, /muted=\{currentRiskMuted\}/, 'PFMEA OCC/DET cells must mute when current risk is closed.')
 
 assert.match(tableBodySource, /import \{ PfmeaCauseCurrentControlCells \}/, 'PFMEA table body must import PfmeaCauseCurrentControlCells.')
 assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*effectiveActionPlanOwnerRow=\{effectiveActionPlanOwnerRow\}/, 'PFMEA table body must pass action plan owner row.')
 assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*actionPlanBlockSpan=\{actionPlanBlockSpan\}/, 'PFMEA table body must pass action plan block span.')
 assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*causeSideAction=\{[\s\S]*Add cause row/, 'PFMEA table body must preserve cause side action.')
+assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*currentRiskMuted=\{currentRiskMuted\}/, 'PFMEA table body must pass closed-risk muted state to OCC/DET cells.')
 assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*addCauseContinuationRow/, 'PFMEA table body must preserve cause continuation callback.')
 assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*getPfmeaFailureBlockSourceRowAtIndex/, 'PFMEA table body must preserve cause source row lookup.')
 

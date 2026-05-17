@@ -4,6 +4,7 @@ import { MergedCellInner, mergedCellTdStyle } from './pfmea-merged-cell'
 import { adjacentPopupStyle, anchoredPopupStyle } from './pfmea-popup-position'
 
 const SURFACE_BORDER = 'rgba(255,255,255,0.16)'
+const MUTED_SCALE_COLOR = '#8f96a3'
 
 type SeverityOption = {
   level: number
@@ -24,6 +25,7 @@ export function TdScaleSelect(props: {
   disabled?: boolean
   flash?: boolean
   cellKey?: string
+  muted?: boolean
 }) {
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -133,7 +135,7 @@ export function TdScaleSelect(props: {
         rowSpan={props.rowSpan}
         ref={setCellAnchorEl}
         className={`pfmeaTd center gray singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
-        style={mergedCellTdStyle(props.rowSpan)}
+        style={mergedCellTdStyle(props.rowSpan, props.muted ? { color: MUTED_SCALE_COLOR } : undefined)}
         onMouseEnter={startHoverDelay}
         onMouseLeave={stopHover}
       >
@@ -152,7 +154,7 @@ export function TdScaleSelect(props: {
         rowSpan={props.rowSpan}
         ref={setCellAnchorEl}
         className={`pfmeaTd editable center gray singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
-        style={mergedCellTdStyle(props.rowSpan)}
+        style={mergedCellTdStyle(props.rowSpan, props.muted ? { color: MUTED_SCALE_COLOR } : undefined)}
         onClick={() => {
           stopHover()
           props.onStart()
@@ -169,7 +171,13 @@ export function TdScaleSelect(props: {
   }
 
   return (
-    <td data-pfmea-col={props.cellKey} rowSpan={props.rowSpan} ref={setCellAnchorEl} className={`pfmeaTd editable center singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}>
+    <td
+      data-pfmea-col={props.cellKey}
+      rowSpan={props.rowSpan}
+      ref={setCellAnchorEl}
+      className={`pfmeaTd editable center singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
+      style={props.muted ? { color: MUTED_SCALE_COLOR } : undefined}
+    >
       <button
         type="button"
         ref={triggerRef}

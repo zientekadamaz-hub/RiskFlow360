@@ -19,6 +19,13 @@ const expectedModelMarkers = [
   'isPfmeaCellHighlighted',
   'colorFill',
   'groupStart',
+  'currentRiskMuted',
+  'residualRiskMuted',
+  '!currentRiskMuted',
+  'MUTED_RISK_TEXT_COLOR',
+  'closedActionRows.length > 0',
+  'Math.min(...closedResidualRpns)',
+  'residualRisk.rpn > bestClosedResidualRpn',
   'rowHierarchyById.get',
 ]
 

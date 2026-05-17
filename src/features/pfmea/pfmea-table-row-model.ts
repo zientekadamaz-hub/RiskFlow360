@@ -20,6 +20,17 @@ type PfmeaRowHierarchyLabel = {
   rowLabel?: string | null
 }
 
+const CLOSED_STATUS = 'CLOSED'
+const MUTED_RISK_TEXT_COLOR = '#8f96a3'
+
+function isActionClosed(row: PfmeaRow) {
+  return (row.action_status ?? '').trim().toUpperCase() === CLOSED_STATUS
+}
+
+function hasRecommendedAction(row: PfmeaRow) {
+  return (row.recommended_action ?? '').trim().length > 0
+}
+
 export type PfmeaTableRowModel = {
   actionPlanBlockSpan: number
   actionPlanOwnerRow: PfmeaRow
@@ -46,6 +57,8 @@ export type PfmeaTableRowModel = {
   pcpChecked: boolean
   pcpDisabled: boolean
   pcpSourceRow: PfmeaRow
+  currentRiskMuted: boolean
+  residualRiskMuted: boolean
   residualRisk: PfmeaRiskValues
   risk1: RiskColor | null
   risk2: RiskColor | null
@@ -111,24 +124,41 @@ export function buildPfmeaTableRowModel(params: {
 
   const prevOpNo = rowIndex > 0 ? tableRows[rowIndex - 1]?.operations?.operation_number ?? null : null
   const span = params.mergeInfo[rowIndex]?.span ?? 0
+  const actionPlanBlockSpan = params.actionPlanBlockMergeInfo[rowIndex]?.span ?? 0
+  const currentRiskBlockRows =
+    actionPlanBlockSpan > 0
+      ? tableRows.slice(rowIndex, rowIndex + actionPlanBlockSpan).map(params.applyPendingCellValues)
+      : []
+  const closedActionRows = currentRiskBlockRows.filter((item) => hasRecommendedAction(item) && isActionClosed(item))
+  const closedResidualRpns = closedActionRows
+    .map((item) => params.computeDerivedFromContext(item).residualRisk.rpn)
+    .filter((value): value is number => value != null)
+  const bestClosedResidualRpn = closedResidualRpns.length > 0 ? Math.min(...closedResidualRpns) : null
+  const currentRiskMuted = closedActionRows.length > 0
+  const residualRiskMuted =
+    hasRecommendedAction(effectiveCurrentRow) &&
+    isActionClosed(effectiveCurrentRow) &&
+    residualRisk.rpn != null &&
+    bestClosedResidualRpn != null &&
+    residualRisk.rpn > bestClosedResidualRpn
   const isFirstOfMergedRun = span > 0
   const groupStart = isFirstOfMergedRun && rowIndex > 0 && opNo != null && prevOpNo != null && opNo !== prevOpNo
 
   const riskRpnStyle: CSSProperties = {
-    ...(risk1 ? { background: colorFill(risk1) } : {}),
-    color: '#e1e5ec',
+    ...(risk1 && !currentRiskMuted ? { background: colorFill(risk1) } : {}),
+    color: currentRiskMuted ? MUTED_RISK_TEXT_COLOR : '#e1e5ec',
     fontSize: 16,
     fontWeight: 700,
   }
   const riskRpn2Style: CSSProperties = {
-    ...(risk2 ? { background: colorFill(risk2) } : {}),
-    color: '#e1e5ec',
+    ...(risk2 && !residualRiskMuted ? { background: colorFill(risk2) } : {}),
+    color: residualRiskMuted ? MUTED_RISK_TEXT_COLOR : '#e1e5ec',
     fontSize: 16,
     fontWeight: 700,
   }
 
   return {
-    actionPlanBlockSpan: params.actionPlanBlockMergeInfo[rowIndex]?.span ?? 0,
+    actionPlanBlockSpan,
     actionPlanOwnerRow,
     canAddCauseRow: hasPfmeaTextValue(effectiveActionPlanOwnerRow.cause),
     canAddEffectRow: hasPfmeaTextValue(effectiveFailureBlockOwnerRow.effect),
@@ -153,6 +183,8 @@ export function buildPfmeaTableRowModel(params: {
     pcpChecked,
     pcpDisabled,
     pcpSourceRow: actionPlanOwnerRow,
+    currentRiskMuted,
+    residualRiskMuted,
     residualRisk,
     risk1,
     risk2,

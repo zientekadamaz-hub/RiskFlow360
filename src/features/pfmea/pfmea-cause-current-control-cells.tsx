@@ -13,6 +13,7 @@ type TextSideAction = React.ComponentProps<typeof TdText>['sideAction']
 type PfmeaCauseCurrentControlCellsProps = {
   actionPlanBlockSpan: number
   causeSideAction?: TextSideAction
+  currentRiskMuted?: boolean
   detectionOptions: ScaleOptions
   disabled: boolean
   edit: PfmeaEditState
@@ -35,6 +36,7 @@ type PfmeaCauseCurrentControlCellsProps = {
 export function PfmeaCauseCurrentControlCells({
   actionPlanBlockSpan,
   causeSideAction,
+  currentRiskMuted = false,
   detectionOptions,
   disabled,
   edit,
@@ -86,6 +88,7 @@ export function PfmeaCauseCurrentControlCells({
           disabled={disabled}
           flash={isMissingHighlighted('occurrence')}
           cellKey="occurrence"
+          muted={currentRiskMuted}
         />
       ) : null}
 
@@ -137,6 +140,7 @@ export function PfmeaCauseCurrentControlCells({
           disabled={disabled}
           flash={isMissingHighlighted('detection')}
           cellKey="detection"
+          muted={currentRiskMuted}
         />
       ) : null}
     </>

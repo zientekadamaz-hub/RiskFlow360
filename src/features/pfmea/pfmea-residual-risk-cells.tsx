@@ -24,6 +24,7 @@ type PfmeaResidualRiskCellsProps = {
   onStart: (col: keyof PfmeaRow) => void
   operationId: string | null
   occurrenceOptions: ScaleOptions
+  residualRiskMuted?: boolean
   residualRpn: number | null
   riskRpn2Style: CSSProperties
   rowId: string
@@ -44,6 +45,7 @@ export function PfmeaResidualRiskCells({
   onStart,
   operationId,
   occurrenceOptions,
+  residualRiskMuted = false,
   residualRpn,
   riskRpn2Style,
   rowId,
@@ -66,6 +68,7 @@ export function PfmeaResidualRiskCells({
           disabled={disabled}
           flash={isMissingHighlighted('occurrence2')}
           cellKey="occurrence2"
+          muted={residualRiskMuted}
         />
       ) : null}
 
@@ -82,6 +85,7 @@ export function PfmeaResidualRiskCells({
           disabled={disabled}
           flash={isMissingHighlighted('detection2')}
           cellKey="detection2"
+          muted={residualRiskMuted}
         />
       ) : null}
 
