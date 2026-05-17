@@ -5,8 +5,8 @@ function repoRoot() {
   return path.resolve(__dirname, '..', '..', '..')
 }
 
-function loadLocalEnv() {
-  const envPath = path.join(repoRoot(), '.env.local')
+function loadEnvFile(fileName) {
+  const envPath = path.join(repoRoot(), fileName)
   if (!fs.existsSync(envPath)) return
 
   const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/)
@@ -18,6 +18,11 @@ function loadLocalEnv() {
     if (!key || process.env[key]) continue
     process.env[key] = value
   }
+}
+
+function loadLocalEnv() {
+  loadEnvFile('.env.local')
+  loadEnvFile('.env.regression.local')
 }
 
 function getRequiredEnv(name) {
@@ -40,6 +45,7 @@ module.exports = {
   buildTargetUrl,
   getBaseUrl,
   getRequiredEnv,
+  loadEnvFile,
   loadLocalEnv,
   repoRoot,
 }

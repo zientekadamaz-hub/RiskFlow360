@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run regression:shared && npm run build",
     "regression:all": "node scripts/regression/run-all.js",
+    "regression:preflight": "node scripts/regression/preflight.js",
     "regression:org:invite-flow": "node scripts/regression/org/invite-flow.js",
     "regression:org:viewer-flow": "node scripts/regression/org/viewer-flow.js",
     "regression:org:customer-flow": "node scripts/regression/org/customer-flow.js",

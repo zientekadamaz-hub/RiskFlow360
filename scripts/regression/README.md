@@ -7,6 +7,8 @@ Required env vars:
 - `REGRESSION_EMAIL`
 - `REGRESSION_PASSWORD`
 - `PFMEA_REGRESSION_PROJECT_ID`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 Additional env vars for invite / organization regression:
 
@@ -24,7 +26,14 @@ Optional extra project env:
 Optional env vars:
 
 - `REGRESSION_BASE_URL` default: `http://localhost:3000`
+- `REGRESSION_PREFLIGHT_SKIP_URL=1` when only env shape should be checked and the app is not running yet
 - `PLAYWRIGHT_PACKAGE_PATH` when Playwright is not installed locally and should be resolved from a custom path
+
+Local env loading:
+
+- browser regression scripts load `.env.local`
+- they also load `.env.regression.local` if present
+- both files are ignored by git
 
 Recommended usage:
 
@@ -32,9 +41,17 @@ Recommended usage:
 - Start the app locally before browser regressions.
 - PFMEA browser regressions discard any existing draft first, so each run starts from a clean draft.
 
+Preflight:
+
+- `npm run regression:preflight`
+- checks required browser-regression env values
+- warns when `REGRESSION_BASE_URL` is not reachable
+- does not print secret values
+
 Available scripts:
 
 - `npm run regression:all`
+- `npm run regression:preflight`
 - `npm run regression:shared`
 - `npm run regression:app-header`
 - `npm run regression:error-utils`
