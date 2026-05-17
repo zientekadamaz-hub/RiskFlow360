@@ -230,7 +230,7 @@ export async function ensurePublishedPfmeaIntegrityAfterSave(params: {
     const publishedRows = await params.fetchRowsForRevisionScope(params.revisionId, operationIds)
     const usedIds = new Set<string>()
     const missingRows = snapshotRows.filter((sourceRow) => {
-      const candidate = findEquivalentPfmeaRow(
+      const candidate = findEquivalentPublishedPfmeaRow(
         publishedRows.filter((row) => !usedIds.has(row.id)),
         sourceRow
       )

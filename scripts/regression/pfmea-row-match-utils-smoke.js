@@ -73,4 +73,26 @@ assert.equal(findEquivalentPfmeaRow(rows, { ...base, id: 'source-copy' })?.id, '
 assert.equal(findEquivalentPublishedPfmeaRow(rows, { ...base, id: 'source-copy' })?.id, 'row-a')
 assert.equal(findEquivalentPfmeaRow(rows, { ...base, operation_id: 'missing-op' }), null)
 
+const publishedRowsWithNewMetadata = [
+  {
+    ...base,
+    id: 'published-a',
+    row_no: '20.9.9.9.9',
+    created_at: '2026-05-03T10:00:00.000Z',
+    failure_mode_group_id: 'published-fm',
+    failure_block_group_id: 'published-fb',
+    action_plan_group_id: 'published-ap',
+  },
+]
+assert.equal(
+  findEquivalentPfmeaRow(publishedRowsWithNewMetadata, base),
+  null,
+  'Draft row matching should stay strict when publish metadata changes.'
+)
+assert.equal(
+  findEquivalentPublishedPfmeaRow(publishedRowsWithNewMetadata, base)?.id,
+  'published-a',
+  'Published row matching must tolerate changed row/order metadata when row content is stable.'
+)
+
 console.log('pfmea row match utils smoke passed')

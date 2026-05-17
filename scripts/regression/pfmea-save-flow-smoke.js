@@ -156,5 +156,10 @@ assert.match(source, /commitPfmeaEditorBeforeSave/, 'Save flow must blur/commit 
 assert.match(source, /flushPendingCellUpdates/, 'Save flow must flush queued cell updates before publishing.')
 assert.match(source, /cleanupPfmeaSuccessfulSaveAfterPublish/, 'Save flow must clean up draft rows and edit session after publish.')
 assert.match(source, /validatePfmeaSaveStart/, 'Save flow must validate initial save state before publishing.')
+assert.match(
+  postPublishSource,
+  /ensurePublishedPfmeaIntegrityAfterSave[\s\S]*findEquivalentPublishedPfmeaRow/,
+  'Post-publish integrity check must use published-row matching to avoid false safety restores.'
+)
 
 console.log('pfmea save flow smoke passed')
