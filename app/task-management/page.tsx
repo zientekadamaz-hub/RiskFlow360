@@ -30,6 +30,7 @@ import {
   projectsTableViewportScrollerStyle,
 } from '@/features/projects/view-styles'
 import { getSessionUserWithRetries } from '@/lib/auth/client-session'
+import { TaskResponsibleCell } from '@/features/tasks/task-table-cells'
 import {
   EMPTY_SUMMARY,
   TASK_STATUS_OPTIONS,
@@ -348,48 +349,6 @@ export default function TaskManagementPage() {
           </div>
       </div>
     </SettingsPageShell>
-  )
-}
-
-function TaskResponsibleCell({
-  disabled,
-  onSave,
-  value,
-}: {
-  disabled?: boolean
-  onSave: (value: string) => void
-  value: string
-}) {
-  const [draft, setDraft] = useState(value === '-' ? '' : value)
-
-  const commit = () => {
-    const next = draft.trim() || '-'
-    if (next !== value) onSave(next)
-  }
-
-  return (
-    <input
-      aria-label="Responsible"
-      disabled={disabled}
-      value={draft}
-      onBlur={commit}
-      onChange={(event) => setDraft(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.currentTarget.blur()
-        }
-        if (event.key === 'Escape') {
-          setDraft(value === '-' ? '' : value)
-          event.currentTarget.blur()
-        }
-      }}
-      placeholder="-"
-      style={{
-        ...taskInlineInputStyle,
-        cursor: disabled ? 'not-allowed' : 'text',
-        opacity: disabled ? 0.62 : 1,
-      }}
-    />
   )
 }
 
