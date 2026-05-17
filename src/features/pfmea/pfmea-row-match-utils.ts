@@ -127,7 +127,11 @@ export function findEquivalentPublishedPfmeaRow<Row extends PfmeaMatchRow>(rows:
   return null
 }
 
-export function findEquivalentPfmeaRow<Row extends PfmeaMatchRow>(rows: Row[], sourceRow: PfmeaMatchRow): Row | null {
+export function findEquivalentPfmeaRow<Row extends PfmeaMatchRow>(
+  rows: Row[],
+  sourceRow: PfmeaMatchRow,
+  options: { allowContentFallback?: boolean } = {}
+): Row | null {
   const operationId = pfmeaRowOperationId(sourceRow) || null
   const sameOperationRows = rows.filter((row) => (pfmeaRowOperationId(row) || null) === operationId)
   if (sameOperationRows.length === 0) return null
@@ -138,10 +142,33 @@ export function findEquivalentPfmeaRow<Row extends PfmeaMatchRow>(rows: Row[], s
     if (byRowNo.length === 1) return byRowNo[0]
   }
 
+  const sourceGroupKey = JSON.stringify([
+    normalizePfmeaGroupId(sourceRow.failure_mode_group_id) ?? '',
+    normalizePfmeaGroupId(sourceRow.failure_block_group_id) ?? '',
+    normalizePfmeaGroupId(sourceRow.action_plan_group_id) ?? '',
+  ])
+  if (sourceGroupKey !== JSON.stringify(['', '', ''])) {
+    const byGroupIds = sameOperationRows.filter(
+      (row) =>
+        JSON.stringify([
+          normalizePfmeaGroupId(row.failure_mode_group_id) ?? '',
+          normalizePfmeaGroupId(row.failure_block_group_id) ?? '',
+          normalizePfmeaGroupId(row.action_plan_group_id) ?? '',
+        ]) === sourceGroupKey
+    )
+    if (byGroupIds.length === 1) return byGroupIds[0]
+  }
+
   const sourceCreatedAt = (sourceRow.created_at ?? '').trim()
   if (sourceCreatedAt) {
     const byCreatedAt = sameOperationRows.filter((row) => (row.created_at ?? '').trim() === sourceCreatedAt)
     if (byCreatedAt.length === 1) return byCreatedAt[0]
+  }
+
+  if (options.allowContentFallback) {
+    const sourceContentKey = buildPfmeaRowContentKey(sourceRow)
+    const byContent = sameOperationRows.filter((row) => buildPfmeaRowContentKey(row) === sourceContentKey)
+    if (byContent.length === 1) return byContent[0]
   }
 
   const sourceKey = buildPfmeaRowMatchKey(sourceRow)

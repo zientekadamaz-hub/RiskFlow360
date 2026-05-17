@@ -73,6 +73,37 @@ assert.equal(findEquivalentPfmeaRow(rows, { ...base, id: 'source-copy' })?.id, '
 assert.equal(findEquivalentPublishedPfmeaRow(rows, { ...base, id: 'source-copy' })?.id, 'row-a')
 assert.equal(findEquivalentPfmeaRow(rows, { ...base, operation_id: 'missing-op' }), null)
 
+const draftRowsWithDuplicateRowNo = [
+  { ...base, id: 'draft-a', row_no: '10.1.1.1.1', failure_mode_group_id: 'fm-1', failure_block_group_id: 'fb-1', action_plan_group_id: 'ap-1' },
+  { ...base, id: 'draft-b', row_no: '10.1.1.1.1', failure_mode_group_id: 'fm-2', failure_block_group_id: 'fb-2', action_plan_group_id: 'ap-2' },
+]
+assert.equal(
+  findEquivalentPfmeaRow(draftRowsWithDuplicateRowNo, { ...base, id: 'source-copy', row_no: '10.1.1.1.1' })?.id,
+  'draft-a',
+  'Draft row matching should use PFMEA group ids when a duplicated row_no is not enough.'
+)
+
+const draftRowsWithChangedMetadata = [
+  {
+    ...base,
+    id: 'draft-content-a',
+    row_no: '10.9.9.9.9',
+    created_at: '2026-05-03T10:00:00.000Z',
+    failure_mode_group_id: '',
+    failure_block_group_id: '',
+    action_plan_group_id: '',
+  },
+]
+assert.equal(
+  findEquivalentPfmeaRow(
+    draftRowsWithChangedMetadata,
+    { ...base, failure_mode_group_id: '', failure_block_group_id: '', action_plan_group_id: '' },
+    { allowContentFallback: true }
+  )?.id,
+  'draft-content-a',
+  'Draft integrity matching should tolerate changed ordering metadata when row content is unique.'
+)
+
 const publishedRowsWithNewMetadata = [
   {
     ...base,

@@ -290,7 +290,8 @@ export async function remapPfmeaSnapshotRowsToRevisionAfterSave(params: {
 
       const candidate = findEquivalentPfmeaRow(
         revisionRows.filter((row) => !usedIds.has(row.id)),
-        rowForMapping
+        rowForMapping,
+        { allowContentFallback: true }
       )
 
       if (!candidate) {
