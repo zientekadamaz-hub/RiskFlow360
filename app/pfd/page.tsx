@@ -53,7 +53,6 @@ import {
 } from '@/features/pfd/pfd-operations-service'
 import {
   discardPfdDraftAndCloseSession,
-  publishPfdDiagram,
   startPfdEditSession,
 } from '@/features/pfd/pfd-service'
 import {
@@ -72,6 +71,7 @@ import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
 import { usePfdCanvasDataController } from '@/features/pfd/use-pfd-canvas-data-controller'
 import { usePfdMiniPfmeaController } from '@/features/pfd/use-pfd-mini-pfmea-controller'
 import { usePfdProjectDataController } from '@/features/pfd/use-pfd-project-data-controller'
+import { usePfdSaveController } from '@/features/pfd/use-pfd-save-controller'
 import { usePfdSessionController } from '@/features/pfd/use-pfd-session-controller'
 
 // ✅ biblioteka symboli obok route
@@ -177,9 +177,6 @@ function PfdPageContent() {
   }, [])
 
   const [lassoEnabled, setLassoEnabled] = useState(false)
-  const [saveDialogOpen, setSaveDialogOpen] = useState(false)
-  const [saveDesc, setSaveDesc] = useState('')
-  const [saveBusy, setSaveBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState<PfdConfirmDialogConfig | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
@@ -228,36 +225,28 @@ function PfdPageContent() {
     supabase,
     triggerCenterView,
   })
+  const {
+    saveBusy,
+    saveDesc,
+    saveDialogOpen,
+    savePfdWithDescription,
+    setSaveDesc,
+    setSaveDialogOpen,
+  } = usePfdSaveController({
+    currentUserId,
+    edges,
+    historyAuthor,
+    isEditOwner,
+    loadEditSession,
+    loadHistory,
+    loadRevisionLabel,
+    nodes,
+    projectId,
+    setError: setErr,
+    supabase,
+  })
 
   const canWork = !!projectId
-
-  const savePfdWithDescription = useCallback(async () => {
-    if (!projectId || !currentUserId || !isEditOwner) return
-    const description = saveDesc.trim()
-    if (!description) return
-    setSaveBusy(true)
-    setErr('')
-    try {
-      await publishPfdDiagram(supabase, {
-        projectId,
-        currentUserId,
-        historyAuthor,
-        description,
-        nodes,
-        edges,
-      })
-
-      await loadRevisionLabel()
-      await loadHistory()
-      await loadEditSession()
-      setSaveDialogOpen(false)
-      setSaveDesc('')
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-    } finally {
-      setSaveBusy(false)
-    }
-  }, [projectId, currentUserId, isEditOwner, saveDesc, nodes, edges, loadHistory, loadRevisionLabel, loadEditSession, historyAuthor])
 
   const startEditSession = useCallback(async () => {
     if (!projectId || !currentUserId) return
@@ -907,7 +896,7 @@ function PfdPageContent() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [confirmBusy, confirmDialog, decisionConnectDialog, deleteSelected, historyOpen, saveBusy, saveDialogOpen, stopEdit, isEditOwner])
+  }, [confirmBusy, confirmDialog, decisionConnectDialog, deleteSelected, historyOpen, saveBusy, saveDialogOpen, setSaveDialogOpen, stopEdit, isEditOwner])
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null)
