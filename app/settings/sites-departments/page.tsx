@@ -45,142 +45,30 @@ import {
   type SiteDeptRow,
   updateSiteDepartmentsActiveState,
 } from '@/features/settings/site-departments-service'
+import {
+  BASE_SITE_DEPARTMENT_COLUMN_WIDTHS,
+  DEFAULT_SITE_DEPARTMENT_HIDDEN_COLUMNS,
+  departmentNames,
+  getActiveSitesCount,
+  getDisplayedSiteDepartmentRows,
+  getSiteDepartmentFilterOptions,
+  normalizeDepartmentInputs,
+  normalizeText,
+  statusLabel,
+  toUiRows,
+  uniqueList,
+  type BlockedActionState,
+  type DeleteConfirmState,
+  type DepartmentInputRow,
+  type SitesDepartmentsColumnKey,
+  type SitesDepartmentsHiddenColumns,
+  type SitesDepartmentsSortState,
+  type UiSiteRow,
+} from '@/features/settings/site-departments-page-model'
 import { toUserErrorMessage } from '@/lib/error-utils'
-
-type UiSiteRow = {
-  key: string
-  site: string
-  departments: UiDepartmentRow[]
-  active: boolean
-  projectCount: number
-  used: boolean
-}
-
-type UiDepartmentRow = {
-  name: string
-  projectCount: number
-  used: boolean
-}
-
-type DepartmentInputRow = {
-  originalName: string | null
-  projectCount: number
-  used: boolean
-  value: string
-}
-
-type DeleteConfirmState = {
-  site: string
-  used: boolean
-} | null
-
-type BlockedActionState = {
-  action: 'delete'
-  site: string
-} | null
-
-type SitesDepartmentsColumnKey = 'departments' | 'site' | 'status' | 'usage'
-type SitesDepartmentsLayoutColumnKey = SitesDepartmentsColumnKey | 'actions'
-type SitesDepartmentsHiddenColumns = Record<SitesDepartmentsColumnKey, boolean>
-type SitesDepartmentsSortState = {
-  column: SitesDepartmentsColumnKey
-  direction: 'asc' | 'desc'
-} | null
-
-const DEFAULT_HIDDEN_COLUMNS: SitesDepartmentsHiddenColumns = {
-  departments: false,
-  site: false,
-  status: false,
-  usage: false,
-}
-
-const BASE_COLUMN_WIDTHS: Record<SitesDepartmentsLayoutColumnKey, number> = {
-  site: 200,
-  departments: 360,
-  status: 120,
-  usage: 120,
-  actions: 200,
-}
 
 const SESSION_RETRY_COUNT = 8
 const SESSION_RETRY_DELAY_MS = 250
-
-function normalizeText(value: string) {
-  return value.trim()
-}
-
-function uniqueList(list: string[]) {
-  const seen = new Set<string>()
-  const out: string[] = []
-
-  list.forEach((value) => {
-    const normalized = normalizeText(value)
-    if (!normalized) return
-    const key = normalized.toLowerCase()
-    if (seen.has(key)) return
-    seen.add(key)
-    out.push(normalized)
-  })
-
-  return out
-}
-
-function toUiRows(list: SiteDeptRow[]): UiSiteRow[] {
-  const bySite = new Map<string, { departments: Map<string, UiDepartmentRow>; activeAll: boolean; projectCount: number }>()
-
-  list.forEach((row) => {
-    const site = normalizeText(row.site)
-    if (!site) return
-
-    const department = normalizeText(row.department ?? '')
-    const entry = bySite.get(site) ?? { departments: new Map<string, UiDepartmentRow>(), activeAll: true, projectCount: 0 }
-    const projectCount = row.project_count ?? 0
-    if (department) {
-      const key = department.toLowerCase()
-      const current = entry.departments.get(key)
-      entry.departments.set(key, {
-        name: current?.name ?? department,
-        projectCount: (current?.projectCount ?? 0) + projectCount,
-        used: (current?.projectCount ?? 0) + projectCount > 0,
-      })
-    }
-    if (!row.active) entry.activeAll = false
-    entry.projectCount += projectCount
-    bySite.set(site, entry)
-  })
-
-  return Array.from(bySite.entries())
-    .map(([site, data]) => ({
-      key: site,
-      site,
-      departments: Array.from(data.departments.values()).sort((a, b) => a.name.localeCompare(b.name)),
-      active: data.activeAll,
-      projectCount: data.projectCount,
-      used: data.projectCount > 0,
-    }))
-    .sort((a, b) => a.site.localeCompare(b.site))
-}
-
-function departmentNames(row: UiSiteRow) {
-  return row.departments.map((department) => department.name)
-}
-
-function normalizeDepartmentInputs(values: DepartmentInputRow[]) {
-  const next = values.map((item) => ({ ...item, value: item.value.trimStart() }))
-  while (next.length > 1 && !next[next.length - 1]?.value.trim() && !next[next.length - 2]?.value.trim()) {
-    next.pop()
-  }
-  if (next.length === 0) next.push({ originalName: null, projectCount: 0, used: false, value: '' })
-  return next
-}
-
-function statusLabel(row: UiSiteRow) {
-  return row.active ? 'ACTIVE' : 'INACTIVE'
-}
-
-function usageLabel(row: UiSiteRow) {
-  return row.used ? 'USED' : 'UNUSED'
-}
 
 const halfColumnInputStyle: CSSProperties = {
   ...projectsCompactInputStyle,
@@ -228,7 +116,7 @@ export default function SettingsSitesDepartmentsPage() {
   const [confirmDelete, setConfirmDelete] = useState<DeleteConfirmState>(null)
   const [confirmDeleteError, setConfirmDeleteError] = useState<string | null>(null)
   const [blockedAction, setBlockedAction] = useState<BlockedActionState>(null)
-  const [hiddenColumns, setHiddenColumns] = useState<SitesDepartmentsHiddenColumns>(DEFAULT_HIDDEN_COLUMNS)
+  const [hiddenColumns, setHiddenColumns] = useState<SitesDepartmentsHiddenColumns>(DEFAULT_SITE_DEPARTMENT_HIDDEN_COLUMNS)
   const [selectedDepartments, setSelectedDepartments] = useState<string[] | null>(null)
   const [selectedSites, setSelectedSites] = useState<string[] | null>(null)
   const [selectedStatuses, setSelectedStatuses] = useState<string[] | null>(null)
@@ -236,44 +124,25 @@ export default function SettingsSitesDepartmentsPage() {
   const [sortState, setSortState] = useState<SitesDepartmentsSortState>({ column: 'site', direction: 'asc' })
 
   const hasOrg = useMemo(() => !!orgId, [orgId])
-  const activeSitesCount = useMemo(() => uiRows.filter((row) => row.active).length, [uiRows])
-  const siteOptions = useMemo(() => uniqueList(uiRows.map((row) => row.site)).sort((a, b) => a.localeCompare(b)), [uiRows])
-  const departmentOptions = useMemo(
-    () => uniqueList(uiRows.flatMap((row) => departmentNames(row))).sort((a, b) => a.localeCompare(b)),
-    [uiRows]
+  const activeSitesCount = useMemo(() => getActiveSitesCount(uiRows), [uiRows])
+  const { departmentOptions, siteOptions, statusOptions, usageOptions } = useMemo(() => getSiteDepartmentFilterOptions(uiRows), [uiRows])
+  const displayedRows = useMemo(
+    () =>
+      getDisplayedSiteDepartmentRows(
+        uiRows,
+        {
+          selectedDepartments,
+          selectedSites,
+          selectedStatuses,
+          selectedUsage,
+        },
+        sortState
+      ),
+    [selectedDepartments, selectedSites, selectedStatuses, selectedUsage, sortState, uiRows]
   )
-  const statusOptions = useMemo(() => ['ACTIVE', 'INACTIVE'], [])
-  const usageOptions = useMemo(() => ['USED', 'UNUSED'], [])
-  const displayedRows = useMemo(() => {
-    const siteSet = selectedSites === null ? null : new Set(selectedSites)
-    const departmentSet = selectedDepartments === null ? null : new Set(selectedDepartments)
-    const statusSet = selectedStatuses === null ? null : new Set(selectedStatuses)
-    const usageSet = selectedUsage === null ? null : new Set(selectedUsage)
-
-    const filtered = uiRows.filter((row) => {
-      const siteOk = siteSet === null ? true : siteSet.has(row.site)
-      const departmentsOk = departmentSet === null ? true : row.departments.some((department) => departmentSet.has(department.name))
-      const statusOk = statusSet === null ? true : statusSet.has(statusLabel(row))
-      const usageOk = usageSet === null ? true : usageSet.has(usageLabel(row))
-      return siteOk && departmentsOk && statusOk && usageOk
-    })
-
-    if (!sortState) return filtered
-
-    return [...filtered].sort((left, right) => {
-      let comparison = 0
-      if (sortState.column === 'site') comparison = left.site.localeCompare(right.site, undefined, { sensitivity: 'base' })
-      if (sortState.column === 'departments') {
-        comparison = departmentNames(left).join(', ').localeCompare(departmentNames(right).join(', '), undefined, { sensitivity: 'base' })
-      }
-      if (sortState.column === 'status') comparison = statusLabel(left).localeCompare(statusLabel(right), undefined, { sensitivity: 'base' })
-      if (sortState.column === 'usage') comparison = left.projectCount - right.projectCount
-      return sortState.direction === 'asc' ? comparison : -comparison
-    })
-  }, [selectedDepartments, selectedSites, selectedStatuses, selectedUsage, sortState, uiRows])
   const columnWidths = useMemo(() => {
     return getSettingsTableColumnWidths<SitesDepartmentsColumnKey>({
-      baseWidths: BASE_COLUMN_WIDTHS,
+      baseWidths: BASE_SITE_DEPARTMENT_COLUMN_WIDTHS,
       hiddenColumns,
     })
   }, [hiddenColumns])
