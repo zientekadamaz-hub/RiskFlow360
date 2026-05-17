@@ -29,7 +29,11 @@ import {
   SURFACE_RADIUS,
   SURFACE_TEXT,
   formatDateTimePL,
+  formatPcpLockRemainingText,
+  getPcpEditState,
+  getPcpWorkingRevision,
   makePcpPlaceholderRow,
+  sortPcpRows,
 } from '@/features/pcp/pcp-page-model'
 import { SummaryCard, TdClassPopup, TdRead, TdText, Th } from '@/features/pcp/pcp-table-cells'
 import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
@@ -105,34 +109,31 @@ function PcpPageContent() {
   const [edit, setEdit] = useState<{ rowId: string; col: keyof PcpRow } | null>(null)
 
   const isDirty = dirtyIds.length > 0 || deletedIds.length > 0
-  const isObsolete = (project?.status ?? 'DRAFT') === 'OBSOLETE'
+  const {
+    isObsolete,
+    isEditOwner,
+    isLockedByOther,
+    readOnly,
+  } = useMemo(() => getPcpEditState({
+    editSession,
+    now: sessionNow,
+    projectStatus: project?.status,
+    userId,
+  }), [editSession, project?.status, sessionNow, userId])
 
-  const sessionExpired = useMemo(() => {
-    if (!editSession) return false
-    const last = new Date(editSession.lastActivityAt).getTime()
-    if (!Number.isFinite(last)) return true
-    return sessionNow - last >= EDIT_LOCK_MS
-  }, [editSession, sessionNow])
-
-  const isEditOwner = !!userId && !!editSession && editSession.lockedBy === userId && !sessionExpired
-  const isLockedByOther = !!editSession && !isEditOwner && !sessionExpired
-  const readOnly = isObsolete || !isEditOwner
-
-  const lockRemainingText = useMemo(() => {
-    if (!editSession || !isLockedByOther) return ''
-    const last = new Date(editSession.lastActivityAt).getTime()
-    const left = Math.max(0, EDIT_LOCK_MS - (sessionNow - last))
-    const h = Math.floor(left / 3_600_000)
-    const m = Math.floor((left % 3_600_000) / 60_000)
-    return `${h}h ${m}m`
-  }, [editSession, isLockedByOther, sessionNow])
+  const lockRemainingText = useMemo(
+    () => (isLockedByOther ? formatPcpLockRemainingText(editSession, sessionNow) : ''),
+    [editSession, isLockedByOther, sessionNow]
+  )
 
   const markDirty = useCallback((id: string) => {
     setDirtyIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
   }, [])
 
-  const workingRevisionId = draftRevisionIdOverride ?? project?.current_draft_revision_id ?? project?.current_open_revision_id ?? null
-  const workingRevisionLabel = project?.current_draft_revision_id ? project?.draft_revision_label : project?.open_revision_label
+  const { workingRevisionId, workingRevisionLabel } = useMemo(
+    () => getPcpWorkingRevision(project, draftRevisionIdOverride),
+    [draftRevisionIdOverride, project]
+  )
 
   const {
     clearColumnGroup,
@@ -146,18 +147,7 @@ function PcpPageContent() {
     widthOf,
   } = usePcpVisibleColumns(userId)
 
-  const rowsSorted = useMemo(() => {
-    const indexed = rows.map((row, index) => ({ row, index }))
-    indexed.sort((a, b) => {
-      const ao = a.row.operations?.operation_number ?? 0
-      const bo = b.row.operations?.operation_number ?? 0
-      if (ao !== bo) return ao - bo
-      const as = a.row.__sortIndex ?? a.index
-      const bs = b.row.__sortIndex ?? b.index
-      return as - bs
-    })
-    return indexed.map((item) => item.row)
-  }, [rows])
+  const rowsSorted = useMemo(() => sortPcpRows(rows), [rows])
 
   const loadProjectView = useCallback(async () => {
     const view = await fetchPcpProjectView(supabase, projectId)

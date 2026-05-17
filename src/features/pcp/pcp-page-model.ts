@@ -6,7 +6,7 @@ import {
   normalizeText,
   PCP_PLACEHOLDER_PREFIX,
 } from './pcp-utils'
-import type { PcpOperation, PcpRow, PfmeaPcpSeedRow } from './pcp-service'
+import type { PcpEditSession, PcpOperation, PcpProjectView, PcpRow, PfmeaPcpSeedRow } from './pcp-service'
 
 export type PcpColumnId =
   | 'id'
@@ -112,6 +112,63 @@ export function formatDateTimePL(iso: string | null | undefined) {
   const date = dateValue.toLocaleDateString('pl-PL', { year: 'numeric', month: '2-digit', day: '2-digit' })
   const time = dateValue.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   return `${date} ${time}`
+}
+
+export function isPcpSessionExpired(editSession: PcpEditSession | null, now: number, timeoutMs = EDIT_LOCK_MS) {
+  if (!editSession) return false
+  const last = new Date(editSession.lastActivityAt).getTime()
+  if (!Number.isFinite(last)) return true
+  return now - last >= timeoutMs
+}
+
+export function formatPcpLockRemainingText(editSession: PcpEditSession | null, now: number, timeoutMs = EDIT_LOCK_MS) {
+  if (!editSession) return ''
+  const last = new Date(editSession.lastActivityAt).getTime()
+  if (!Number.isFinite(last)) return ''
+  const left = Math.max(0, timeoutMs - (now - last))
+  const h = Math.floor(left / 3_600_000)
+  const m = Math.floor((left % 3_600_000) / 60_000)
+  return `${h}h ${m}m`
+}
+
+export function getPcpEditState(params: {
+  projectStatus?: PcpProjectView['status'] | null
+  userId: string | null
+  editSession: PcpEditSession | null
+  now: number
+}) {
+  const isObsolete = (params.projectStatus ?? 'DRAFT') === 'OBSOLETE'
+  const sessionExpired = isPcpSessionExpired(params.editSession, params.now)
+  const isEditOwner = !!params.userId && !!params.editSession && params.editSession.lockedBy === params.userId && !sessionExpired
+  const isLockedByOther = !!params.editSession && !isEditOwner && !sessionExpired
+
+  return {
+    isObsolete,
+    sessionExpired,
+    isEditOwner,
+    isLockedByOther,
+    readOnly: isObsolete || !isEditOwner,
+  }
+}
+
+export function getPcpWorkingRevision(project: PcpProjectView | null, draftRevisionIdOverride: string | null) {
+  return {
+    workingRevisionId: draftRevisionIdOverride ?? project?.current_draft_revision_id ?? project?.current_open_revision_id ?? null,
+    workingRevisionLabel: project?.current_draft_revision_id ? project?.draft_revision_label : project?.open_revision_label,
+  }
+}
+
+export function sortPcpRows(rows: PcpRow[]) {
+  const indexed = rows.map((row, index) => ({ row, index }))
+  indexed.sort((a, b) => {
+    const ao = a.row.operations?.operation_number ?? 0
+    const bo = b.row.operations?.operation_number ?? 0
+    if (ao !== bo) return ao - bo
+    const as = a.row.__sortIndex ?? a.index
+    const bs = b.row.__sortIndex ?? b.index
+    return as - bs
+  })
+  return indexed.map((item) => item.row)
 }
 
 export function anchoredPopupStyle(anchorEl: HTMLElement, width: number, gap = 8, minViewportPadding = 24): CSSProperties {
