@@ -4,8 +4,11 @@ const path = require('node:path')
 const vm = require('node:vm')
 const ts = require('typescript')
 
+const root = path.join(__dirname, '..', '..')
+const serviceSource = fs.readFileSync(path.join(root, 'src', 'features', 'reports', 'progress-chart', 'progress-chart-service.ts'), 'utf8')
+
 function loadModule(relativePath) {
-  const sourcePath = path.join(__dirname, '..', '..', ...relativePath)
+  const sourcePath = path.join(root, ...relativePath)
   const source = fs.readFileSync(sourcePath, 'utf8')
   const transpiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -21,9 +24,11 @@ function loadModule(relativePath) {
       if (request === '@/features/reports/pfmea-report-risk-utils') {
         return loadModule(['src', 'features', 'reports', 'pfmea-report-risk-utils.ts'])
       }
+      if (request === '@/features/reports/pfmea-report-query') {
+        return loadModule(['src', 'features', 'reports', 'pfmea-report-query.ts'])
+      }
       if (
         request === '@/features/projects/projects-service' ||
-        request === '@/features/reports/pfmea-report-query' ||
         request === '@/features/reports/report-project-scope'
       ) {
         return {}
@@ -37,6 +42,9 @@ function loadModule(relativePath) {
 }
 
 const { summarizeProgressCurrentRows } = loadModule(['src', 'features', 'reports', 'progress-chart', 'progress-chart-service.ts'])
+
+assert.match(serviceSource, /PFMEA_REPORT_RISK_SELECT_WITH_ACTIVE_OPERATION/, 'Progress Chart current summary must request operation active state.')
+assert.match(serviceSource, /\.eq\('operations\.active', true\)/, 'Progress Chart current summary must align with Projects by excluding inactive operations.')
 
 const summary = summarizeProgressCurrentRows([
   { severity: 10, occurrence: 10, detection: 10, rpn_current: 72 },
