@@ -95,6 +95,7 @@ export function TdScaleSelect(props: {
     stopOptionHover()
     props.stopEdit()
   }, [props, stopOptionHover])
+  const mutedTextStyle = props.muted ? { color: MUTED_SCALE_COLOR } : undefined
   const selectedDetailsPopup =
     hoverOpen && cellAnchorEl && typeof document !== 'undefined'
       ? createPortal(
@@ -135,12 +136,12 @@ export function TdScaleSelect(props: {
         rowSpan={props.rowSpan}
         ref={setCellAnchorEl}
         className={`pfmeaTd center gray singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
-        style={mergedCellTdStyle(props.rowSpan, props.muted ? { color: MUTED_SCALE_COLOR } : undefined)}
+        style={mergedCellTdStyle(props.rowSpan, mutedTextStyle)}
         onMouseEnter={startHoverDelay}
         onMouseLeave={stopHover}
       >
         <MergedCellInner rowSpan={props.rowSpan} gap={0}>
-          <span>{props.value == null ? '' : String(props.value)}</span>
+          <span style={mutedTextStyle}>{props.value == null ? '' : String(props.value)}</span>
         </MergedCellInner>
         {selectedDetailsPopup}
       </td>
@@ -154,7 +155,7 @@ export function TdScaleSelect(props: {
         rowSpan={props.rowSpan}
         ref={setCellAnchorEl}
         className={`pfmeaTd editable center gray singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
-        style={mergedCellTdStyle(props.rowSpan, props.muted ? { color: MUTED_SCALE_COLOR } : undefined)}
+        style={mergedCellTdStyle(props.rowSpan, mutedTextStyle)}
         onClick={() => {
           stopHover()
           props.onStart()
@@ -163,7 +164,7 @@ export function TdScaleSelect(props: {
         onMouseLeave={stopHover}
       >
         <MergedCellInner rowSpan={props.rowSpan} gap={0}>
-          <span>{props.value == null ? '' : String(props.value)}</span>
+          <span style={mutedTextStyle}>{props.value == null ? '' : String(props.value)}</span>
         </MergedCellInner>
         {selectedDetailsPopup}
       </td>
@@ -176,7 +177,7 @@ export function TdScaleSelect(props: {
       rowSpan={props.rowSpan}
       ref={setCellAnchorEl}
       className={`pfmeaTd editable center singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
-      style={props.muted ? { color: MUTED_SCALE_COLOR } : undefined}
+      style={mutedTextStyle}
     >
       <button
         type="button"
@@ -189,7 +190,7 @@ export function TdScaleSelect(props: {
           outline: 'none',
           background: 'transparent',
           font: 'inherit',
-          color: 'inherit',
+          color: props.muted ? MUTED_SCALE_COLOR : 'inherit',
           padding: 0,
           margin: 0,
           textAlign: 'center',

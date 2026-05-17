@@ -24,8 +24,9 @@ const expectedModelMarkers = [
   '!currentRiskMuted',
   'MUTED_RISK_TEXT_COLOR',
   'closedActionRows.length > 0',
-  'Math.min(...closedResidualRpns)',
-  'residualRisk.rpn > bestClosedResidualRpn',
+  'closedResidualCandidates',
+  'bestClosedResidualRowId',
+  'effectiveCurrentRow.id !== bestClosedResidualRowId',
   'rowHierarchyById.get',
 ]
 

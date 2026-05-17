@@ -28,6 +28,9 @@ assert.match(failureEffectCellsSource, /flash=\{isMissingHighlighted\('severity'
 assert.match(scaleSelectCellSource, /selectedDetailsPopup/, 'PFMEA scale selector must show descriptions in non-edit mode.')
 assert.match(scaleSelectCellSource, /onMouseEnter=\{startHoverDelay\}/, 'PFMEA scale selector must open description popup on hover.')
 assert.match(scaleSelectCellSource, /ref=\{setCellAnchorEl\}/, 'PFMEA scale selector must anchor view-mode popup to the cell.')
+assert.match(scaleSelectCellSource, /MUTED_SCALE_COLOR/, 'PFMEA scale selector must keep a dedicated muted value color.')
+assert.match(scaleSelectCellSource, /<span style=\{mutedTextStyle\}>/, 'PFMEA scale selector must apply muted color directly to read-only value text.')
+assert.match(scaleSelectCellSource, /color: props\.muted \? MUTED_SCALE_COLOR : 'inherit'/, 'PFMEA scale selector edit trigger must inherit muted value color.')
 
 assert.match(tableBodySource, /import \{ PfmeaFailureEffectCells \}/, 'PFMEA table body must import PfmeaFailureEffectCells.')
 assert.match(tableBodySource, /<PfmeaFailureEffectCells[\s\S]*effectiveFailureBlockOwnerRow=\{effectiveFailureBlockOwnerRow\}/, 'PFMEA table body must pass failure block owner row.')

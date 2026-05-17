@@ -31,6 +31,15 @@ function hasRecommendedAction(row: PfmeaRow) {
   return (row.recommended_action ?? '').trim().length > 0
 }
 
+function findPfmeaMergeOwnerIndex(rowIndex: number, mergeInfo: PfmeaMergeInfo[]) {
+  for (let i = rowIndex; i >= 0; i -= 1) {
+    const item = mergeInfo[i]
+    if (item?.span && item.end >= rowIndex) return i
+  }
+
+  return rowIndex
+}
+
 export type PfmeaTableRowModel = {
   actionPlanBlockSpan: number
   actionPlanOwnerRow: PfmeaRow
@@ -125,22 +134,31 @@ export function buildPfmeaTableRowModel(params: {
   const prevOpNo = rowIndex > 0 ? tableRows[rowIndex - 1]?.operations?.operation_number ?? null : null
   const span = params.mergeInfo[rowIndex]?.span ?? 0
   const actionPlanBlockSpan = params.actionPlanBlockMergeInfo[rowIndex]?.span ?? 0
+  const actionPlanBlockOwnerIndex = findPfmeaMergeOwnerIndex(rowIndex, params.actionPlanBlockMergeInfo)
+  const actionPlanBlockOwnerSpan = params.actionPlanBlockMergeInfo[actionPlanBlockOwnerIndex]?.span ?? 0
   const currentRiskBlockRows =
-    actionPlanBlockSpan > 0
-      ? tableRows.slice(rowIndex, rowIndex + actionPlanBlockSpan).map(params.applyPendingCellValues)
+    actionPlanBlockOwnerSpan > 0
+      ? tableRows.slice(actionPlanBlockOwnerIndex, actionPlanBlockOwnerIndex + actionPlanBlockOwnerSpan).map(params.applyPendingCellValues)
       : []
   const closedActionRows = currentRiskBlockRows.filter((item) => hasRecommendedAction(item) && isActionClosed(item))
-  const closedResidualRpns = closedActionRows
-    .map((item) => params.computeDerivedFromContext(item).residualRisk.rpn)
-    .filter((value): value is number => value != null)
-  const bestClosedResidualRpn = closedResidualRpns.length > 0 ? Math.min(...closedResidualRpns) : null
+  const closedResidualCandidates = closedActionRows
+    .map((item) => ({
+      rowId: item.id,
+      rpn: params.computeDerivedFromContext(item).residualRisk.rpn,
+    }))
+    .filter((item): item is { rowId: string; rpn: number } => item.rpn != null)
+  const bestClosedResidualRowId =
+    closedResidualCandidates.reduce<(typeof closedResidualCandidates)[number] | null>((best, item) => {
+      if (!best) return item
+      if (item.rpn < best.rpn) return item
+      return best
+    }, null)?.rowId ?? null
   const currentRiskMuted = closedActionRows.length > 0
   const residualRiskMuted =
     hasRecommendedAction(effectiveCurrentRow) &&
     isActionClosed(effectiveCurrentRow) &&
-    residualRisk.rpn != null &&
-    bestClosedResidualRpn != null &&
-    residualRisk.rpn > bestClosedResidualRpn
+    bestClosedResidualRowId != null &&
+    effectiveCurrentRow.id !== bestClosedResidualRowId
   const isFirstOfMergedRun = span > 0
   const groupStart = isFirstOfMergedRun && rowIndex > 0 && opNo != null && prevOpNo != null && opNo !== prevOpNo
 
