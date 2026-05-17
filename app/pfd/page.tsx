@@ -45,6 +45,12 @@ import {
   type PfdFlowEdge,
 } from '@/features/pfd/pfd-flow-utils'
 import {
+  buildPfdDefaultEdgeOptions,
+  buildPfdNodesWithHandlers,
+  buildPfdStyledEdges,
+  isPfdOperationSelected,
+} from '@/features/pfd/pfd-flow-view-model'
+import {
   archiveOperationsAndDeletePfmea,
   createOperationRecord,
   patchOperationRecord,
@@ -319,39 +325,18 @@ function PfdPageContent() {
     })
   }, [pfmeaOpenOperationId, nodes])
 
-        const selectedIsOperation = useMemo(() => {
-         if (!selectedNodeId) return false
-         return nodes.find((n) => n.id === selectedNodeId)?.data.kind === 'operation'
-          }, [nodes, selectedNodeId])
-
-
-  
+  const selectedIsOperation = useMemo(() => isPfdOperationSelected(nodes, selectedNodeId), [nodes, selectedNodeId])
 
   const nodesWithHandlers = useMemo(() => {
-    const mapped: Node<PfdData>[] = nodes.map((n) => {
-      if (n.data.kind === 'operation') {
-        return { ...n, data: { ...n.data, editable: isEditOwner, onOpenPfmea: canOpenPfmeaPanel ? openPfmeaFor : undefined, onPatch: patchOperation } }
-      }
-      if (n.data.kind === 'processref') {
-        return { ...n, data: { ...n.data, editable: isEditOwner, onPatch: patchFrame, processOptions } }
-      }
-      if (n.data.kind === 'frame') {
-        return {
-          ...n,
-          draggable: true,
-          selectable: true,
-          connectable: false,
-          dragHandle: '.frame-drag-handle',
-          style: { ...(n.style ?? {}), zIndex: -1, pointerEvents: 'none' as const },
-          data: { ...n.data, editable: isEditOwner, onPatch: patchFrame },
-        }
-      }
-      if (n.data.kind === 'circle' || n.data.kind === 'decision' || n.data.kind === 'startstop' || n.data.kind === 'triangle') {
-        return { ...n, data: { ...n.data, editable: isEditOwner, onPatch: patchFrame } }
-      }
-      return n
+    return buildPfdNodesWithHandlers({
+      canOpenPfmeaPanel,
+      isEditOwner,
+      nodes,
+      onOpenPfmea: openPfmeaFor,
+      onPatchFrame: patchFrame,
+      onPatchOperation: patchOperation,
+      processOptions,
     })
-    return mapped.sort((a, b) => (a.data.kind === 'frame' ? -1 : b.data.kind === 'frame' ? 1 : 0))
   }, [nodes, openPfmeaFor, patchFrame, patchOperation, isEditOwner, processOptions, canOpenPfmeaPanel])
 
   const selectedOperationLabel = useMemo(() => {
@@ -363,38 +348,12 @@ function PfdPageContent() {
   }, [nodes, pfmeaOpenOperationId])
 
   const defaultEdgeOptions = useMemo(
-    () => ({
-      type: 'smoothedit' as const,
-      pathOptions: { borderRadius: Math.max(8, Math.round(14 * S)), offset: Math.round(15 * S) },
-      markerEnd: EDGE_MARKER,
-      style: { strokeWidth: 1 * S, stroke: '#dbe7f5' },
-      labelStyle: { fontWeight: 600, fontSize: 14 * S, fill: '#444', fontFamily: UI_FONT },
-      labelBgStyle: { fill: 'white' },
-      labelBgPadding: [6 * S, 4 * S] as any,
-      labelBgBorderRadius: 6 * S,
-    }),
+    () => buildPfdDefaultEdgeOptions({ edgeMarker: EDGE_MARKER, s: S, uiFont: UI_FONT }),
     []
   )
 
   const edgesStyled = useMemo(() => {
-    return edges.map((e) => {
-      const isSel = e.id === selectedEdgeId || !!e.selected
-
-      return {
-        ...e,
-        type: 'smoothedit',
-        pathOptions: { borderRadius: Math.max(8, Math.round(14 * S)), offset: Math.round(15 * S) },
-        markerEnd: EDGE_MARKER,
-        style: {
-          ...(e.style ?? {}),
-          stroke: isSel ? '#f8fbff' : '#dbe7f5',
-          strokeWidth: isSel ? 2 * S : 1 * S,
-          filter: isSel ? `drop-shadow(0px 8px 18px rgba(219,231,245,0.28))` : undefined,
-        },
-        data: { ...(e.data ?? {}), editable: isEditOwner },
-        labelStyle: { ...(e.labelStyle ?? {}), fontFamily: UI_FONT, fontWeight: 700 },
-      }
-    })
+    return buildPfdStyledEdges({ edgeMarker: EDGE_MARKER, edges, isEditOwner, s: S, selectedEdgeId, uiFont: UI_FONT })
   }, [edges, isEditOwner, selectedEdgeId])
 
   const onSelectionChange = useCallback(
