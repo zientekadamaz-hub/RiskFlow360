@@ -18,10 +18,10 @@ assert.match(pageSource, /import \{ PfmeaTableShell \}/, 'PFMEA page must use Pf
 assert.doesNotMatch(pageSource, /import \{ PfmeaTableHeader \}/, 'PFMEA page should not import PfmeaTableHeader directly after shell extraction.')
 
 const shellOpen = pageSource.indexOf('<PfmeaTableShell')
-const tbody = pageSource.indexOf('<tbody>', shellOpen)
+const tableBody = pageSource.indexOf('<PfmeaTableBody', shellOpen)
 const shellClose = pageSource.indexOf('</PfmeaTableShell>', shellOpen)
 assert.notEqual(shellOpen, -1, 'PFMEA page must render PfmeaTableShell.')
-assert.ok(tbody > shellOpen, 'PFMEA table body must remain inside PfmeaTableShell.')
-assert.ok(shellClose > tbody, 'PFMEA table body must close before PfmeaTableShell closes.')
+assert.ok(tableBody > shellOpen, 'PFMEA table body component must remain inside PfmeaTableShell.')
+assert.ok(shellClose > tableBody, 'PFMEA table body component must render before PfmeaTableShell closes.')
 
 console.log('pfmea table shell smoke passed')

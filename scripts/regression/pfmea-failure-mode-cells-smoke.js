@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
-const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
+const tableBodySource = fs.readFileSync(path.join(root, 'src', 'features', 'pfmea', 'pfmea-table-body.tsx'), 'utf8')
 const failureModeCellsSource = fs.readFileSync(
   path.join(root, 'src', 'features', 'pfmea', 'pfmea-failure-mode-cells.tsx'),
   'utf8'
@@ -24,10 +24,10 @@ assert.match(failureModeCellsSource, /sideAction=\{failureModeSideAction\}/, 'PF
 assert.match(failureModeCellsSource, /flash=\{isMissingHighlighted\('failure_mode'\)\}/, 'PFMEA failure mode missing highlight must be preserved.')
 assert.match(failureModeCellsSource, /normalizeClassValue\(effectiveFailureModeOwnerRow\.class\)/, 'PFMEA class normalization must be preserved.')
 
-assert.match(pageSource, /import \{ PfmeaFailureModeCells \}/, 'PFMEA page must import PfmeaFailureModeCells.')
-assert.match(pageSource, /<PfmeaFailureModeCells[\s\S]*effectiveFailureModeOwnerRow=\{effectiveFailureModeOwnerRow\}/, 'PFMEA page must pass failure mode owner row.')
-assert.match(pageSource, /<PfmeaFailureModeCells[\s\S]*failureModeSpan=\{failureModeSpan\}/, 'PFMEA page must pass failure mode span.')
-assert.match(pageSource, /<PfmeaFailureModeCells[\s\S]*failureModeSideAction=\{[\s\S]*Add failure mode row/, 'PFMEA page must preserve failure mode side action.')
-assert.match(pageSource, /<PfmeaFailureModeCells[\s\S]*addFailureModeContinuationRow/, 'PFMEA page must preserve failure mode continuation callback.')
+assert.match(tableBodySource, /import \{ PfmeaFailureModeCells \}/, 'PFMEA table body must import PfmeaFailureModeCells.')
+assert.match(tableBodySource, /<PfmeaFailureModeCells[\s\S]*effectiveFailureModeOwnerRow=\{effectiveFailureModeOwnerRow\}/, 'PFMEA table body must pass failure mode owner row.')
+assert.match(tableBodySource, /<PfmeaFailureModeCells[\s\S]*failureModeSpan=\{failureModeSpan\}/, 'PFMEA table body must pass failure mode span.')
+assert.match(tableBodySource, /<PfmeaFailureModeCells[\s\S]*failureModeSideAction=\{[\s\S]*Add failure mode row/, 'PFMEA table body must preserve failure mode side action.')
+assert.match(tableBodySource, /<PfmeaFailureModeCells[\s\S]*addFailureModeContinuationRow/, 'PFMEA table body must preserve failure mode continuation callback.')
 
 console.log('pfmea failure mode cells smoke passed')

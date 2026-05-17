@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
-const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
+const tableBodySource = fs.readFileSync(path.join(root, 'src', 'features', 'pfmea', 'pfmea-table-body.tsx'), 'utf8')
 const failureEffectCellsSource = fs.readFileSync(
   path.join(root, 'src', 'features', 'pfmea', 'pfmea-failure-effect-cells.tsx'),
   'utf8'
@@ -22,11 +22,11 @@ assert.match(failureEffectCellsSource, /cellKey="severity"/, 'PFMEA severity cel
 assert.match(failureEffectCellsSource, /flash=\{isMissingHighlighted\('effect'\)\}/, 'PFMEA effect missing highlight must be preserved.')
 assert.match(failureEffectCellsSource, /flash=\{isMissingHighlighted\('severity'\)\}/, 'PFMEA severity missing highlight must be preserved.')
 
-assert.match(pageSource, /import \{ PfmeaFailureEffectCells \}/, 'PFMEA page must import PfmeaFailureEffectCells.')
-assert.match(pageSource, /<PfmeaFailureEffectCells[\s\S]*effectiveFailureBlockOwnerRow=\{effectiveFailureBlockOwnerRow\}/, 'PFMEA page must pass failure block owner row.')
-assert.match(pageSource, /<PfmeaFailureEffectCells[\s\S]*failureBlockSpan=\{failureBlockSpan\}/, 'PFMEA page must pass failure block span.')
-assert.match(pageSource, /<PfmeaFailureEffectCells[\s\S]*effectSideAction=\{[\s\S]*Add effect row/, 'PFMEA page must preserve effect side action.')
-assert.match(pageSource, /<PfmeaFailureEffectCells[\s\S]*addEffectContinuationRow/, 'PFMEA page must preserve effect continuation callback.')
-assert.match(pageSource, /<PfmeaFailureEffectCells[\s\S]*severityRowId=\{failureBlockOwnerRow\.id\}/, 'PFMEA page must keep severity editing anchored to failure block owner.')
+assert.match(tableBodySource, /import \{ PfmeaFailureEffectCells \}/, 'PFMEA table body must import PfmeaFailureEffectCells.')
+assert.match(tableBodySource, /<PfmeaFailureEffectCells[\s\S]*effectiveFailureBlockOwnerRow=\{effectiveFailureBlockOwnerRow\}/, 'PFMEA table body must pass failure block owner row.')
+assert.match(tableBodySource, /<PfmeaFailureEffectCells[\s\S]*failureBlockSpan=\{failureBlockSpan\}/, 'PFMEA table body must pass failure block span.')
+assert.match(tableBodySource, /<PfmeaFailureEffectCells[\s\S]*effectSideAction=\{[\s\S]*Add effect row/, 'PFMEA table body must preserve effect side action.')
+assert.match(tableBodySource, /<PfmeaFailureEffectCells[\s\S]*addEffectContinuationRow/, 'PFMEA table body must preserve effect continuation callback.')
+assert.match(tableBodySource, /<PfmeaFailureEffectCells[\s\S]*severityRowId=\{failureBlockOwnerRow\.id\}/, 'PFMEA table body must keep severity editing anchored to failure block owner.')
 
 console.log('pfmea failure effect cells smoke passed')

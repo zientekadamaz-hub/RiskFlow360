@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
-const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
+const tableBodySource = fs.readFileSync(path.join(root, 'src', 'features', 'pfmea', 'pfmea-table-body.tsx'), 'utf8')
 const actionClosureCellsSource = fs.readFileSync(
   path.join(root, 'src', 'features', 'pfmea', 'pfmea-action-closure-cells.tsx'),
   'utf8'
@@ -25,10 +25,10 @@ assert.match(actionClosureCellsSource, /flash=\{isMissingHighlighted\('responsib
 assert.match(actionClosureCellsSource, /flash=\{isMissingHighlighted\('target_date'\)\}/, 'PFMEA target date missing highlight must be preserved.')
 assert.match(actionClosureCellsSource, /flash=\{isMissingHighlighted\('action_status'\)\}/, 'PFMEA action status missing highlight must be preserved.')
 
-assert.match(pageSource, /import \{ PfmeaActionClosureCells \}/, 'PFMEA page must import PfmeaActionClosureCells.')
-assert.match(pageSource, /<PfmeaActionClosureCells[\s\S]*effectiveCurrentRow=\{effectiveCurrentRow\}/, 'PFMEA page must pass current action closure row values.')
-assert.match(pageSource, /<PfmeaActionClosureCells[\s\S]*latestRowForHighlights=\{latestRowForHighlights\}/, 'PFMEA page must pass highlighted status row.')
-assert.match(pageSource, /<PfmeaActionClosureCells[\s\S]*onCommit=\{\(patch\) => updateCellWithDerived\(r, patch\)\}/, 'PFMEA page must preserve action closure commit path.')
-assert.match(pageSource, /<PfmeaActionClosureCells[\s\S]*onStart=\{runActionPlanStart\}/, 'PFMEA page must preserve action plan start validation.')
+assert.match(tableBodySource, /import \{ PfmeaActionClosureCells \}/, 'PFMEA table body must import PfmeaActionClosureCells.')
+assert.match(tableBodySource, /<PfmeaActionClosureCells[\s\S]*effectiveCurrentRow=\{effectiveCurrentRow\}/, 'PFMEA table body must pass current action closure row values.')
+assert.match(tableBodySource, /<PfmeaActionClosureCells[\s\S]*latestRowForHighlights=\{latestRowForHighlights\}/, 'PFMEA table body must pass highlighted status row.')
+assert.match(tableBodySource, /<PfmeaActionClosureCells[\s\S]*onCommit=\{\(patch\) => props\.updateCellWithDerived\(r, patch\)\}/, 'PFMEA table body must preserve action closure commit path.')
+assert.match(tableBodySource, /<PfmeaActionClosureCells[\s\S]*onStart=\{runActionPlanStart\}/, 'PFMEA table body must preserve action plan start validation.')
 
 console.log('pfmea action closure cells smoke passed')

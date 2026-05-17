@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
-const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
+const tableBodySource = fs.readFileSync(path.join(root, 'src', 'features', 'pfmea', 'pfmea-table-body.tsx'), 'utf8')
 const causeCurrentControlCellsSource = fs.readFileSync(
   path.join(root, 'src', 'features', 'pfmea', 'pfmea-cause-current-control-cells.tsx'),
   'utf8'
@@ -28,11 +28,11 @@ for (const key of cellKeys) {
 assert.match(causeCurrentControlCellsSource, /rowSpan=\{actionPlanBlockSpan\}/, 'PFMEA cause/current control cells must preserve action plan rowSpan.')
 assert.match(causeCurrentControlCellsSource, /sideAction=\{causeSideAction\}/, 'PFMEA cause plus action must be injected unchanged from the page.')
 
-assert.match(pageSource, /import \{ PfmeaCauseCurrentControlCells \}/, 'PFMEA page must import PfmeaCauseCurrentControlCells.')
-assert.match(pageSource, /<PfmeaCauseCurrentControlCells[\s\S]*effectiveActionPlanOwnerRow=\{effectiveActionPlanOwnerRow\}/, 'PFMEA page must pass action plan owner row.')
-assert.match(pageSource, /<PfmeaCauseCurrentControlCells[\s\S]*actionPlanBlockSpan=\{actionPlanBlockSpan\}/, 'PFMEA page must pass action plan block span.')
-assert.match(pageSource, /<PfmeaCauseCurrentControlCells[\s\S]*causeSideAction=\{[\s\S]*Add cause row/, 'PFMEA page must preserve cause side action.')
-assert.match(pageSource, /<PfmeaCauseCurrentControlCells[\s\S]*addCauseContinuationRow/, 'PFMEA page must preserve cause continuation callback.')
-assert.match(pageSource, /<PfmeaCauseCurrentControlCells[\s\S]*getFailureBlockSourceRowAtIndex/, 'PFMEA page must preserve cause source row lookup.')
+assert.match(tableBodySource, /import \{ PfmeaCauseCurrentControlCells \}/, 'PFMEA table body must import PfmeaCauseCurrentControlCells.')
+assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*effectiveActionPlanOwnerRow=\{effectiveActionPlanOwnerRow\}/, 'PFMEA table body must pass action plan owner row.')
+assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*actionPlanBlockSpan=\{actionPlanBlockSpan\}/, 'PFMEA table body must pass action plan block span.')
+assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*causeSideAction=\{[\s\S]*Add cause row/, 'PFMEA table body must preserve cause side action.')
+assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*addCauseContinuationRow/, 'PFMEA table body must preserve cause continuation callback.')
+assert.match(tableBodySource, /<PfmeaCauseCurrentControlCells[\s\S]*getPfmeaFailureBlockSourceRowAtIndex/, 'PFMEA table body must preserve cause source row lookup.')
 
 console.log('pfmea cause current control cells smoke passed')

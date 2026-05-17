@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
-const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
+const tableBodySource = fs.readFileSync(path.join(root, 'src', 'features', 'pfmea', 'pfmea-table-body.tsx'), 'utf8')
 const currentRiskCellsSource = fs.readFileSync(
   path.join(root, 'src', 'features', 'pfmea', 'pfmea-current-risk-cells.tsx'),
   'utf8'
@@ -20,9 +20,9 @@ assert.match(currentRiskCellsSource, /isColumnVisible\('pcp'\)/, 'PFMEA PCP cell
 assert.match(currentRiskCellsSource, /onToggle=\{onTogglePcp\}/, 'PFMEA PCP cell must delegate toggle behavior without changing it.')
 assert.match(currentRiskCellsSource, /cellKey="pcp"/, 'PFMEA PCP cell must preserve data column key.')
 
-assert.match(pageSource, /import \{ PfmeaCurrentRiskCells \}/, 'PFMEA page must import PfmeaCurrentRiskCells.')
-assert.match(pageSource, /<PfmeaCurrentRiskCells[\s\S]*actionPlanBlockSpan=\{actionPlanBlockSpan\}[\s\S]*currentRpn=\{a1\.rpn\}/, 'PFMEA page must pass current RPN and span from the row model.')
-assert.match(pageSource, /<PfmeaCurrentRiskCells[\s\S]*operationId=\{r\.operation_id \|\| r\.operations\?\.id \|\| null\}/, 'PFMEA page must preserve existing operation id for expand behavior.')
-assert.match(pageSource, /<PfmeaCurrentRiskCells[\s\S]*void updateCellWithDerived\(r, \{ pcp: !pcpChecked \}\)/, 'PFMEA page must preserve existing PCP toggle update.')
+assert.match(tableBodySource, /import \{ PfmeaCurrentRiskCells \}/, 'PFMEA table body must import PfmeaCurrentRiskCells.')
+assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*actionPlanBlockSpan=\{actionPlanBlockSpan\}[\s\S]*currentRpn=\{a1\.rpn\}/, 'PFMEA table body must pass current RPN and span from the row model.')
+assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*operationId=\{r\.operation_id \|\| r\.operations\?\.id \|\| null\}/, 'PFMEA table body must preserve existing operation id for expand behavior.')
+assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*void props\.updateCellWithDerived\(r, \{ pcp: !pcpChecked \}\)/, 'PFMEA table body must preserve existing PCP toggle update.')
 
 console.log('pfmea current risk cells smoke passed')

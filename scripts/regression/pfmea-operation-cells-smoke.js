@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
-const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
+const tableBodySource = fs.readFileSync(path.join(root, 'src', 'features', 'pfmea', 'pfmea-table-body.tsx'), 'utf8')
 const operationCellsSource = fs.readFileSync(path.join(root, 'src', 'features', 'pfmea', 'pfmea-operation-cells.tsx'), 'utf8')
 
 assert.match(operationCellsSource, /export function PfmeaOperationCells/, 'PFMEA operation cells component must be exported.')
@@ -20,7 +20,7 @@ assert.match(operationCellsSource, /rowSpan=\{span\}/, 'PFMEA operation cells mu
 assert.match(operationCellsSource, /className="pfmeaTd gray center multiLine"/, 'PFMEA operation cells must preserve centered operation cell style.')
 assert.match(operationCellsSource, /className="pfmeaTd gray multiLine"/, 'PFMEA operation cells must preserve process step cell style.')
 
-assert.match(pageSource, /import \{ PfmeaOperationCells \}/, 'PFMEA page must import PfmeaOperationCells.')
-assert.match(pageSource, /<PfmeaOperationCells[\s\S]*operationId=\{r\.operation_id \|\| r\.operations\?\.id \|\| null\}[\s\S]*span=\{span\}/, 'PFMEA page must pass existing operation id and span into operation cells.')
+assert.match(tableBodySource, /import \{ PfmeaOperationCells \}/, 'PFMEA table body must import PfmeaOperationCells.')
+assert.match(tableBodySource, /<PfmeaOperationCells[\s\S]*operationId=\{r\.operation_id \|\| r\.operations\?\.id \|\| null\}[\s\S]*span=\{span\}/, 'PFMEA table body must pass existing operation id and span into operation cells.')
 
 console.log('pfmea operation cells smoke passed')

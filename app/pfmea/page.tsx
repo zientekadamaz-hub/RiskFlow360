@@ -9,18 +9,10 @@ import {
   PFMEA_COLUMN_FILTER_GROUPS,
   type PfmeaColumnId,
 } from '@/features/pfmea/pfmea-columns'
-import { PfmeaActionClosureCells } from '@/features/pfmea/pfmea-action-closure-cells'
 import { PfmeaConfirmDialog, type PfmeaConfirmDialogConfig } from '@/features/pfmea/pfmea-confirm-dialog'
-import { PfmeaCauseCurrentControlCells } from '@/features/pfmea/pfmea-cause-current-control-cells'
-import { PfmeaCurrentRiskCells } from '@/features/pfmea/pfmea-current-risk-cells'
-import { PfmeaDeleteCell } from '@/features/pfmea/pfmea-delete-cell'
-import { PfmeaFailureEffectCells } from '@/features/pfmea/pfmea-failure-effect-cells'
-import { PfmeaFailureModeCells } from '@/features/pfmea/pfmea-failure-mode-cells'
-import { PfmeaOperationCells } from '@/features/pfmea/pfmea-operation-cells'
-import { PfmeaRecommendedActionCells } from '@/features/pfmea/pfmea-recommended-action-cells'
-import { PfmeaResidualRiskCells } from '@/features/pfmea/pfmea-residual-risk-cells'
 import { PfmeaRevisionHistoryModal } from '@/features/pfmea/pfmea-revision-history-modal'
 import { PfmeaSaveRevisionModal } from '@/features/pfmea/pfmea-save-revision-modal'
+import { PfmeaTableBody } from '@/features/pfmea/pfmea-table-body'
 import { PfmeaTableShell } from '@/features/pfmea/pfmea-table-shell'
 import { PfmeaToolbar } from '@/features/pfmea/pfmea-toolbar'
 import { PFMEA_TOP_SUMMARY_MAX_WIDTH, PfmeaTopSummary } from '@/features/pfmea/pfmea-top-summary'
@@ -45,11 +37,6 @@ import { usePfmeaStickyMergedCellTop } from '@/features/pfmea/use-pfmea-sticky-m
 import { usePfmeaTransientTracking } from '@/features/pfmea/use-pfmea-transient-tracking'
 import { SURFACE_TEXT, actionBtn } from '@/features/pfmea/pfmea-page-styles'
 import {
-  buildPfmeaActionPlanValidationRow,
-  getPfmeaMissingActionPlanHighlightKeys,
-  getPreviousRequiredFieldForActionPlan,
-} from '@/features/pfmea/pfmea-action-validation-utils'
-import {
   buildPfmeaBlockMergeInfoByHierarchy,
   buildPfmeaHierarchy,
   isPlaceholderRowId,
@@ -62,17 +49,11 @@ import {
 } from '@/features/pfmea/pfmea-row-order-utils'
 import {
   computePfmeaDerivedFromContext as computePfmeaDerivedFromRowContext,
-  getPfmeaFailureBlockSourceRowAtIndex,
-  getPfmeaRecommendedActionContinuationSourceRow,
 } from '@/features/pfmea/pfmea-row-context-utils'
 import { isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
 import { computePfmeaAverageRpnSummary } from '@/features/pfmea/pfmea-summary-utils'
 import { buildPfmeaDisplayOperations, buildPfmeaTableRows } from '@/features/pfmea/pfmea-visible-rows-utils'
-import { buildPfmeaTableRowModel } from '@/features/pfmea/pfmea-table-row-model'
-import {
-  buildPfmeaOperationMergeInfo,
-  resolvePfmeaBlockEndAnchorRow,
-} from '@/features/pfmea/pfmea-table-merge-utils'
+import { buildPfmeaOperationMergeInfo } from '@/features/pfmea/pfmea-table-merge-utils'
 import {
   buildPfmeaEditableColumnOrder,
   getNextPfmeaCellPosition,
@@ -396,16 +377,8 @@ function PfmeaFullPageContent() {
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [expandedOperationId])
 
-  function getRecommendedActionContinuationSourceRow(row: PfmeaRow) {
-    return getPfmeaRecommendedActionContinuationSourceRow(row, tableRows, applyPendingCellValues)
-  }
-
   function computePfmeaDerivedFromContext(row: PfmeaRow) {
     return computePfmeaDerivedFromRowContext(row, tableRows, applyPendingCellValues)
-  }
-
-  function getFailureBlockSourceRowAtIndex(rowIndex: number) {
-    return getPfmeaFailureBlockSourceRowAtIndex(rowIndex, tableRows, applyPendingCellValues)
   }
 
   const loadRevisionHistory = useCallback(async () => {
@@ -1072,352 +1045,42 @@ function PfmeaFullPageContent() {
           visibleTableWidth={visibleTableWidth}
           widthOf={widthOf}
         >
-          <tbody>
-            {tableRows.map((r, rowIndex) => {
-                  const {
-                    actionPlanBlockSpan,
-                    actionPlanOwnerRow,
-                    canAddCauseRow,
-                    canAddEffectRow,
-                    canAddFailureModeRow,
-                    canAddRecommendedActionRow,
-                    currentRisk: a1,
-                    effectiveActionPlanOwnerRow,
-                    effectiveCurrentRow,
-                    effectiveFailureBlockOwnerRow,
-                    effectiveFailureModeOwnerRow,
-                    failureBlockOwnerRow,
-                    failureBlockSpan,
-                    failureModeOwnerRow,
-                    failureModeSpan,
-                    groupStart,
-                    isMissingHighlighted,
-                    isPlaceholder,
-                    latestRowForHighlights,
-                    operationName,
-                    opNo,
-                    pcpAutoReasons,
-                    pcpChecked,
-                    pcpDisabled,
-                    residualRisk: a2,
-                    riskRpn2Style,
-                    riskRpnStyle,
-                    rowNumber,
-                    span,
-                    station,
-                    step,
-                  } = buildPfmeaTableRowModel({
-                    actionPlanBlockMergeInfo,
-                    applyPendingCellValues,
-                    computeDerivedFromContext: computePfmeaDerivedFromContext,
-                    failureBlockMergeInfo,
-                    failureModeMergeInfo,
-                    getRiskColorFor,
-                    highlightedMissingCells,
-                    mergeInfo,
-                    readOnly,
-                    row: r,
-                    rowHierarchyById,
-                    rowIndex,
-                    sourceRows: rowsRef.current,
-                    tableRows,
-                  })
-                  const runActionPlanStart = (targetCol: keyof PfmeaRow) => {
-                    window.setTimeout(() => {
-                      const latestRow = latestRowForHighlights
-                      const contextualActionRow = getRecommendedActionContinuationSourceRow(
-                        buildPfmeaActionPlanValidationRow({
-                          actionPlanOwnerRow: effectiveActionPlanOwnerRow,
-                          currentRow: latestRow,
-                          failureBlockOwnerRow: effectiveFailureBlockOwnerRow,
-                          failureModeOwnerRow: effectiveFailureModeOwnerRow,
-                        }) as PfmeaRow
-                      )
-                      const missingFields = getPreviousRequiredFieldForActionPlan(targetCol, contextualActionRow)
-                      if (readOnly) return
-                      if (missingFields.length === 0) {
-                        void startEditCell(latestRow, targetCol)
-                        return
-                      }
-                      const highlightKeys = getPfmeaMissingActionPlanHighlightKeys(missingFields, {
-                        actionPlanOwnerRow,
-                        currentRow: latestRowForHighlights,
-                        failureBlockOwnerRow,
-                        failureModeOwnerRow,
-                      })
-                      setHighlightedMissingCells(highlightKeys)
-                    }, 0)
-                  }
-
-                  return (
-                    <tr
-                      key={r.id}
-                      data-pfmea-row-id={r.id}
-                      data-pfmea-row-no={rowNumber ?? undefined}
-                      className={`pfmeaRow ${groupStart ? 'groupStart' : ''}`}
-                    >
-                      <PfmeaOperationCells
-                        isColumnVisible={isColumnVisible}
-                        onExpandOperation={setExpandedOperationId}
-                        operationId={r.operation_id || r.operations?.id || null}
-                        operationName={operationName}
-                        opNo={opNo}
-                        span={span}
-                        station={station}
-                        step={step}
-                      />
-
-                      <PfmeaFailureModeCells
-                        disabled={readOnly}
-                        edit={edit}
-                        editorRef={editorRef}
-                        effectiveFailureModeOwnerRow={effectiveFailureModeOwnerRow}
-                        failureModeSideAction={
-                          canAddFailureModeRow
-                            ? {
-                                title: 'Add failure mode row',
-                                label: '+',
-                                onClick: () => {
-                                  if (isPlaceholder) {
-                                    void (async () => {
-                                      try {
-                                        const materializedRow = await materializePlaceholderRowForAdd(r)
-                                        await addFailureModeContinuationRow(materializedRow, materializedRow)
-                                      } catch (e: any) {
-                                        setErr(e?.message ?? String(e))
-                                      }
-                                    })()
-                                    return
-                                  }
-                                  const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, failureModeMergeInfo) ?? r
-                                  void addFailureModeContinuationRow(r, anchorRow)
-                                },
-                              }
-                            : undefined
-                        }
-                        failureModeSpan={failureModeSpan}
-                        isColumnVisible={isColumnVisible}
-                        isMissingHighlighted={isMissingHighlighted}
-                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
-                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
-                        }
-                        onCommit={(patch) => updateCellWithDerived(r, patch)}
-                        onLiveChange={(columnId, value) => setPendingCellValue(r.id, columnId, value)}
-                        onStart={(columnId) => void startEditCell(r, columnId)}
-                        rowId={r.id}
-                        stopEdit={() => setEdit(null)}
-                      />
-
-                      <PfmeaFailureEffectCells
-                        disabled={readOnly}
-                        edit={edit}
-                        editorRef={editorRef}
-                        effectRowId={r.id}
-                        effectSideAction={
-                          canAddEffectRow
-                            ? {
-                                title: 'Add effect row',
-                                label: '+',
-                                onClick: () => {
-                                  if (isPlaceholder) {
-                                    void (async () => {
-                                      try {
-                                        const materializedRow = await materializePlaceholderRowForAdd(r)
-                                        await addEffectContinuationRow(materializedRow, materializedRow)
-                                      } catch (e: any) {
-                                        setErr(e?.message ?? String(e))
-                                      }
-                                    })()
-                                    return
-                                  }
-                                  const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, failureBlockMergeInfo) ?? r
-                                  void addEffectContinuationRow(failureModeOwnerRow, anchorRow)
-                                },
-                              }
-                            : undefined
-                        }
-                        effectiveFailureBlockOwnerRow={effectiveFailureBlockOwnerRow}
-                        failureBlockSpan={failureBlockSpan}
-                        isColumnVisible={isColumnVisible}
-                        isMissingHighlighted={isMissingHighlighted}
-                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
-                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
-                        }
-                        onEffectCommit={(value) => {
-                          setPendingCellValue(r.id, 'effect', value)
-                          updateCellWithDerived(r, { effect: value })
-                        }}
-                        onEffectLiveChange={(value) => setPendingCellValue(r.id, 'effect', value)}
-                        onEffectStart={() => void startEditCell(r, 'effect')}
-                        onSeverityCommit={(value) => {
-                          setPendingCellValue(failureBlockOwnerRow.id, 'severity', value)
-                          updateCellWithDerived(failureBlockOwnerRow, { severity: value })
-                        }}
-                        onSeverityLiveChange={(value) => setPendingCellValue(failureBlockOwnerRow.id, 'severity', value)}
-                        onSeverityStart={() => void startEditCell(failureBlockOwnerRow, 'severity')}
-                        severityOptions={severityOptions}
-                        severityRowId={failureBlockOwnerRow.id}
-                        stopEdit={() => setEdit(null)}
-                      />
-
-                      <PfmeaCauseCurrentControlCells
-                        actionPlanBlockSpan={actionPlanBlockSpan}
-                        causeSideAction={
-                          canAddCauseRow
-                            ? {
-                                title: 'Add cause row',
-                                label: '+',
-                                onClick: () => {
-                                  if (isPlaceholder) {
-                                    void (async () => {
-                                      try {
-                                        const materializedRow = await materializePlaceholderRowForAdd(r)
-                                        await addCauseContinuationRow(materializedRow, materializedRow)
-                                      } catch (e: any) {
-                                        setErr(e?.message ?? String(e))
-                                      }
-                                    })()
-                                    return
-                                  }
-                                  const anchorRow = resolvePfmeaBlockEndAnchorRow(tableRows, rowIndex, actionPlanBlockMergeInfo) ?? r
-                                  const sourceRow = getFailureBlockSourceRowAtIndex(rowIndex) ?? failureBlockOwnerRow
-                                  void addCauseContinuationRow(sourceRow, anchorRow)
-                                },
-                              }
-                            : undefined
-                        }
-                        detectionOptions={detectionOptions}
-                        disabled={readOnly}
-                        edit={edit}
-                        editorRef={editorRef}
-                        effectiveActionPlanOwnerRow={effectiveActionPlanOwnerRow}
-                        isColumnVisible={isColumnVisible}
-                        isMissingHighlighted={isMissingHighlighted}
-                        occurrenceOptions={occurrenceOptions}
-                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
-                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
-                        }
-                        onCommit={(patch) => updateCellWithDerived(r, patch)}
-                        onLiveChange={(columnId, value) => setPendingCellValue(r.id, columnId, value)}
-                        onStart={(columnId) => void startEditCell(r, columnId)}
-                        rowId={r.id}
-                        stopEdit={() => setEdit(null)}
-                      />
-
-                      <PfmeaCurrentRiskCells
-                        actionPlanBlockSpan={actionPlanBlockSpan}
-                        currentRpn={a1.rpn}
-                        isColumnVisible={isColumnVisible}
-                        onExpandOperation={setExpandedOperationId}
-                        onTogglePcp={() => {
-                          if (pcpDisabled) return
-                          void updateCellWithDerived(r, { pcp: !pcpChecked })
-                        }}
-                        operationId={r.operation_id || r.operations?.id || null}
-                        pcpAutoReasons={pcpAutoReasons}
-                        pcpChecked={pcpChecked}
-                        pcpDisabled={pcpDisabled}
-                        riskRpnStyle={riskRpnStyle}
-                      />
-
-                      <PfmeaRecommendedActionCells
-                        disabled={readOnly}
-                        edit={edit}
-                        editorRef={editorRef}
-                        effectiveCurrentRow={effectiveCurrentRow}
-                        isColumnVisible={isColumnVisible}
-                        isMissingHighlighted={isMissingHighlighted}
-                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
-                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
-                        }
-                        onCommit={(value) => {
-                          setPendingCellValue(r.id, 'recommended_action', value)
-                          clearRecommendedActionTransientIfFilled(r.id, value)
-                          updateCellWithDerived(r, { recommended_action: value })
-                        }}
-                        onLiveChange={(value) => {
-                          setPendingCellValue(r.id, 'recommended_action', value)
-                          clearRecommendedActionTransientIfFilled(r.id, value)
-                        }}
-                        onStart={() => runActionPlanStart('recommended_action')}
-                        recommendedActionSideAction={
-                          canAddRecommendedActionRow
-                            ? {
-                                title: 'Add recommended action row',
-                                label: '+',
-                                onClick: () => {
-                                  if (isPlaceholder) {
-                                    void (async () => {
-                                      try {
-                                        const materializedRow = await materializePlaceholderRowForAdd(r)
-                                        await addRecommendedActionContinuationRow(materializedRow, materializedRow)
-                                      } catch (e: any) {
-                                        setErr(e?.message ?? String(e))
-                                      }
-                                    })()
-                                    return
-                                  }
-                                  void addRecommendedActionContinuationRow(r, r)
-                                },
-                              }
-                            : undefined
-                        }
-                        rowId={r.id}
-                        stopEdit={() => setEdit(null)}
-                      />
-
-                      <PfmeaActionClosureCells
-                        disabled={readOnly}
-                        edit={edit}
-                        editorRef={editorRef}
-                        effectiveCurrentRow={effectiveCurrentRow}
-                        isColumnVisible={isColumnVisible}
-                        isMissingHighlighted={isMissingHighlighted}
-                        latestRowForHighlights={latestRowForHighlights}
-                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
-                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
-                        }
-                        onCommit={(patch) => updateCellWithDerived(r, patch)}
-                        onLiveChange={(columnId, value) => setPendingCellValue(r.id, columnId, value)}
-                        onStart={runActionPlanStart}
-                        rowId={r.id}
-                        stopEdit={() => setEdit(null)}
-                      />
-
-                      <PfmeaResidualRiskCells
-                        detectionOptions={detectionOptions}
-                        disabled={readOnly}
-                        edit={edit}
-                        isColumnVisible={isColumnVisible}
-                        isMissingHighlighted={isMissingHighlighted}
-                        latestRowForHighlights={latestRowForHighlights}
-                        onCellKeyDown={(event, columnId, allowEnterNewline) =>
-                          handleCellKeyDown(event, rowIndex, colOrder.indexOf(columnId), allowEnterNewline)
-                        }
-                        onCommit={(patch) => updateCellWithDerived(r, patch)}
-                        onExpandOperation={setExpandedOperationId}
-                        onLiveChange={(columnId, value) => setPendingCellValue(r.id, columnId, value)}
-                        onStart={runActionPlanStart}
-                        operationId={r.operation_id || r.operations?.id || null}
-                        occurrenceOptions={occurrenceOptions}
-                        residualRpn={a2.rpn}
-                        riskRpn2Style={riskRpn2Style}
-                        rowId={r.id}
-                        stopEdit={() => setEdit(null)}
-                      />
-
-                      {isColumnVisible('delete') ? (
-                        <PfmeaDeleteCell
-                          isEditOwner={isEditOwner}
-                          isPlaceholder={isPlaceholder}
-                          onDelete={() => deleteRow(r.id)}
-                          readOnly={readOnly}
-                        />
-                      ) : null}
-                    </tr>
-                  )
-            })}
-          </tbody>
+          <PfmeaTableBody
+            actionPlanBlockMergeInfo={actionPlanBlockMergeInfo}
+            addCauseContinuationRow={addCauseContinuationRow}
+            addEffectContinuationRow={addEffectContinuationRow}
+            addFailureModeContinuationRow={addFailureModeContinuationRow}
+            addRecommendedActionContinuationRow={addRecommendedActionContinuationRow}
+            applyPendingCellValues={applyPendingCellValues}
+            clearRecommendedActionTransientIfFilled={clearRecommendedActionTransientIfFilled}
+            colOrder={colOrder}
+            deleteRow={deleteRow}
+            detectionOptions={detectionOptions}
+            edit={edit}
+            editorRef={editorRef}
+            failureBlockMergeInfo={failureBlockMergeInfo}
+            failureModeMergeInfo={failureModeMergeInfo}
+            getRiskColorFor={getRiskColorFor}
+            handleCellKeyDown={handleCellKeyDown}
+            highlightedMissingCells={highlightedMissingCells}
+            isColumnVisible={isColumnVisible}
+            isEditOwner={isEditOwner}
+            materializePlaceholderRowForAdd={materializePlaceholderRowForAdd}
+            mergeInfo={mergeInfo}
+            occurrenceOptions={occurrenceOptions}
+            readOnly={readOnly}
+            rowHierarchyById={rowHierarchyById}
+            rowsRef={rowsRef}
+            setEdit={setEdit}
+            setErr={setErr}
+            setExpandedOperationId={setExpandedOperationId}
+            setHighlightedMissingCells={setHighlightedMissingCells}
+            setPendingCellValue={setPendingCellValue}
+            severityOptions={severityOptions}
+            startEditCell={startEditCell}
+            tableRows={tableRows}
+            updateCellWithDerived={updateCellWithDerived}
+          />
         </PfmeaTableShell>
       </div>
     </SettingsPageShell>
