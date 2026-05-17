@@ -55,16 +55,11 @@ import {
 } from '@/features/pfd/pfd-operations-service'
 import {
   discardPfdDraftAndCloseSession,
-  fetchPfdModuleAccess,
   fetchOwnPfdDraft,
   fetchPfdCanvasData,
-  fetchPfdEditSession,
   fetchPfdHistory,
   fetchPfdProcessOptions,
   fetchPfdRevisionLabel,
-  fetchPfdUserContext,
-  fetchUnreadPfdSessionNotice,
-  heartbeatPfdEditSession,
   publishPfdDiagram,
   savePfdDraft,
   startPfdEditSession,
@@ -82,8 +77,9 @@ import { PfdHistoryDialog } from '@/features/pfd/pfd-history-dialog'
 import { PfdLeftRail } from '@/features/pfd/pfd-left-rail'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
-import type { PfdEditSession, PfdHistoryEntry } from '@/features/pfd/types'
+import type { PfdHistoryEntry } from '@/features/pfd/types'
 import { usePfdMiniPfmeaController } from '@/features/pfd/use-pfd-mini-pfmea-controller'
+import { usePfdSessionController } from '@/features/pfd/use-pfd-session-controller'
 
 // ✅ biblioteka symboli obok route
 import { nodeTypes, type PfdData } from './_lib/nodes'
@@ -95,9 +91,6 @@ import { UI_FONT, S, OP_WIDTH, OP_HEIGHT, DEC_H, DEC_W, CIRCLE_D, START_W, START
  */
 
 type Edge = PfdFlowEdge
-
-const EDIT_LOCK_HOURS = 48
-const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
 
 /* ===================== Layout ===================== */
 
@@ -197,64 +190,30 @@ function PfdPageContent() {
   const [saveBusy, setSaveBusy] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyEntries, setHistoryEntries] = useState<PfdHistoryEntry[]>([])
-  const [historyAuthor, setHistoryAuthor] = useState('Unknown user')
   const [currentRevisionLabel, setCurrentRevisionLabel] = useState('0.0.0')
   const [processOptions, setProcessOptions] = useState<string[]>([])
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
-  const [moduleAccessState, setModuleAccessState] = useState<'checking' | 'allowed' | 'denied'>('checking')
-  const [canOpenPfmeaPanel, setCanOpenPfmeaPanel] = useState(true)
-  const [editSession, setEditSession] = useState<PfdEditSession | null>(null)
-  const [sessionNow, setSessionNow] = useState(() => Date.now())
-  const [sessionMsg, setSessionMsg] = useState('')
-  const [sessionBusy, setSessionBusy] = useState(false)
   const draftLoadedFor = useRef<string>('')
   const [confirmDialog, setConfirmDialog] = useState<PfdConfirmDialogConfig | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
   const [decisionConnectDialog, setDecisionConnectDialog] = useState<PfdDecisionConnectDialogConfig | null>(null)
+  const {
+    canOpenPfmeaPanel,
+    currentUserId,
+    editLockMs,
+    editSession,
+    historyAuthor,
+    isEditOwner,
+    isLockedByOther,
+    isReadOnly,
+    loadEditSession,
+    moduleAccessState,
+    sessionBusy,
+    sessionMsg,
+    setSessionBusy,
+    setSessionMsg,
+  } = usePfdSessionController({ projectId, supabase })
 
   const canWork = !!projectId
-  const sessionExpired = useMemo(() => {
-    if (!editSession) return false
-    const last = new Date(editSession.lastActivityAt).getTime()
-    if (!Number.isFinite(last)) return true
-    return sessionNow - last >= EDIT_LOCK_MS
-  }, [editSession, sessionNow])
-  const isEditOwner = !!currentUserId && !!editSession && editSession.lockedBy === currentUserId && !sessionExpired
-  const isLockedByOther = !!editSession && !isEditOwner && !sessionExpired
-  const isReadOnly = !isEditOwner
-
-  const loadHistoryAuthor = useCallback(async () => {
-    try {
-      const ctx = await fetchPfdUserContext(supabase)
-      setHistoryAuthor(ctx.historyAuthor)
-    } catch {}
-  }, [])
-
-  const loadUserContext = useCallback(async () => {
-    if (!projectId) return
-    try {
-      const ctx = await fetchPfdUserContext(supabase)
-      setCurrentUserId(ctx.currentUserId)
-      setHistoryAuthor(ctx.historyAuthor)
-    } catch {}
-  }, [projectId])
-
-  const loadEditSession = useCallback(async () => {
-    try {
-      const next = await fetchPfdEditSession(supabase, projectId)
-      setEditSession(next)
-    } catch {
-      setEditSession(null)
-    }
-  }, [projectId])
-
-  const loadSessionNotice = useCallback(async () => {
-    try {
-      if (!projectId || !currentUserId) return
-      const message = await fetchUnreadPfdSessionNotice(supabase, projectId, currentUserId)
-      if (message) setSessionMsg(message)
-    } catch {}
-  }, [projectId, currentUserId])
 
   const loadRevisionLabel = useCallback(async () => {
     try {
@@ -320,7 +279,7 @@ function PfdPageContent() {
         currentUserId,
         nodes,
         edges,
-        editLockMs: EDIT_LOCK_MS,
+        editLockMs,
       })
 
       if (result.blocked) {
@@ -335,7 +294,7 @@ function PfdPageContent() {
     } finally {
       setSessionBusy(false)
     }
-  }, [projectId, currentUserId, nodes, edges, loadEditSession])
+  }, [projectId, currentUserId, nodes, edges, loadEditSession, editLockMs, setSessionBusy, setSessionMsg])
 
   const loadAll = useCallback(async () => {
     if (!projectId) return
@@ -391,30 +350,7 @@ function PfdPageContent() {
     } finally {
       setSessionBusy(false)
     }
-  }, [projectId, currentUserId, isEditOwner, loadEditSession, loadAll])
-
-  useEffect(() => {
-    let alive = true
-
-    void (async () => {
-      if (!projectId) {
-        if (alive) setModuleAccessState('denied')
-        return
-      }
-
-      const access = await fetchPfdModuleAccess(supabase, projectId)
-      if (!alive) return
-      setCanOpenPfmeaPanel(access.canOpenPfmeaPanel)
-      setModuleAccessState(access.state)
-      if (access.redirectToProjects) {
-        window.location.assign('/projects')
-      }
-    })()
-
-    return () => {
-      alive = false
-    }
-  }, [projectId])
+  }, [projectId, currentUserId, isEditOwner, loadEditSession, loadAll, setSessionBusy, setSessionMsg])
 
   useEffect(() => {
     if (!projectId) return
@@ -423,29 +359,8 @@ function PfdPageContent() {
   }, [projectId, loadAll, moduleAccessState])
 
   useEffect(() => {
-    if (!projectId) return
-    if (moduleAccessState !== 'allowed') return
-    void loadUserContext()
-    void loadEditSession()
-  }, [projectId, loadUserContext, loadEditSession, moduleAccessState])
-
-  useEffect(() => {
-    if (!projectId) return
-    if (moduleAccessState !== 'allowed') return
-    const timer = setInterval(() => {
-      void loadEditSession()
-      setSessionNow(Date.now())
-    }, 30_000)
-    return () => clearInterval(timer)
-  }, [projectId, loadEditSession, moduleAccessState])
-
-  useEffect(() => {
     void loadHistory()
   }, [loadHistory])
-
-  useEffect(() => {
-    loadHistoryAuthor()
-  }, [loadHistoryAuthor])
 
   useEffect(() => {
     void loadRevisionLabel()
@@ -454,10 +369,6 @@ function PfdPageContent() {
   useEffect(() => {
     void loadProcessOptions()
   }, [loadProcessOptions])
-
-  useEffect(() => {
-    void loadSessionNotice()
-  }, [loadSessionNotice])
 
   useEffect(() => {
     if (!projectId || !currentUserId || !isEditOwner || !nodes.length) return
@@ -483,14 +394,6 @@ function PfdPageContent() {
     }
     prevOwnerRef.current = isEditOwner
   }, [isEditOwner, loadAll])
-
-  useEffect(() => {
-    if (!projectId || !currentUserId || !isEditOwner) return
-    const timer = setInterval(async () => {
-      await heartbeatPfdEditSession(supabase, { projectId, currentUserId })
-    }, 60_000)
-    return () => clearInterval(timer)
-  }, [projectId, currentUserId, isEditOwner])
 
   const saveTimer = useRef<any>(null)
   const scheduleSaveDiagram = useCallback(
