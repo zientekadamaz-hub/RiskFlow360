@@ -37,3 +37,20 @@ export function getPfmeaReportRisk(row: PfmeaReportRiskRow) {
     severity,
   }
 }
+
+export function getPfmeaCurrentOpenRisk(row: PfmeaReportRiskRow) {
+  const severity = toReportNumber(row.severity)
+  const occurrence = toReportNumber(row.occurrence)
+  const detection = toReportNumber(row.detection)
+  const persistedCurrentDoValue = toReportNumber(row.oxd_current)
+  const doValue = persistedCurrentDoValue ?? (occurrence != null && detection != null ? occurrence * detection : null)
+  const persistedCurrentRpn = toReportNumber(row.rpn_current)
+  const persistedRpn = toReportNumber(row.rpn)
+  const rpn = persistedCurrentRpn ?? persistedRpn ?? (severity != null && doValue != null ? severity * doValue : null)
+
+  return {
+    doValue,
+    rpn,
+    severity,
+  }
+}

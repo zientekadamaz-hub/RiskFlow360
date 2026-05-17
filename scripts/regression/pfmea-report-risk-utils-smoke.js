@@ -24,7 +24,7 @@ function loadModule(relativePath) {
   return sandbox.module.exports
 }
 
-const { getPfmeaReportRisk, toReportNumber } = loadModule(['src', 'features', 'reports', 'pfmea-report-risk-utils.ts'])
+const { getPfmeaCurrentOpenRisk, getPfmeaReportRisk, toReportNumber } = loadModule(['src', 'features', 'reports', 'pfmea-report-risk-utils.ts'])
 
 assert.equal(toReportNumber('12'), 12)
 assert.equal(toReportNumber('x'), null)
@@ -50,5 +50,23 @@ risk = getPfmeaReportRisk({ severity: null, oxd_current: 12, rpn_current: 60 })
 assert.equal(risk.severity, null)
 assert.equal(risk.doValue, 12)
 assert.equal(risk.rpn, 60)
+
+let currentRisk = getPfmeaCurrentOpenRisk({
+  action_status: 'CLOSED',
+  severity: 10,
+  occurrence: 10,
+  detection: 10,
+  occurrence2: 9,
+  detection2: 7,
+  oxd_current: 100,
+  rpn_current: 1000,
+})
+assert.equal(currentRisk.severity, 10)
+assert.equal(currentRisk.doValue, 100)
+assert.equal(currentRisk.rpn, 1000)
+
+currentRisk = getPfmeaCurrentOpenRisk({ severity: 8, occurrence: 9, detection: 9, oxd_current: 10, rpn_current: 80 })
+assert.equal(currentRisk.doValue, 10)
+assert.equal(currentRisk.rpn, 80)
 
 console.log('pfmea report risk utils smoke passed')

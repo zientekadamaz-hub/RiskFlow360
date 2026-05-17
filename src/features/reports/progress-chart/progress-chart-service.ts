@@ -6,7 +6,7 @@ import {
   fetchProjectsWithRevision,
 } from '@/features/projects/projects-service'
 import { PFMEA_REPORT_RISK_SELECT } from '@/features/reports/pfmea-report-query'
-import { toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
+import { getPfmeaCurrentOpenRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
 import { buildOpenReportProjectScope } from '@/features/reports/report-project-scope'
 import type {
   ProgressChartData,
@@ -137,16 +137,7 @@ function buildPoints(rows: PfmeaHistoryRow[], filters: ProgressChartFilters): Pr
 }
 
 function getCurrentOpenProjectRpn(row: PfmeaReportRiskRow) {
-  const rpnCurrent = toNumber(row.rpn_current)
-  const persistedRpn = toNumber(row.rpn)
-  const severity = toNumber(row.severity)
-  const occurrence = toNumber(row.occurrence)
-  const detection = toNumber(row.detection)
-  const computedRpn = severity != null && occurrence != null && detection != null
-    ? severity * occurrence * detection
-    : null
-
-  return rpnCurrent ?? persistedRpn ?? computedRpn
+  return getPfmeaCurrentOpenRisk(row).rpn
 }
 
 export function summarizeProgressCurrentRows(rows: PfmeaReportRiskRow[]) {

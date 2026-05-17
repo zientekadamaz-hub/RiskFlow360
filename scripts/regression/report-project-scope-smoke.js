@@ -17,6 +17,8 @@ assert.match(helperSource, /export function normalizeReportOptionList/, 'Report 
 assert.match(rpnServiceSource, /buildOpenReportProjectScope/, 'RPN Matrix service must use shared project scope helper.')
 assert.match(rpnServiceSource, /requireRevision: true/, 'RPN Matrix service must require revision-backed open projects.')
 assert.match(rpnServiceSource, /normalizeReportOptionList/, 'RPN Matrix service must use shared option list normalizer.')
+assert.match(rpnServiceSource, /getPfmeaCurrentOpenRisk/, 'RPN Matrix service must use the same current-open-risk definition as Projects List.')
+assert.doesNotMatch(rpnServiceSource, /getPfmeaReportRisk/, 'RPN Matrix service should not use residual closed-action risk for the current open-risk summary.')
 assert.doesNotMatch(rpnServiceSource, /function buildProjectRows/, 'RPN Matrix service should not keep duplicated project row builder.')
 
 assert.match(progressServiceSource, /buildOpenReportProjectScope/, 'Progress Chart service must use shared project scope helper.')

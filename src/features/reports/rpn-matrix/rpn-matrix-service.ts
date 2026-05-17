@@ -11,7 +11,7 @@ import {
 } from '@/features/projects/projects-service'
 import { clampInt, normalizeProjectText } from '@/features/projects/utils'
 import { PFMEA_REPORT_RISK_SELECT_WITH_REVISION } from '@/features/reports/pfmea-report-query'
-import { getPfmeaReportRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
+import { getPfmeaCurrentOpenRisk, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
 import { buildOpenReportProjectScope, normalizeReportOptionList } from '@/features/reports/report-project-scope'
 import type { RpnMatrixCellSummary, RpnMatrixFilters, RpnMatrixProject, RpnMatrixProjectColorCounts, RpnMatrixReportData } from './types'
 
@@ -85,7 +85,7 @@ export async function fetchRpnMatrixReportData(
       const projectId = projectIdByRevision.get(normalizeProjectText(row.revision_id))
       if (!projectId) continue
 
-      const currentRisk = getPfmeaReportRisk(row)
+      const currentRisk = getPfmeaCurrentOpenRisk(row)
       const severity = currentRisk.severity
       const doValue = currentRisk.doValue
       if (severity == null || doValue == null) continue
