@@ -79,8 +79,6 @@ import {
 import {
   SURFACE_BG,
   SURFACE_BORDER,
-  SURFACE_MUTED,
-  SURFACE_PANEL_BG,
   SURFACE_RADIUS,
   SURFACE_TEXT,
   baseBtn,
@@ -91,6 +89,7 @@ import {
   PfdDecisionConnectDialog,
   type PfdDecisionConnectDialogConfig,
 } from '@/features/pfd/pfd-decision-connect-dialog'
+import { PfdHistoryDialog } from '@/features/pfd/pfd-history-dialog'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
 import { PaletteButton } from '@/features/pfd/pfd-symbol-palette'
@@ -1795,82 +1794,11 @@ function PfdPageContent() {
         onSave={savePfdWithDescription}
       />
 
-      {historyOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 80,
-          }}
-          onClick={() => setHistoryOpen(false)}
-        >
-          <div
-            style={{
-              width: 864,
-              maxWidth: '94vw',
-              maxHeight: '80vh',
-              overflow: 'auto',
-              background: SURFACE_PANEL_BG,
-              borderRadius: SURFACE_RADIUS,
-              border: `1px solid ${SURFACE_BORDER}`,
-              boxShadow: '0 16px 36px rgba(0,0,0,0.2)',
-              padding: 20,
-              color: SURFACE_TEXT,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 10 }}>PFD change history</div>
-            {historyEntries.length === 0 ? (
-              <div style={{ fontSize: 14, color: SURFACE_MUTED, padding: '10px 0' }}>No saved history yet.</div>
-            ) : (
-              <div
-                style={{
-                  overflowX: 'auto',
-                  overflowY: 'auto',
-                  maxHeight: 260, // ~5 rows, then vertical scrollbar
-                }}
-              >
-                <table style={{ width: '100%', borderCollapse: 'collapse', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: SURFACE_RADIUS }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>Revision</th>
-                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>Date</th>
-                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>Author</th>
-                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>Description</th>
-                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>Objects</th>
-                        <th style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.08)' }}>Connections</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyEntries.map((h) => (
-                      <tr key={h.id}>
-                        <td style={{ textAlign: 'center', padding: '8px 10px', fontSize: 15, color: SURFACE_TEXT, borderBottom: '1px solid rgba(255,255,255,0.06)', fontWeight: 700 }}>{h.revision}</td>
-                          <td style={{ padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{new Date(h.at).toLocaleString()}</td>
-                          <td style={{ padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{h.author}</td>
-                          <td style={{ padding: '8px 10px', fontSize: 15, color: SURFACE_TEXT, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{h.description}</td>
-                          <td style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{h.nodeCount}</td>
-                          <td style={{ textAlign: 'center', padding: '8px 10px', fontSize: 14, color: SURFACE_MUTED, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{h.edgeCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-              <button
-                onClick={() => setHistoryOpen(false)}
-                style={{ ...baseBtn, height: 28, padding: '0 12px' }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PfdHistoryDialog
+        entries={historyEntries}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
 
       <style jsx global>{`
         html,
