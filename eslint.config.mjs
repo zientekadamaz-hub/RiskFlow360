@@ -13,7 +13,6 @@ const eslintConfig = defineConfig([
     'test-results/**',
     'PFMEA/**',
     '*.png',
-    'app/pfmea/pageBackup.tsx',
     'tmp-*.js',
   ]),
 
