@@ -87,6 +87,10 @@ import {
   baseBtnDisabled,
 } from '@/features/pfd/pfd-page-styles'
 import { PfdConfirmDialog, type PfdConfirmDialogConfig } from '@/features/pfd/pfd-confirm-dialog'
+import {
+  PfdDecisionConnectDialog,
+  type PfdDecisionConnectDialogConfig,
+} from '@/features/pfd/pfd-decision-connect-dialog'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PaletteButton } from '@/features/pfd/pfd-symbol-palette'
 import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
@@ -289,11 +293,7 @@ function PfdPageContent() {
   const draftLoadedFor = useRef<string>('')
   const [confirmDialog, setConfirmDialog] = useState<PfdConfirmDialogConfig | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
-  const [decisionConnectDialog, setDecisionConnectDialog] = useState<null | {
-    params: Connection
-    key: string
-    value: string
-  }>(null)
+  const [decisionConnectDialog, setDecisionConnectDialog] = useState<PfdDecisionConnectDialogConfig | null>(null)
 
   const canWork = !!projectId
   const sessionExpired = useMemo(() => {
@@ -1763,93 +1763,23 @@ function PfdPageContent() {
         }}
       />
 
-      {decisionConnectDialog && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 80,
-          }}
-          onClick={() => setDecisionConnectDialog(null)}
-        >
-          <div
-            style={{
-              width: 520,
-              maxWidth: '92vw',
-              background: SURFACE_PANEL_BG,
-              borderRadius: SURFACE_RADIUS,
-              border: `1px solid ${SURFACE_BORDER}`,
-              boxShadow: '0 16px 36px rgba(0,0,0,0.2)',
-              padding: 20,
-              color: SURFACE_TEXT,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 10 }}>Decision output label</div>
-            <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.5, marginBottom: 12 }}>
-              Enter a label for this decision path.
-            </div>
-            <input
-              autoFocus
-              value={decisionConnectDialog.value}
-              onChange={(e) =>
-                setDecisionConnectDialog((cur) => (cur ? { ...cur, value: e.target.value } : cur))
-              }
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  const label = decisionConnectDialog.value.trim()
-                  commitConnection(
-                    decisionConnectDialog.params,
-                    decisionConnectDialog.key,
-                    label ? label : undefined
-                  )
-                  setDecisionConnectDialog(null)
-                }
-              }}
-              placeholder="e.g. OK / NOK"
-              style={{
-                width: '100%',
-                height: 40,
-                borderRadius: SURFACE_RADIUS,
-                border: `1px solid ${SURFACE_BORDER}`,
-                padding: '0 12px',
-                fontSize: 14,
-                fontFamily: UI_FONT,
-                marginBottom: 16,
-                background: SURFACE_BG,
-                color: SURFACE_TEXT,
-              }}
-            />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setDecisionConnectDialog(null)}
-                style={{ ...baseBtn, height: 28, padding: '0 12px' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const label = decisionConnectDialog.value.trim()
-                  commitConnection(
-                    decisionConnectDialog.params,
-                    decisionConnectDialog.key,
-                    label ? label : undefined
-                  )
-                  setDecisionConnectDialog(null)
-                }}
-                style={{ ...baseBtn, height: 28, padding: '0 12px' }}
-              >
-                Add
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PfdDecisionConnectDialog
+        dialog={decisionConnectDialog}
+        onAdd={() => {
+          if (!decisionConnectDialog) return
+          const label = decisionConnectDialog.value.trim()
+          commitConnection(
+            decisionConnectDialog.params,
+            decisionConnectDialog.key,
+            label ? label : undefined
+          )
+          setDecisionConnectDialog(null)
+        }}
+        onCancel={() => setDecisionConnectDialog(null)}
+        onValueChange={(value) =>
+          setDecisionConnectDialog((cur) => (cur ? { ...cur, value } : cur))
+        }
+      />
 
       {saveDialogOpen && (
         <div
