@@ -47,11 +47,6 @@ import {
   type PfdFlowEdge,
 } from '@/features/pfd/pfd-flow-utils'
 import {
-  createPfmeaMiniRow,
-  fetchPfmeaMiniRows,
-  updatePfmeaMiniRow,
-} from '@/features/pfd/pfmea-mini-service'
-import {
   archiveOperationsAndDeletePfmea,
   createOperationRecord,
   patchOperationRecord,
@@ -87,7 +82,8 @@ import { PfdHistoryDialog } from '@/features/pfd/pfd-history-dialog'
 import { PfdLeftRail } from '@/features/pfd/pfd-left-rail'
 import { PfdMiniPfmeaPanel } from '@/features/pfd/pfd-mini-panel'
 import { PfdSaveDialog } from '@/features/pfd/pfd-save-dialog'
-import type { PfdEditSession, PfdHistoryEntry, PfmeaMiniRow } from '@/features/pfd/types'
+import type { PfdEditSession, PfdHistoryEntry } from '@/features/pfd/types'
+import { usePfdMiniPfmeaController } from '@/features/pfd/use-pfd-mini-pfmea-controller'
 
 // ✅ biblioteka symboli obok route
 import { nodeTypes, type PfdData } from './_lib/nodes'
@@ -100,7 +96,6 @@ import { UI_FONT, S, OP_WIDTH, OP_HEIGHT, DEC_H, DEC_W, CIRCLE_D, START_W, START
 
 type Edge = PfdFlowEdge
 
-type ColKey = 'failure_mode' | 'effect' | 'cause' | 'severity' | 'occurrence' | 'detection'
 const EDIT_LOCK_HOURS = 48
 const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
 
@@ -169,10 +164,22 @@ function PfdPageContent() {
   
 
   const [pfmeaOpenOperationId, setPfmeaOpenOperationId] = useState<string | null>(null)
-  const [pfmeaMiniRows, setPfmeaMiniRows] = useState<PfmeaMiniRow[]>([])
-  const [edit, setEdit] = useState<{ rowId: string; col: ColKey } | null>(null)
-  const editRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null)
-  const stopEdit = useCallback(() => setEdit(null), [])
+  const {
+    addMiniRow,
+    colIndex,
+    edit,
+    editRef,
+    handleCellKeyDown,
+    loadRowsForOperation,
+    rows: pfmeaMiniRows,
+    startEdit,
+    stopEdit,
+    updateMiniCell,
+  } = usePfdMiniPfmeaController({
+    operationId: pfmeaOpenOperationId,
+    setError: setErr,
+    supabase,
+  })
 
   const rfRef = useRef<ReactFlowInstance | null>(null)
   const recentConnectKeys = useRef<Map<string, number>>(new Map())
@@ -544,15 +551,9 @@ function PfdPageContent() {
       setSelectedEdgeId(null)
       stopEdit()
 
-      try {
-        const rows = await fetchPfmeaMiniRows(supabase, operationId)
-        setPfmeaMiniRows(rows)
-      } catch (error: any) {
-        setErr(error?.message ?? String(error))
-        setPfmeaMiniRows([])
-      }
+      await loadRowsForOperation(operationId)
     },
-    [stopEdit]
+    [loadRowsForOperation, stopEdit]
   )
 
   useEffect(() => {
@@ -1218,96 +1219,6 @@ function PfdPageContent() {
   }, [triggerCenterView])
 
   
-
-  const reloadMini = useCallback(async () => {
-    if (!pfmeaOpenOperationId) return
-    try {
-      const rows = await fetchPfmeaMiniRows(supabase, pfmeaOpenOperationId)
-      setPfmeaMiniRows(rows)
-    } catch (error: any) {
-      setErr(error?.message ?? String(error))
-      setPfmeaMiniRows([])
-      return
-    }
-  }, [pfmeaOpenOperationId])
-
-  const addMiniRow = useCallback(async () => {
-    if (!pfmeaOpenOperationId) return
-    setErr('')
-    try {
-      await createPfmeaMiniRow(supabase, pfmeaOpenOperationId)
-      await reloadMini()
-    } catch (error: any) {
-      setErr(error?.message ?? String(error))
-    }
-  }, [pfmeaOpenOperationId, reloadMini])
-
-
-  const updateMiniCell = useCallback(async (row: PfmeaMiniRow, patch: Partial<PfmeaMiniRow>) => {
-    setErr('')
-    try {
-      const nextRow = await updatePfmeaMiniRow(supabase, row, patch)
-      setPfmeaMiniRows((rows) => rows.map((current) => (current.id === row.id ? nextRow : current)))
-    } catch (error: any) {
-      setErr(error?.message ?? String(error))
-    }
-  }, [])
-
-  const colOrder = useMemo<ColKey[]>(() => ['failure_mode', 'effect', 'cause', 'severity', 'occurrence', 'detection'], [])
-  const colIndex = (c: ColKey) => colOrder.indexOf(c)
-
-  const startEdit = useCallback((rowId: string, col: ColKey) => setEdit({ rowId, col }), [])
-  useEffect(() => {
-    if (!edit) return
-    setTimeout(() => editRef.current?.focus(), 0)
-  }, [edit])
-
-  const nextCell = useCallback((rowIndex: number, colIdx: number) => {
-    let c = colIdx + 1
-    let r = rowIndex
-    if (c >= colOrder.length) {
-      c = 0
-      r = Math.min(rowIndex + 1, Math.max(0, pfmeaMiniRows.length - 1))
-    }
-    return { r, c }
-  }, [colOrder, pfmeaMiniRows.length])
-
-  const prevCell = useCallback((rowIndex: number, colIdx: number) => {
-    let c = colIdx - 1
-    let r = rowIndex
-    if (c < 0) {
-      c = colOrder.length - 1
-      r = Math.max(rowIndex - 1, 0)
-    }
-    return { r, c }
-  }, [colOrder])
-
-  const handleCellKeyDown = useCallback(
-    (
-      e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>,
-      rowIndex: number,
-      colIdx: number,
-      allowEnterNewline: boolean
-    ) => {
-      if (e.key === 'Enter' && allowEnterNewline) return
-
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        const pos = e.shiftKey ? prevCell(rowIndex, colIdx) : nextCell(rowIndex, colIdx)
-        const nextRow = pfmeaMiniRows[pos.r]
-        if (!nextRow) return
-        setEdit({ rowId: nextRow.id, col: colOrder[pos.c] })
-        return
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        stopEdit()
-        return
-      }
-    },
-    [colOrder, nextCell, pfmeaMiniRows, prevCell, stopEdit]
-  )
 
   const pfmeaOpen = Boolean(pfmeaOpenOperationId)
   const flowHeight = pfmeaOpen ? '75vh' : '100vh'
