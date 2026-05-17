@@ -11,10 +11,10 @@ import {
   buildPcpRowPayload,
   getComparableTime,
   isEquivalentPcpRow,
-  isPfmeaSeedSelectedForPcp,
   isPlaceholderPcpRowId,
   normalizeClassValue,
   normalizeText,
+  uniqueSelectedPfmeaPcpSeedRows,
 } from '@/features/pcp/pcp-utils'
 import {
   EDIT_LOCK_MS,
@@ -232,7 +232,7 @@ function PcpPageContent() {
       }
 
       let pfmeaSeedRows = revId ? await loadPfmeaSeeds(revId) : []
-      if (pfmeaSeedRows.filter((row) => isPfmeaSeedSelectedForPcp(row, pcpYellowMax)).length === 0) {
+      if (uniqueSelectedPfmeaPcpSeedRows(pfmeaSeedRows, pcpYellowMax).length === 0) {
         const fallbackRevisionIds = [
           pv.current_open_revision_id,
           await loadLatestPfmeaRevisionId(),
@@ -240,12 +240,12 @@ function PcpPageContent() {
 
         for (const fallbackRevisionId of fallbackRevisionIds) {
           pfmeaSeedRows = await loadPfmeaSeeds(fallbackRevisionId)
-          if (pfmeaSeedRows.filter((row) => isPfmeaSeedSelectedForPcp(row, pcpYellowMax)).length > 0) break
+          if (uniqueSelectedPfmeaPcpSeedRows(pfmeaSeedRows, pcpYellowMax).length > 0) break
         }
       }
 
       const seedRowsByOperation = new Map<string, PfmeaPcpSeedRow[]>()
-      const seedRowsFiltered = pfmeaSeedRows.filter((row) => isPfmeaSeedSelectedForPcp(row, pcpYellowMax))
+      const seedRowsFiltered = uniqueSelectedPfmeaPcpSeedRows(pfmeaSeedRows, pcpYellowMax)
       for (const row of seedRowsFiltered) {
         const items = seedRowsByOperation.get(row.operation_id) ?? []
         items.push(row)

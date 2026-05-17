@@ -45,6 +45,7 @@ export type PfmeaTableRowModel = {
   pcpAutoReasons: string[]
   pcpChecked: boolean
   pcpDisabled: boolean
+  pcpSourceRow: PfmeaRow
   residualRisk: PfmeaRiskValues
   risk1: RiskColor | null
   risk2: RiskColor | null
@@ -99,7 +100,7 @@ export function buildPfmeaTableRowModel(params: {
     params.sourceRows.find((rowItem) => rowItem.id === row.id) ?? row
   )
   const effectivePcpSourceRow = {
-    ...effectiveCurrentRow,
+    ...effectiveActionPlanOwnerRow,
     class: normalizeClassValue(effectiveFailureModeOwnerRow.class),
     severity: asInt1to10(effectiveFailureBlockOwnerRow.severity),
   } as PfmeaRow
@@ -151,6 +152,7 @@ export function buildPfmeaTableRowModel(params: {
     pcpAutoReasons,
     pcpChecked,
     pcpDisabled,
+    pcpSourceRow: actionPlanOwnerRow,
     residualRisk,
     risk1,
     risk2,

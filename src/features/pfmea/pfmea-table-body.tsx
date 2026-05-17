@@ -94,6 +94,7 @@ export function PfmeaTableBody(props: {
           pcpAutoReasons,
           pcpChecked,
           pcpDisabled,
+          pcpSourceRow,
           residualRisk: a2,
           riskRpn2Style,
           riskRpnStyle,
@@ -308,7 +309,7 @@ export function PfmeaTableBody(props: {
               onExpandOperation={props.setExpandedOperationId}
               onTogglePcp={() => {
                 if (pcpDisabled) return
-                void props.updateCellWithDerived(r, { pcp: !pcpChecked })
+                void props.updateCellWithDerived(pcpSourceRow, { pcp: !pcpChecked })
               }}
               operationId={r.operation_id || r.operations?.id || null}
               pcpAutoReasons={pcpAutoReasons}

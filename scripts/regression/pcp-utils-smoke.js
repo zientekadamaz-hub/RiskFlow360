@@ -36,6 +36,7 @@ const {
   normalizeClassValue,
   normalizePcpFlag,
   normalizeText,
+  uniqueSelectedPfmeaPcpSeedRows,
 } = loadModule(['src', 'features', 'pcp', 'pcp-utils.ts'])
 
 assert.equal(normalizeText('  abc  '), 'abc')
@@ -84,10 +85,30 @@ assert.equal(
 assert.equal(isEquivalentPcpRow({ pfmea_row_id: 'pfmea-1' }, { pfmea_row_id: 'pfmea-1' }), true)
 assert.equal(
   isEquivalentPcpRow(
+    { operation_id: 'op', pfmea_row_id: 'pfmea-action-1', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'P', current_detection: 'D' },
+    { operation_id: 'op', pfmea_row_id: 'pfmea-action-2', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'P', current_detection: 'D' }
+  ),
+  true,
+  'PCP equivalence must be based on PFMEA risk/control context before action-row id.'
+)
+assert.equal(
+  isEquivalentPcpRow(
     { operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'P', current_detection: 'D' },
     { operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'Special Characteristic', current_prevention: 'P', current_detection: 'D' }
   ),
   true
+)
+assert.equal(
+  JSON.stringify(uniqueSelectedPfmeaPcpSeedRows(
+    [
+      { id: 'action-1', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 8, rpn: 220, current_prevention: 'P', current_detection: 'D', created_at: '2026-05-01T10:00:00.000Z' },
+      { id: 'action-2', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 8, rpn: 220, current_prevention: 'P', current_detection: 'D', created_at: '2026-05-01T10:01:00.000Z' },
+      { id: 'other-risk', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 3, rpn: 20, current_prevention: 'P2', current_detection: 'D2', created_at: '2026-05-01T10:02:00.000Z' },
+    ],
+    168
+  ).map((row) => row.id)),
+  JSON.stringify(['action-1']),
+  'Multiple PFMEA action rows in the same risk/control context must create one PCP seed.'
 )
 assert.equal(getComparableTime('2026-05-02T10:00:00.000Z') > 0, true)
 assert.equal(getComparableTime('not-a-date'), 0)

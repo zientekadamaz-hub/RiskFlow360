@@ -48,6 +48,89 @@ export function isPfmeaSeedSelectedForPcp(
   return rpn != null && rpn > yellowMax
 }
 
+type PcpSeedIdentitySource = {
+  id?: string | null
+  operation_id?: string | null
+  pcp?: unknown
+  failure_mode?: string | null
+  characteristic?: string | null
+  class?: string | null
+  severity?: unknown
+  rpn?: number | null
+  current_prevention?: string | null
+  current_detection?: string | null
+  created_at?: string | null
+}
+
+function normalizeIdentityText(value: unknown) {
+  return normalizeText(value).toLowerCase()
+}
+
+function getPcpContextParts(row: Partial<PcpSeedIdentitySource>) {
+  return {
+    operationId: normalizeText(row.operation_id),
+    failureMode: normalizeIdentityText(row.failure_mode),
+    characteristic: normalizeIdentityText(row.characteristic),
+    classValue: normalizeClassValue(row.class ?? null) ?? '',
+    currentPrevention: normalizeIdentityText(row.current_prevention),
+    currentDetection: normalizeIdentityText(row.current_detection),
+  }
+}
+
+function hasPcpContext(row: Partial<PcpSeedIdentitySource>) {
+  const parts = getPcpContextParts(row)
+  return !!(
+    parts.operationId &&
+    (
+      parts.failureMode ||
+      parts.characteristic ||
+      parts.classValue ||
+      parts.currentPrevention ||
+      parts.currentDetection
+    )
+  )
+}
+
+export function getPcpSeedIdentityKey(row: PcpSeedIdentitySource) {
+  const parts = getPcpContextParts(row)
+  if (!hasPcpContext(row)) {
+    return `${parts.operationId}\u001f${normalizeText(row.id)}`
+  }
+  return [
+    parts.operationId,
+    parts.failureMode,
+    parts.characteristic,
+    parts.classValue,
+    parts.currentPrevention,
+    parts.currentDetection,
+  ].join('\u001f')
+}
+
+function comparePcpSeedPreference(a: PcpSeedIdentitySource, b: PcpSeedIdentitySource) {
+  const aManual = normalizePcpFlag(a.pcp) === true ? 0 : 1
+  const bManual = normalizePcpFlag(b.pcp) === true ? 0 : 1
+  if (aManual !== bManual) return aManual - bManual
+  const aTime = getComparableTime(a.created_at)
+  const bTime = getComparableTime(b.created_at)
+  if (aTime !== bTime) return aTime - bTime
+  return normalizeText(a.id).localeCompare(normalizeText(b.id))
+}
+
+export function uniqueSelectedPfmeaPcpSeedRows<T extends PcpSeedIdentitySource>(rows: T[], yellowMax: number): T[] {
+  const byKey = new Map<string, T>()
+
+  for (const row of rows) {
+    if (!isPfmeaSeedSelectedForPcp(row as Parameters<typeof isPfmeaSeedSelectedForPcp>[0], yellowMax)) continue
+    const key = getPcpSeedIdentityKey(row)
+    const existing = byKey.get(key)
+    if (!existing || comparePcpSeedPreference(row, existing) < 0) {
+      byKey.set(key, row)
+    }
+  }
+
+  return Array.from(byKey.values())
+}
+
 export function nextPcpRevisionLabel(labelRaw: string | null | undefined) {
   const raw = (labelRaw ?? '0.0.0').toString().trim() || '0.0.0'
   const parts = raw.split('.')
@@ -101,6 +184,9 @@ export function buildPcpRowPayload(row: PcpPayloadSource) {
 }
 
 export function isEquivalentPcpRow(a: Partial<PcpPayloadSource>, b: Partial<PcpPayloadSource>) {
+  if (hasPcpContext(a) && hasPcpContext(b) && getPcpSeedIdentityKey(a) === getPcpSeedIdentityKey(b)) {
+    return true
+  }
   const pfmeaA = normalizeText(a.pfmea_row_id)
   const pfmeaB = normalizeText(b.pfmea_row_id)
   if (pfmeaA && pfmeaB) return pfmeaA === pfmeaB

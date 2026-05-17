@@ -43,13 +43,14 @@ export function PfmeaCurrentRiskCells({
         />
       ) : null}
 
-      {isColumnVisible('pcp') ? (
+      {isColumnVisible('pcp') && actionPlanBlockSpan > 0 ? (
         <TdPcpToggle
           checked={pcpChecked}
           reasons={pcpAutoReasons}
           disabled={pcpDisabled}
           onToggle={onTogglePcp}
           cellKey="pcp"
+          rowSpan={actionPlanBlockSpan}
         />
       ) : null}
     </>

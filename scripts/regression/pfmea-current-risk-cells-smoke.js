@@ -16,13 +16,14 @@ assert.match(currentRiskCellsSource, /const expandOperation = \(\) => onExpandOp
 assert.match(currentRiskCellsSource, /isColumnVisible\('rpn'\) && actionPlanBlockSpan > 0/, 'PFMEA current RPN cell must stay gated by RPN visibility and action plan owner span.')
 assert.match(currentRiskCellsSource, /rowSpan=\{actionPlanBlockSpan\}/, 'PFMEA current RPN cell must preserve merged rowSpan.')
 assert.match(currentRiskCellsSource, /className="pfmeaTd rpnCell center gray singleLine"/, 'PFMEA current RPN cell must preserve existing style.')
-assert.match(currentRiskCellsSource, /isColumnVisible\('pcp'\)/, 'PFMEA PCP cell must stay gated by PCP visibility.')
+assert.match(currentRiskCellsSource, /isColumnVisible\('pcp'\) && actionPlanBlockSpan > 0/, 'PFMEA PCP cell must render once per merged action-plan block.')
 assert.match(currentRiskCellsSource, /onToggle=\{onTogglePcp\}/, 'PFMEA PCP cell must delegate toggle behavior without changing it.')
 assert.match(currentRiskCellsSource, /cellKey="pcp"/, 'PFMEA PCP cell must preserve data column key.')
+assert.match(currentRiskCellsSource, /rowSpan=\{actionPlanBlockSpan\}/, 'PFMEA PCP cell must preserve one PCP decision per current risk block.')
 
 assert.match(tableBodySource, /import \{ PfmeaCurrentRiskCells \}/, 'PFMEA table body must import PfmeaCurrentRiskCells.')
 assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*actionPlanBlockSpan=\{actionPlanBlockSpan\}[\s\S]*currentRpn=\{a1\.rpn\}/, 'PFMEA table body must pass current RPN and span from the row model.')
 assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*operationId=\{r\.operation_id \|\| r\.operations\?\.id \|\| null\}/, 'PFMEA table body must preserve existing operation id for expand behavior.')
-assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*void props\.updateCellWithDerived\(r, \{ pcp: !pcpChecked \}\)/, 'PFMEA table body must preserve existing PCP toggle update.')
+assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*void props\.updateCellWithDerived\(pcpSourceRow, \{ pcp: !pcpChecked \}\)/, 'PFMEA table body must write PCP toggles to the merged source row.')
 
 console.log('pfmea current risk cells smoke passed')

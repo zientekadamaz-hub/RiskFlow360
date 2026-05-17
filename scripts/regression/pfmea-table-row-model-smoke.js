@@ -15,6 +15,7 @@ const expectedModelMarkers = [
   'effectiveActionPlanOwnerRow',
   'getPfmeaPcpAutoReasons',
   'isPfmeaSelectedForPcp',
+  'pcpSourceRow',
   'isPfmeaCellHighlighted',
   'colorFill',
   'groupStart',

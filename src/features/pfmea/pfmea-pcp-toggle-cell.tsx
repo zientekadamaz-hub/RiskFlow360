@@ -10,6 +10,7 @@ export function TdPcpToggle(props: {
   disabled?: boolean
   onToggle: () => void
   cellKey?: string
+  rowSpan?: number
 }) {
   const [cellAnchorEl, setCellAnchorEl] = useState<HTMLTableCellElement | null>(null)
   const [hoverOpen, setHoverOpen] = useState(false)
@@ -19,6 +20,7 @@ export function TdPcpToggle(props: {
   return (
     <td
       data-pfmea-col={props.cellKey}
+      rowSpan={props.rowSpan}
       ref={setCellAnchorEl}
       className="pfmeaTd center singleLine"
       onMouseEnter={() => setHoverOpen(true)}
