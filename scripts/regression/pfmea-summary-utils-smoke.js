@@ -66,6 +66,56 @@ assert.equal(dedupedSummary.avg, (288 + 4) / 2)
 assert.equal(dedupedSummary.count, 2)
 assertJsonEqual(dedupedSummary.buckets, { green: 1, yellow: 0, orange: 1, red: 0 })
 
+const closedActionSummary = computePfmeaAverageRpnSummary(
+  [
+    {
+      id: 'risk-a-open-action',
+      riskKey: 'risk-a',
+      status: 'OPEN',
+      currentRisk: { sev: 9, doVal: 90, rpn: 810 },
+      residualRisk: { sev: 9, doVal: 4, rpn: 36 },
+    },
+    {
+      id: 'risk-a-closed-higher',
+      riskKey: 'risk-a',
+      status: 'CLOSED',
+      currentRisk: { sev: 9, doVal: 90, rpn: 810 },
+      residualRisk: { sev: 9, doVal: 20, rpn: 180 },
+    },
+    {
+      id: 'risk-a-closed-lowest',
+      riskKey: 'risk-a',
+      status: 'CLOSED',
+      currentRisk: { sev: 9, doVal: 90, rpn: 810 },
+      residualRisk: { sev: 9, doVal: 5, rpn: 45 },
+    },
+    {
+      id: 'risk-b-current',
+      riskKey: 'risk-b',
+      status: '',
+      currentRisk: { sev: 5, doVal: 20, rpn: 100 },
+      residualRisk: { sev: 5, doVal: 1, rpn: 5 },
+    },
+  ],
+  (row) => row.currentRisk,
+  (sev, doVal) => {
+    if (sev == null || doVal == null) return null
+    if (doVal <= 5) return 'green'
+    if (doVal <= 20) return 'yellow'
+    return 'red'
+  },
+  (avg) => (avg >= 100 ? 'orange' : 'green'),
+  {
+    getResidualRisk: (row) => row.residualRisk,
+    getRiskKey: (row) => row.riskKey,
+    isClosedAction: (row) => row.status === 'CLOSED',
+  }
+)
+
+assert.equal(closedActionSummary.avg, (45 + 100) / 2)
+assert.equal(closedActionSummary.count, 2)
+assertJsonEqual(closedActionSummary.buckets, { green: 1, yellow: 1, orange: 0, red: 0 })
+
 const emptySummary = computePfmeaAverageRpnSummary(
   [{ id: 'empty', currentRisk: { sev: null, doVal: null, rpn: null } }],
   (row) => row.currentRisk,

@@ -39,6 +39,7 @@ export function PfmeaCurrentRiskCells({
           className="pfmeaTd rpnCell center gray singleLine"
           style={riskRpnStyle}
           rowSpan={actionPlanBlockSpan}
+          sticky={false}
           onClick={expandOperation}
         />
       ) : null}

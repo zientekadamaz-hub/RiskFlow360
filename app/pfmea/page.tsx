@@ -460,18 +460,27 @@ function PfmeaFullPageContent() {
         const riskContext = computePfmeaDerivedFromContext(row)
         return {
           sev: riskContext.currentRisk.sev,
-          doVal: riskContext.derived.oxd_current,
-          rpn: riskContext.derived.rpn_current,
+          doVal: riskContext.currentRisk.doVal,
+          rpn: riskContext.currentRisk.rpn,
         }
       },
       getRiskColorFor,
       getRiskColorForAverageRpn,
       {
+        getResidualRisk: (row) => {
+          const riskContext = computePfmeaDerivedFromContext(row)
+          return {
+            sev: riskContext.residualRisk.sev,
+            doVal: riskContext.residualRisk.doVal,
+            rpn: riskContext.residualRisk.rpn,
+          }
+        },
         getRiskKey: (row, index) => {
           const operationId = row.operation_id || row.operations?.id || 'operation'
           const groupId = normalizePfmeaGroupId(row.action_plan_group_id)
           return groupId ? `${operationId}:${groupId}` : (rowHierarchy[index]?.causeBlockKey ?? row.id)
         },
+        isClosedAction: (row) => (row.action_status ?? '').trim().toUpperCase() === 'CLOSED',
       }
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -916,6 +925,10 @@ function PfmeaFullPageContent() {
           font-weight: 700 !important;
           color: #d9a86c !important;
           vertical-align: middle !important;
+        }
+        .pfmeaTd.scaleValue.mutedScaleValue,
+        .pfmeaTd.scaleValue.mutedScaleValue button {
+          color: #8f96a3 !important;
         }
 
         .trashBtn {

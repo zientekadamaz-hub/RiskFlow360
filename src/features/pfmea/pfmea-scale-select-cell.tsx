@@ -96,6 +96,7 @@ export function TdScaleSelect(props: {
     props.stopEdit()
   }, [props, stopOptionHover])
   const mutedTextStyle = props.muted ? { color: MUTED_SCALE_COLOR } : undefined
+  const mutedClassName = props.muted ? ' mutedScaleValue' : ''
   const selectedDetailsPopup =
     hoverOpen && cellAnchorEl && typeof document !== 'undefined'
       ? createPortal(
@@ -135,7 +136,7 @@ export function TdScaleSelect(props: {
         data-pfmea-col={props.cellKey}
         rowSpan={props.rowSpan}
         ref={setCellAnchorEl}
-        className={`pfmeaTd center gray singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
+        className={`pfmeaTd center gray singleLine scaleValue scaleSelectCell${mutedClassName} ${props.flash ? 'flashMissing' : ''}`}
         style={mergedCellTdStyle(props.rowSpan, mutedTextStyle)}
         onMouseEnter={startHoverDelay}
         onMouseLeave={stopHover}
@@ -154,7 +155,7 @@ export function TdScaleSelect(props: {
         data-pfmea-col={props.cellKey}
         rowSpan={props.rowSpan}
         ref={setCellAnchorEl}
-        className={`pfmeaTd editable center gray singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
+        className={`pfmeaTd editable center gray singleLine scaleValue scaleSelectCell${mutedClassName} ${props.flash ? 'flashMissing' : ''}`}
         style={mergedCellTdStyle(props.rowSpan, mutedTextStyle)}
         onClick={() => {
           stopHover()
@@ -176,7 +177,7 @@ export function TdScaleSelect(props: {
       data-pfmea-col={props.cellKey}
       rowSpan={props.rowSpan}
       ref={setCellAnchorEl}
-      className={`pfmeaTd editable center singleLine scaleValue scaleSelectCell ${props.flash ? 'flashMissing' : ''}`}
+      className={`pfmeaTd editable center singleLine scaleValue scaleSelectCell${mutedClassName} ${props.flash ? 'flashMissing' : ''}`}
       style={mutedTextStyle}
     >
       <button

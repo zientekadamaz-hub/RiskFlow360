@@ -3,6 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
+const pageSource = fs.readFileSync(path.join(root, 'app', 'pfmea', 'page.tsx'), 'utf8')
 const tableBodySource = fs.readFileSync(path.join(root, 'src', 'features', 'pfmea', 'pfmea-table-body.tsx'), 'utf8')
 const failureEffectCellsSource = fs.readFileSync(
   path.join(root, 'src', 'features', 'pfmea', 'pfmea-failure-effect-cells.tsx'),
@@ -29,8 +30,10 @@ assert.match(scaleSelectCellSource, /selectedDetailsPopup/, 'PFMEA scale selecto
 assert.match(scaleSelectCellSource, /onMouseEnter=\{startHoverDelay\}/, 'PFMEA scale selector must open description popup on hover.')
 assert.match(scaleSelectCellSource, /ref=\{setCellAnchorEl\}/, 'PFMEA scale selector must anchor view-mode popup to the cell.')
 assert.match(scaleSelectCellSource, /MUTED_SCALE_COLOR/, 'PFMEA scale selector must keep a dedicated muted value color.')
+assert.match(scaleSelectCellSource, /mutedClassName/, 'PFMEA scale selector must add a muted class when closed-risk values are muted.')
 assert.match(scaleSelectCellSource, /<span style=\{mutedTextStyle\}>/, 'PFMEA scale selector must apply muted color directly to read-only value text.')
 assert.match(scaleSelectCellSource, /color: props\.muted \? MUTED_SCALE_COLOR : 'inherit'/, 'PFMEA scale selector edit trigger must inherit muted value color.')
+assert.match(pageSource, /\.pfmeaTd\.scaleValue\.mutedScaleValue/, 'PFMEA page CSS must let muted scale values override the default orange scale color.')
 
 assert.match(tableBodySource, /import \{ PfmeaFailureEffectCells \}/, 'PFMEA table body must import PfmeaFailureEffectCells.')
 assert.match(tableBodySource, /<PfmeaFailureEffectCells[\s\S]*effectiveFailureBlockOwnerRow=\{effectiveFailureBlockOwnerRow\}/, 'PFMEA table body must pass failure block owner row.')

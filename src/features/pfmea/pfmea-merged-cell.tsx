@@ -15,9 +15,10 @@ export function shouldUseMergedCellSticky(rowSpan?: number) {
 
 export function mergedCellTdStyle(
   rowSpan?: number,
-  style?: React.CSSProperties
+  style?: React.CSSProperties,
+  options: { sticky?: boolean } = {}
 ): React.CSSProperties | undefined {
-  if (!shouldUseMergedCellSticky(rowSpan)) return style
+  if (options.sticky === false || !shouldUseMergedCellSticky(rowSpan)) return style
   const mergedStyle: PfmeaMergedCellStyle = {
     verticalAlign: 'top',
     overflow: 'visible',
@@ -32,8 +33,9 @@ export function MergedCellInner(props: {
   rowSpan?: number
   children: React.ReactNode
   gap?: number
+  sticky?: boolean
 }) {
-  const sticky = shouldUseMergedCellSticky(props.rowSpan)
+  const sticky = props.sticky !== false && shouldUseMergedCellSticky(props.rowSpan)
   return (
     <div
       style={{
@@ -63,19 +65,21 @@ export function TdRead(props: {
   className: string
   style?: React.CSSProperties
   rowSpan?: number
+  sticky?: boolean
   onClick?: () => void
 }) {
+  const sticky = props.sticky ?? true
   return (
     <td
       rowSpan={props.rowSpan}
       className={props.className}
       style={{
-        ...(mergedCellTdStyle(props.rowSpan, props.style) ?? {}),
+        ...(mergedCellTdStyle(props.rowSpan, props.style, { sticky }) ?? {}),
         cursor: props.onClick ? 'pointer' : undefined,
       }}
       onClick={props.onClick}
     >
-      <MergedCellInner rowSpan={props.rowSpan} gap={0}>
+      <MergedCellInner rowSpan={props.rowSpan} gap={0} sticky={sticky}>
         <span>{props.value || ''}</span>
       </MergedCellInner>
     </td>

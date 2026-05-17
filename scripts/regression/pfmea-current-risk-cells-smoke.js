@@ -15,6 +15,7 @@ assert.match(currentRiskCellsSource, /import \{ TdPcpToggle \}/, 'PFMEA current 
 assert.match(currentRiskCellsSource, /const expandOperation = \(\) => onExpandOperation\(operationId\)/, 'PFMEA current risk cells must preserve operation expand callback.')
 assert.match(currentRiskCellsSource, /isColumnVisible\('rpn'\) && actionPlanBlockSpan > 0/, 'PFMEA current RPN cell must stay gated by RPN visibility and action plan owner span.')
 assert.match(currentRiskCellsSource, /rowSpan=\{actionPlanBlockSpan\}/, 'PFMEA current RPN cell must preserve merged rowSpan.')
+assert.match(currentRiskCellsSource, /sticky=\{false\}/, 'PFMEA current RPN cell must stay vertically centered across merged rows.')
 assert.match(currentRiskCellsSource, /className="pfmeaTd rpnCell center gray singleLine"/, 'PFMEA current RPN cell must preserve existing style.')
 assert.match(currentRiskCellsSource, /isColumnVisible\('pcp'\) && actionPlanBlockSpan > 0/, 'PFMEA PCP cell must render once per merged action-plan block.')
 assert.match(currentRiskCellsSource, /onToggle=\{onTogglePcp\}/, 'PFMEA PCP cell must delegate toggle behavior without changing it.')
