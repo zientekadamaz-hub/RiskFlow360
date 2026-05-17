@@ -1,0 +1,25 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = path.join(__dirname, '..', '..')
+const pageSource = fs.readFileSync(path.join(root, 'app', 'pcp', 'page.tsx'), 'utf8')
+const tableSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'pcp-table.tsx'), 'utf8')
+
+assert.match(tableSource, /export function PcpTable/, 'PCP table component must be exported.')
+assert.match(tableSource, /export type PcpEditCell/, 'PCP table component must export edit cell type.')
+assert.match(tableSource, /<colgroup>\{visibleColumnDefs\.map/, 'PCP table must preserve visible column colgroup.')
+assert.match(tableSource, /isColumnVisible\('failure_mode'\)/, 'PCP table must preserve failure mode visibility.')
+assert.match(tableSource, /isColumnVisible\('reaction_plan'\)/, 'PCP table must preserve reaction plan visibility.')
+assert.match(tableSource, /asInt1to10\(r\.severity\)/, 'PCP table must preserve severity highlight calculation.')
+assert.match(tableSource, /rpnValue != null && rpnValue > pcpYellowMax/, 'PCP table must preserve RPN highlight threshold.')
+assert.match(tableSource, /onCommit=\{\(v\) => void updateRow\(r, \{ control_method: v \}\)\}/, 'PCP table must keep editable control method commit.')
+assert.match(tableSource, /TdClassPopup/, 'PCP table must keep class popup cell.')
+assert.match(tableSource, /TdText/, 'PCP table must keep editable text cells.')
+
+assert.match(pageSource, /from '@\/features\/pcp\/pcp-table'/, 'PCP page must import extracted table.')
+assert.match(pageSource, /<PcpTable[\s\S]*rows=\{rowsSorted\}/, 'PCP page must render extracted table with sorted rows.')
+assert.doesNotMatch(pageSource, /<tbody>\s*\{\s*rowsSorted\.map/, 'PCP page should not render table body inline after extraction.')
+assert.doesNotMatch(pageSource, /<Th w=\{widthOf\('failure_mode'\)\}>FAILURE MODE<\/Th>/, 'PCP page should not render table headers inline after extraction.')
+
+console.log('pcp table smoke passed')

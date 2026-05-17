@@ -5,6 +5,7 @@ const path = require('node:path')
 const root = path.join(__dirname, '..', '..')
 const pageSource = fs.readFileSync(path.join(root, 'app', 'pcp', 'page.tsx'), 'utf8')
 const cellsSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'pcp-table-cells.tsx'), 'utf8')
+const tableSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'pcp-table.tsx'), 'utf8')
 
 assert.match(cellsSource, /export function SummaryCard/, 'PCP table cells must export SummaryCard.')
 assert.match(cellsSource, /export function Th/, 'PCP table cells must export table header cell.')
@@ -23,7 +24,8 @@ assert.match(pageSource, /from '@\/features\/pcp\/pcp-table-cells'/, 'PCP page m
 assert.doesNotMatch(pageSource, /function TdText/, 'PCP page should not define TdText inline.')
 assert.doesNotMatch(pageSource, /function TdClassPopup/, 'PCP page should not define TdClassPopup inline.')
 assert.doesNotMatch(pageSource, /createPortal/, 'PCP page should not import portal directly after extraction.')
-assert.match(pageSource, /<TdClassPopup/, 'PCP page must still render class popup cells.')
+assert.match(tableSource, /<TdClassPopup/, 'PCP table must still render class popup cells.')
+assert.match(tableSource, /<TdText/, 'PCP table must still render editable text cells.')
 assert.match(pageSource, /<SummaryCard/, 'PCP page must still render summary cards.')
 
 console.log('pcp table cells smoke passed')
