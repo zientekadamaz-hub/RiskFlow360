@@ -20,13 +20,10 @@ import {
 } from '@/features/pcp/pcp-utils'
 import {
   CLASS_OPTION_DETAILS,
-  DEFAULT_VISIBLE_COLUMNS,
   EDIT_LOCK_MS,
   PCP_CLASS_OPTIONS,
-  PCP_COLUMNS,
   PCP_COLUMNS_BY_ID,
   PCP_COLUMN_FILTER_GROUPS,
-  PCP_VISIBLE_COLUMNS_KEY_PREFIX,
   SURFACE_BG,
   SURFACE_BG_STRONG,
   SURFACE_BORDER,
@@ -37,8 +34,8 @@ import {
   anchoredPopupStyle,
   formatDateTimePL,
   makePcpPlaceholderRow,
-  type PcpColumnId,
 } from '@/features/pcp/pcp-page-model'
+import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
 import {
   backfillPcpRowsFromPfmea,
   deletePcpDraftRows,
@@ -106,8 +103,6 @@ function PcpPageContent() {
   const [showSave, setShowSave] = useState(false)
   const [saveDescription, setSaveDescription] = useState('')
 
-  const [columnFiltersOpen, setColumnFiltersOpen] = useState(false)
-  const [visibleColumns, setVisibleColumns] = useState<Record<PcpColumnId, boolean>>(DEFAULT_VISIBLE_COLUMNS)
   const [pcpYellowMax, setPcpYellowMax] = useState(168)
 
   const [edit, setEdit] = useState<{ rowId: string; col: keyof PcpRow } | null>(null)
@@ -142,36 +137,17 @@ function PcpPageContent() {
   const workingRevisionId = draftRevisionIdOverride ?? project?.current_draft_revision_id ?? project?.current_open_revision_id ?? null
   const workingRevisionLabel = project?.current_draft_revision_id ? project?.draft_revision_label : project?.open_revision_label
 
-  const isColumnVisible = useCallback(
-    (id: PcpColumnId) => {
-      return visibleColumns[id] !== false
-    },
-    [visibleColumns]
-  )
-
-  const toggleColumnVisibility = useCallback((id: PcpColumnId, checked: boolean) => {
-    setVisibleColumns((prev) => ({ ...prev, [id]: checked }))
-  }, [])
-
-  const clearColumnGroup = useCallback((ids: PcpColumnId[]) => {
-    setVisibleColumns((prev) => {
-      const next = { ...prev }
-      for (const id of ids) next[id] = true
-      return next
-    })
-  }, [])
-
-  const uncheckColumnGroup = useCallback((ids: PcpColumnId[]) => {
-    setVisibleColumns((prev) => {
-      const next = { ...prev }
-      for (const id of ids) next[id] = false
-      return next
-    })
-  }, [])
-
-  const visibleColumnDefs = useMemo(() => PCP_COLUMNS.filter((col) => isColumnVisible(col.id)), [isColumnVisible])
-  const visibleTableWidth = useMemo(() => visibleColumnDefs.reduce((acc, c) => acc + c.width, 0), [visibleColumnDefs])
-  const widthOf = useCallback((id: PcpColumnId) => `${PCP_COLUMNS_BY_ID[id]?.width ?? 100}px`, [])
+  const {
+    clearColumnGroup,
+    columnFiltersOpen,
+    isColumnVisible,
+    setColumnFiltersOpen,
+    toggleColumnVisibility,
+    uncheckColumnGroup,
+    visibleColumnDefs,
+    visibleTableWidth,
+    widthOf,
+  } = usePcpVisibleColumns(userId)
 
   const rowsSorted = useMemo(() => {
     const indexed = rows.map((row, index) => ({ row, index }))
@@ -720,27 +696,6 @@ function PcpPageContent() {
     return () => clearInterval(beat)
   }, [projectId, userId, isEditOwner])
 
-  useEffect(() => {
-    if (!userId || typeof window === 'undefined') return
-    try {
-      const raw = window.localStorage.getItem(`${PCP_VISIBLE_COLUMNS_KEY_PREFIX}:${userId}`)
-      if (!raw) return
-      const parsed = JSON.parse(raw) as Partial<Record<PcpColumnId, boolean>>
-      const next: Record<PcpColumnId, boolean> = { ...DEFAULT_VISIBLE_COLUMNS }
-      for (const col of PCP_COLUMNS) {
-        const value = parsed?.[col.id]
-        if (typeof value === 'boolean') next[col.id] = value
-      }
-      setVisibleColumns(next)
-    } catch {}
-  }, [userId])
-
-  useEffect(() => {
-    if (!userId || typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(`${PCP_VISIBLE_COLUMNS_KEY_PREFIX}:${userId}`, JSON.stringify(visibleColumns))
-    } catch {}
-  }, [userId, visibleColumns])
   const card: React.CSSProperties = {
     background: SURFACE_BG,
     borderStyle: 'solid',
