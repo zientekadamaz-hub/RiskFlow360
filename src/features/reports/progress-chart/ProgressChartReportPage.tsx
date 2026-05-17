@@ -11,13 +11,12 @@ import {
   SettingsSummaryTile,
   getSettingsSummaryGridMaxWidth,
   settingsFrameStyle,
-  settingsInputStyle,
   settingsProcessAccent,
   settingsRiskSummaryTileStyle,
   settingsSummaryTileStyle,
 } from '@/components/rf-ui'
-import { StandardSelect } from '@/features/settings/StandardSelect'
 import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
+import { ReportFilterSelect } from '@/features/reports/report-filter-select'
 import { fetchProgressChartData } from './progress-chart-service'
 import type { ProgressChartData, ProgressChartFilters, ProgressChartPoint, ProgressGranularity } from './types'
 import type { RpnThresholds } from '@/features/projects/types'
@@ -49,34 +48,6 @@ function formatIntegerValue(value: number | null) {
 function avgRpnTileStyle(value: number | null, thresholds: RpnThresholds) {
   if (value == null || !Number.isFinite(value)) return settingsSummaryTileStyle
   return settingsRiskSummaryTileStyle(riskColorFromRpnValue(value, thresholds))
-}
-
-function FilterSelect({
-  disabled,
-  label,
-  onChange,
-  options,
-  value,
-}: {
-  disabled?: boolean
-  label: string
-  onChange: (value: string) => void
-  options: Array<{ label: string; value: string }>
-  value: string
-}) {
-  return (
-    <label style={{ display: 'grid', gap: 5, minWidth: 220 }}>
-      <span style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: 700 }}>{label}</span>
-      <StandardSelect
-        ariaLabel={label}
-        disabled={disabled}
-        onChange={onChange}
-        options={options}
-        style={{ ...settingsInputStyle, height: 34 }}
-        value={value}
-      />
-    </label>
-  )
 }
 
 function ProgressSummary({ data }: { data: ProgressChartData | null }) {
@@ -425,25 +396,25 @@ export function ProgressChartReportPage() {
       <SettingsSection style={{ padding: '10px 12px' }}>
         <div style={{ alignItems: 'flex-end', display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            <FilterSelect
+            <ReportFilterSelect
               label="Site"
               onChange={(site) => setFilters((current) => ({ ...current, projectIds: [], sites: site ? [site] : [] }))}
               options={[{ label: 'All Sites', value: '' }, ...(data?.siteOptions ?? []).map((site) => ({ label: site, value: site }))]}
               value={selectedSite}
             />
-            <FilterSelect
+            <ReportFilterSelect
               label="Department"
               onChange={(department) => setFilters((current) => ({ ...current, departments: department ? [department] : [], projectIds: [] }))}
               options={[{ label: 'All', value: '' }, ...(data?.departmentOptions ?? []).map((department) => ({ label: department, value: department }))]}
               value={selectedDepartment}
             />
-            <FilterSelect
+            <ReportFilterSelect
               label="Project"
               onChange={(projectId) => setFilters((current) => ({ ...current, projectIds: projectId ? [projectId] : [] }))}
               options={projectOptions}
               value={selectedProjectId}
             />
-            <FilterSelect
+            <ReportFilterSelect
               label="Aggregation"
               onChange={(granularity) => setFilters((current) => ({ ...current, granularity: granularity as ProgressGranularity }))}
               options={GRANULARITY_OPTIONS}

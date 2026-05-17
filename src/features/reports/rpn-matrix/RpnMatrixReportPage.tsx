@@ -13,7 +13,6 @@ import {
   SettingsSummaryGrid,
   SettingsSummaryTile,
   settingsFrameStyle,
-  settingsInputStyle,
   settingsProcessAccent,
   settingsRiskMatrixCellFill,
   settingsRiskSummaryTileStyle,
@@ -23,8 +22,8 @@ import {
   settingsTableScrollerStyle,
   settingsTableWrapStyle,
 } from '@/components/rf-ui'
-import { StandardSelect } from '@/features/settings/StandardSelect'
 import { projectsProcessCellStyle, projectsSummaryValueStyle } from '@/features/projects/view-styles'
+import { ReportFilterSelect } from '@/features/reports/report-filter-select'
 import { fetchRpnMatrixReportData } from './rpn-matrix-service'
 import type { RpnMatrixFilters, RpnMatrixReportData } from './types'
 import { toUserErrorMessage } from '@/lib/error-utils'
@@ -82,39 +81,6 @@ function RpnMatrixSummary({ data }: { data: RpnMatrixReportData | null }) {
       <SettingsSummaryTile label="Actions recommended" value={colorCounts.yellow} style={settingsRiskSummaryTileStyle('yellow')} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
       <SettingsSummaryTile label="Acceptable risk" value={colorCounts.green} style={settingsRiskSummaryTileStyle('green')} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
     </SettingsSummaryGrid>
-  )
-}
-
-function FilterSelect({
-  allLabel = 'All',
-  label,
-  onChange,
-  options,
-  value,
-}: {
-  allLabel?: string
-  label: string
-  onChange: (value: string) => void
-  options: Array<{ label: string; value: string }> | string[]
-  value: string
-}) {
-  const normalizedOptions = options.map((option) => (typeof option === 'string' ? { label: option, value: option } : option))
-
-  return (
-    <label style={{ display: 'grid', gap: 5, minWidth: 220 }}>
-      <span style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, fontWeight: 700 }}>{label}</span>
-      <StandardSelect
-        ariaLabel={label}
-        onChange={onChange}
-        options={[
-          { label: allLabel, value: '' },
-          ...normalizedOptions,
-        ]}
-        placeholder={allLabel}
-        style={{ ...settingsInputStyle, height: 34 }}
-        value={value}
-      />
-    </label>
   )
 }
 
@@ -334,19 +300,19 @@ export function RpnMatrixReportPage() {
       <SettingsSection style={{ padding: '10px 12px' }}>
         <div style={{ alignItems: 'flex-end', display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-            <FilterSelect
+            <ReportFilterSelect
               label="Site"
               onChange={(value) => setFilters((current) => ({ ...current, projectIds: [], sites: value ? [value] : [] }))}
               options={data?.sites ?? []}
               value={selectedSite}
             />
-            <FilterSelect
+            <ReportFilterSelect
               label="Department"
               onChange={(value) => setFilters((current) => ({ ...current, departments: value ? [value] : [], projectIds: [] }))}
               options={data?.departments ?? []}
               value={selectedDepartment}
             />
-            <FilterSelect
+            <ReportFilterSelect
               allLabel="All Projects"
               label="Project"
               onChange={(value) => setFilters((current) => ({ ...current, projectIds: value ? [value] : [] }))}
