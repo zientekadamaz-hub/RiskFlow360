@@ -7,7 +7,7 @@ import {
   getPfmeaRowOperationId,
   getPfmeaRowOperationIds,
   buildPfmeaStableOrderMetadata,
-  sortPfmeaRows,
+  reindexPfmeaRows,
 } from './pfmea-row-order-utils'
 import { resolvePfmeaSaveDraftRevisionId } from './pfmea-revision-utils'
 import { parsePfmeaPublishResult } from './pfmea-publish-utils'
@@ -120,7 +120,7 @@ export async function syncPublishedPfmeaRowMetadataAfterSave(params: {
   supabase: SupabaseClient
   workingRevisionId: string | null
 }) {
-  const orderedSourceRows = sortPfmeaRows(params.sourceRows).filter(
+  const orderedSourceRows = reindexPfmeaRows(params.sourceRows).filter(
     (row) =>
       !isPlaceholderRowId(row.id) &&
       (!row.revision_id || row.revision_id === params.draftRevisionIdOverride || row.revision_id === params.workingRevisionId)
@@ -220,7 +220,7 @@ export async function ensurePublishedPfmeaIntegrityAfterSave(params: {
   revisionId: string
   sourceRows: PfmeaRow[]
 }) {
-  const snapshotRows = sortPfmeaRows(params.sourceRows).filter((row) => !isPlaceholderRowId(row.id))
+  const snapshotRows = reindexPfmeaRows(params.sourceRows).filter((row) => !isPlaceholderRowId(row.id))
   if (!params.revisionId || snapshotRows.length === 0) return null
 
   const operationIds = getPfmeaRowOperationIds(snapshotRows)
@@ -261,7 +261,7 @@ export async function remapPfmeaSnapshotRowsToRevisionAfterSave(params: {
   revisionId: string
   sourceRows: PfmeaRow[]
 }) {
-  const snapshotRows = sortPfmeaRows(params.sourceRows).filter((row) => !isPlaceholderRowId(row.id))
+  const snapshotRows = reindexPfmeaRows(params.sourceRows).filter((row) => !isPlaceholderRowId(row.id))
   if (!params.revisionId || snapshotRows.length === 0) return snapshotRows
 
   const operationIds = getPfmeaRowOperationIds(snapshotRows)
@@ -330,7 +330,7 @@ export async function persistPfmeaDraftSnapshotAfterSave(params: {
   supabase: SupabaseClient
 }) {
   const dirtyIdsBeforeRemap = new Set(params.dirtyIds)
-  const snapshotRows = sortPfmeaRows(params.sourceRows)
+  const snapshotRows = reindexPfmeaRows(params.sourceRows)
     .filter((row) => !isPlaceholderRowId(row.id))
     .map((row) => {
       const effectiveRow = params.applyPendingCellValues(row)
@@ -380,7 +380,7 @@ export async function preparePfmeaDraftRowsForPublish(params: {
   params.mark('persist dirty draft rows')
   const persistedRowsForOrder = persistedRows.filter((row) => !row.revision_id || row.revision_id === params.draftRevisionId)
   const { orderedRows: orderedPersistedRows, updates: orderedPersistedUpdates } =
-    buildPfmeaRowsWithStableOrderMetadata(persistedRowsForOrder)
+    buildPfmeaRowsWithStableOrderMetadata(persistedRowsForOrder, { preserveInputOrder: true })
   await params.persistPfmeaRowOrder(params.draftRevisionId, persistedRowsForOrder, orderedPersistedUpdates)
   params.mark('persist row order metadata')
   params.rowsRef.current = orderedPersistedRows

@@ -167,8 +167,74 @@ try {
     stable.updates.map((row) => [row.id, row.row_no, row.failure_mode_group_id, row.failure_block_group_id, row.action_plan_group_id]),
     [
       ['a', '10.1.1.1.1', 'fm-a', 'fb-a', 'ap-a'],
-      ['c', '10.1.1.1.2', 'fm-c', 'fb-c', 'ap-c'],
+      ['c', '10.2.1.1.1', 'fm-c', 'fb-c', 'ap-c'],
       ['b', '20.1.1.1.1', 'fm-b', 'fb-b', 'ap-b'],
+    ]
+  )
+
+  const sameCauseStableOrder = buildPfmeaRowsWithStableOrderMetadata(
+    [
+      {
+        id: 'same-cause-first',
+        operation_id: 'op1',
+        row_no: '10.9.9.9.9',
+        failure_mode_group_id: 'fm-same',
+        failure_block_group_id: 'fb-same',
+        action_plan_group_id: 'ap-same',
+        created_at: '2026-04-01T00:00:08.000Z',
+        operations: { id: 'op1', operation_number: 10 },
+      },
+      {
+        id: 'same-cause-second',
+        operation_id: 'op1',
+        row_no: '10.1.1.1.1',
+        failure_mode_group_id: 'fm-same',
+        failure_block_group_id: 'fb-same',
+        action_plan_group_id: 'ap-same',
+        created_at: '2026-04-01T00:00:09.000Z',
+        operations: { id: 'op1', operation_number: 10 },
+      },
+    ],
+    { preserveInputOrder: true }
+  )
+  assertJsonEqual(
+    sameCauseStableOrder.orderedRows.map((row) => [row.id, row.row_no]),
+    [
+      ['same-cause-first', '10.1.1.1.1'],
+      ['same-cause-second', '10.1.1.1.2'],
+    ]
+  )
+
+  const staleRowNoStableOrder = buildPfmeaRowsWithStableOrderMetadata(
+    [
+      {
+        id: 'first-visible',
+        operation_id: 'op1',
+        row_no: '10.9.9.9.9',
+        failure_mode_group_id: 'fm-first',
+        failure_block_group_id: 'fb-first',
+        action_plan_group_id: 'ap-first',
+        created_at: '2026-04-01T00:00:10.000Z',
+        operations: { id: 'op1', operation_number: 10 },
+      },
+      {
+        id: 'second-visible',
+        operation_id: 'op1',
+        row_no: '10.1.1.1.1',
+        failure_mode_group_id: 'fm-second',
+        failure_block_group_id: 'fb-second',
+        action_plan_group_id: 'ap-second',
+        created_at: '2026-04-01T00:00:11.000Z',
+        operations: { id: 'op1', operation_number: 10 },
+      },
+    ],
+    { preserveInputOrder: true }
+  )
+  assertJsonEqual(
+    staleRowNoStableOrder.orderedRows.map((row) => [row.id, row.row_no]),
+    [
+      ['first-visible', '10.1.1.1.1'],
+      ['second-visible', '10.2.1.1.1'],
     ]
   )
 

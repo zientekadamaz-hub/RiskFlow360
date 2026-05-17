@@ -1,6 +1,7 @@
 import {
   buildPfmeaHierarchy,
   createPfmeaGroupIds,
+  derivePfmeaGroupIds,
   isPlaceholderRowId,
   parsePfmeaRowNoParts,
   pickPfmeaGroupIds,
@@ -99,6 +100,22 @@ export function getPfmeaRowOperationIds(rows: PfmeaOrderRow[]) {
   return Array.from(new Set(rows.map((row) => getPfmeaRowOperationId(row)).filter(Boolean)))
 }
 
+function normalizePfmeaRowsForCurrentOrder<T extends PfmeaOrderRow>(rows: T[]) {
+  return rows.map((row) => ({
+    ...row,
+    ...derivePfmeaGroupIds(row),
+    row_no: null,
+  }))
+}
+
+function buildPfmeaHierarchyFromCurrentOrder<T extends PfmeaOrderRow>(rows: T[]) {
+  const normalizedRows = normalizePfmeaRowsForCurrentOrder(rows)
+  return {
+    hierarchy: buildPfmeaHierarchy(normalizedRows),
+    normalizedRows,
+  }
+}
+
 export function buildPfmeaCreatedAtOrder<T extends PfmeaOrderRow>(rows: T[]) {
   const baseTime = Date.now() - Math.max(rows.length - 1, 0)
   const hierarchy = buildPfmeaHierarchy(rows)
@@ -112,12 +129,12 @@ export function buildPfmeaCreatedAtOrder<T extends PfmeaOrderRow>(rows: T[]) {
 
 export function buildPfmeaStableOrderMetadata<T extends PfmeaOrderRow>(rows: T[]) {
   const baseTime = Date.now() - Math.max(rows.length - 1, 0)
-  const hierarchy = buildPfmeaHierarchy(rows)
+  const { hierarchy, normalizedRows } = buildPfmeaHierarchyFromCurrentOrder(rows)
   return rows.map((row, index) => ({
     id: row.id,
     created_at: (row.created_at ?? '').trim() || new Date(baseTime + index).toISOString(),
     row_no: hierarchy[index]?.rowLabel ?? null,
-    ...createPfmeaGroupIds(pickPfmeaGroupIds(row)),
+    ...createPfmeaGroupIds(pickPfmeaGroupIds(normalizedRows[index] ?? row)),
   }))
 }
 
@@ -183,8 +200,13 @@ export function insertPfmeaRowAfterAnchorWithOrderMetadata<T extends PfmeaOrderR
   }
 }
 
-export function buildPfmeaRowsWithStableOrderMetadata<T extends PfmeaOrderRow>(rows: T[]) {
-  const orderedRows = sortPfmeaRows(rows).filter((row) => !isPlaceholderRowId(row.id))
+export function buildPfmeaRowsWithStableOrderMetadata<T extends PfmeaOrderRow>(
+  rows: T[],
+  options: { preserveInputOrder?: boolean } = {}
+) {
+  const orderedRows = (options.preserveInputOrder ? reindexPfmeaRows(rows) : sortPfmeaRows(rows)).filter(
+    (row) => !isPlaceholderRowId(row.id)
+  )
   const updates = buildPfmeaStableOrderMetadata(orderedRows)
   const updateById = new Map(updates.map((item) => [item.id, item] as const))
 
