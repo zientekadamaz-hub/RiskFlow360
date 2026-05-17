@@ -53,103 +53,25 @@ import {
   type InviteRow,
   type LicenseRow,
 } from '@/features/settings/invitations-service'
-
-type HeaderRpcRow = {
-  org_name?: string | null
-  org_role?: string | null
-  global_role?: AppRole | null
-}
-
-type ActiveProfileRow = {
-  active_organization_id?: string | null
-}
-
-type InviteLinkState = {
-  email: string
-  url: string
-}
-
-type SendInviteResponse = {
-  email?: string
-  error?: string
-  id?: string | null
-  inviteUrl?: string
-  ok?: boolean
-}
-
-type InvitationStatusFilter = 'ACTIVE' | 'NOACTIVE' | 'PENDING'
-type InvitationColumnKey = 'accepted' | 'created' | 'email' | 'name' | 'role' | 'status'
-type InvitationLayoutColumnKey = InvitationColumnKey | 'actions'
-type InvitationHiddenColumns = Record<InvitationColumnKey, boolean>
-type InvitationSortState = {
-  column: InvitationColumnKey
-  direction: 'asc' | 'desc'
-} | null
-
-const DEFAULT_INVITATION_HIDDEN_COLUMNS: InvitationHiddenColumns = {
-  accepted: false,
-  created: false,
-  email: false,
-  name: false,
-  role: false,
-  status: false,
-}
-
-const BASE_INVITATION_COLUMN_WIDTHS: Record<InvitationLayoutColumnKey, number> = {
-  name: 190,
-  email: 250,
-  role: 145,
-  status: 120,
-  created: 145,
-  accepted: 145,
-  actions: 330,
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return '-'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return '-'
-  return parsed.toLocaleString('pl-PL', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function normalizeBasePath(value: string | undefined) {
-  const raw = value?.trim() ?? ''
-  if (!raw || raw === '/') return ''
-  const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`
-  return withLeadingSlash.replace(/\/+$/, '')
-}
-
-function inviteDisplayName(row: InviteRow) {
-  const full = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim()
-  return full || '-'
-}
-
-function uniqueSorted(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: 'base' })
-  )
-}
-
-function compareNullableDate(left: string | null, right: string | null) {
-  const leftTime = left ? new Date(left).getTime() : 0
-  const rightTime = right ? new Date(right).getTime() : 0
-  return (Number.isFinite(leftTime) ? leftTime : 0) - (Number.isFinite(rightTime) ? rightTime : 0)
-}
-
-function invitationSortValue(row: InviteRow, column: InvitationColumnKey) {
-  if (column === 'name') return inviteDisplayName(row)
-  if (column === 'email') return row.email
-  if (column === 'role') return formatInviteRole(row.role)
-  if (column === 'status') return displayInviteStatus(row)
-  if (column === 'created') return row.created_at ?? ''
-  return row.accepted_at ?? ''
-}
+import {
+  BASE_INVITATION_COLUMN_WIDTHS,
+  DEFAULT_INVITATION_HIDDEN_COLUMNS,
+  formatDateTime,
+  getAllowedInvitationRoles,
+  getDisplayedInvites,
+  getInvitationFilterOptions,
+  getInvitationSummary,
+  inviteDisplayName,
+  mapInviteError,
+  normalizeBasePath,
+  type ActiveProfileRow,
+  type HeaderRpcRow,
+  type InvitationColumnKey,
+  type InvitationHiddenColumns,
+  type InvitationSortState,
+  type InviteLinkState,
+  type SendInviteResponse,
+} from '@/features/settings/invitations-page-model'
 
 export default function InvitationsPage() {
   const [orgId, setOrgId] = useState<string | null>(null)
@@ -189,56 +111,29 @@ export default function InvitationsPage() {
   const [infoDialog, setInfoDialog] = useState<{ title: string; message: string } | null>(null)
 
   const basePath = useMemo(() => normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH), [])
-  const canInviteChampion = orgRole === 'champion' || globalRole === 'admin'
-  const allowedRoles = useMemo<AppRole[]>(
-    () => (canInviteChampion ? ['engineer', 'viewer', 'customer', 'champion'] : ['engineer', 'viewer', 'customer']),
-    [canInviteChampion]
-  )
-
-  const usedSeats = useMemo(() => invites.filter((invite) => ['PENDING', 'ACTIVE'].includes(displayInviteStatus(invite))).length, [invites])
-  const allowedSeats = license?.invites_allowed_total ?? null
-  const freeSeats = allowedSeats === null ? null : Math.max(0, allowedSeats - usedSeats)
-  const pendingCount = useMemo(() => invites.filter((invite) => displayInviteStatus(invite) === 'PENDING').length, [invites])
-  const activeCount = useMemo(() => invites.filter((invite) => displayInviteStatus(invite) === 'ACTIVE').length, [invites])
-  const activeChampionCount = useMemo(
-    () => invites.filter((invite) => invite.source === 'member' && displayInviteStatus(invite) === 'ACTIVE' && invite.role === 'champion').length,
-    [invites]
+  const allowedRoles = useMemo<AppRole[]>(() => getAllowedInvitationRoles(orgRole, globalRole), [globalRole, orgRole])
+  const { activeChampionCount, activeCount, freeSeats, pendingCount, usedSeats } = useMemo(
+    () => getInvitationSummary(invites, license),
+    [invites, license]
   )
   const canSend = !!orgId && !!email.trim() && !!firstName.trim() && !!lastName.trim() && !sending
   const canSendWithLicense = freeSeats === null ? canSend : canSend && freeSeats > 0
 
-  const nameOptions = useMemo(() => uniqueSorted(invites.map(inviteDisplayName)), [invites])
-  const emailOptions = useMemo(() => uniqueSorted(invites.map((invite) => invite.email)), [invites])
-  const roleOptions = useMemo(() => uniqueSorted(invites.map((invite) => formatInviteRole(invite.role))), [invites])
-  const statusOptions = useMemo(() => uniqueSorted(invites.map((invite) => displayInviteStatus(invite) as InvitationStatusFilter)), [invites])
-  const displayedInvites = useMemo(() => {
-    const nameSet = selectedNames === null ? null : new Set(selectedNames)
-    const emailSet = selectedEmails === null ? null : new Set(selectedEmails)
-    const roleSet = selectedRoles === null ? null : new Set(selectedRoles)
-    const statusSet = selectedStatuses === null ? null : new Set(selectedStatuses)
-
-    const filtered = invites.filter((row) => {
-      const nameOk = nameSet === null ? true : nameSet.has(inviteDisplayName(row))
-      const emailOk = emailSet === null ? true : emailSet.has(row.email)
-      const roleOk = roleSet === null ? true : roleSet.has(formatInviteRole(row.role))
-      const statusOk = statusSet === null ? true : statusSet.has(displayInviteStatus(row))
-      return nameOk && emailOk && roleOk && statusOk
-    })
-
-    if (!sortState) return filtered
-
-    return [...filtered].sort((left, right) => {
-      let comparison = 0
-      if (sortState.column === 'created') comparison = compareNullableDate(left.created_at, right.created_at)
-      else if (sortState.column === 'accepted') comparison = compareNullableDate(left.accepted_at, right.accepted_at)
-      else {
-        comparison = invitationSortValue(left, sortState.column).localeCompare(invitationSortValue(right, sortState.column), undefined, {
-          sensitivity: 'base',
-        })
-      }
-      return sortState.direction === 'asc' ? comparison : -comparison
-    })
-  }, [invites, selectedEmails, selectedNames, selectedRoles, selectedStatuses, sortState])
+  const { emailOptions, nameOptions, roleOptions, statusOptions } = useMemo(() => getInvitationFilterOptions(invites), [invites])
+  const displayedInvites = useMemo(
+    () =>
+      getDisplayedInvites(
+        invites,
+        {
+          selectedEmails,
+          selectedNames,
+          selectedRoles,
+          selectedStatuses,
+        },
+        sortState
+      ),
+    [invites, selectedEmails, selectedNames, selectedRoles, selectedStatuses, sortState]
+  )
   const columnWidths = useMemo(() => {
     return getSettingsTableColumnWidths<InvitationColumnKey>({
       baseWidths: BASE_INVITATION_COLUMN_WIDTHS,
@@ -270,23 +165,6 @@ export default function InvitationsPage() {
       } catch {}
     }
   }, [])
-
-  function mapInviteError(message: string) {
-    const lower = message.toLowerCase()
-    if (lower.includes('license') || lower.includes('limit') || lower.includes('seats')) {
-      return 'License limit reached for your organization.'
-    }
-    if (lower.includes('already exists') && lower.includes('email')) {
-      return 'A user with this email already exists. Use a different email address.'
-    }
-    if (lower.includes('invitation') && (lower.includes('exists') || lower.includes('duplicate') || lower.includes('unique'))) {
-      return 'An invitation for this email already exists in your organization.'
-    }
-    if (lower.includes('duplicate') && lower.includes('organization')) {
-      return 'An invitation for this email already exists in your organization.'
-    }
-    return message
-  }
 
   function buildInviteUrl(token: string) {
     const path = `${basePath}/waiting-for-invite?token=${encodeURIComponent(token)}`
