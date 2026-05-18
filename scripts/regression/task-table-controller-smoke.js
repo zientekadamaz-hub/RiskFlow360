@@ -14,6 +14,8 @@ assert.match(hookSource, /getSettingsTableColumnWidths<TaskColumnKey>/, 'Task co
 assert.match(hookSource, /columnSortValue\(left, sortState\.column\)/, 'Task sorting must remain based on shared column sort values.')
 
 assert.match(pageSource, /useTaskTableController\(\{ openProjects: summary\.openProjects, rows \}\)/, 'Task page must use the table controller.')
+assert.match(pageSource, /settingsTableScrollerStyle/, 'Task page table viewport must use the shared table scroller style.')
+assert.match(pageSource, /minWidth: TASK_TABLE_MIN_WIDTH/, 'Task page table must keep a stable minimum width for horizontal scrolling.')
 assert.doesNotMatch(pageSource, /const filterOptions = useMemo/, 'Task page should not build filter options inline.')
 assert.doesNotMatch(pageSource, /const displayedRows = useMemo/, 'Task page should not filter and sort rows inline.')
 assert.doesNotMatch(pageSource, /const columnWidths = useMemo/, 'Task page should not calculate column widths inline.')

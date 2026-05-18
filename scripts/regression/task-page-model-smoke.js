@@ -10,6 +10,7 @@ const modelSource = fs.readFileSync(path.join(root, 'src', 'features', 'tasks', 
 
 assert.match(modelSource, /export type TaskSummary/, 'Task page model must export summary type.')
 assert.match(modelSource, /export const TASK_COLUMN_BASE_WIDTHS/, 'Task page model must export table widths.')
+assert.match(modelSource, /export const TASK_TABLE_MIN_WIDTH/, 'Task page model must export a stable minimum table width.')
 assert.match(modelSource, /export const TASK_STATUS_OPTIONS/, 'Task page model must export status options.')
 assert.match(modelSource, /export function calculateTaskSummary/, 'Task page model must export summary calculator.')
 assert.match(modelSource, /export function normalizeStatus/, 'Task page model must export status normalizer.')
@@ -54,11 +55,14 @@ const model = loadTypeScriptModule(['src', 'features', 'tasks', 'task-page-model
   '@/lib/error-utils': {
     errorText: (error, fallback) => (error instanceof Error ? error.message : fallback),
   },
+  './task-status-utils': loadTypeScriptModule(['src', 'features', 'tasks', 'task-status-utils.ts']),
 })
 
 assert.equal(model.DEFAULT_HIDDEN_COLUMNS.process, false)
 assert.equal(model.TASK_COLUMN_BASE_WIDTHS.process, 180)
+assert.equal(model.TASK_TABLE_MIN_WIDTH, 1044)
 assert.equal(model.normalizeStatus('done'), 'CLOSED')
+assert.equal(model.normalizeStatus('cancelled'), 'CANCELED')
 assert.equal(model.normalizeStatus('in_progress'), 'IN PROGRESS')
 assert.equal(model.formatNumber(144.4), '144')
 assert.equal(model.formatDate(null), '-')

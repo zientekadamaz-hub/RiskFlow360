@@ -8,6 +8,7 @@ import {
   getSettingsSummaryGridMaxWidth,
   settingsFrameStyle,
   settingsRiskSummaryTileStyle,
+  settingsTableScrollerStyle,
   settingsTableWrapStyle,
 } from '@/components/rf-ui'
 import {
@@ -16,7 +17,6 @@ import {
   projectsSummaryValueStyle,
   projectsTableShellStyle,
   projectsTableStyle,
-  projectsTableViewportScrollerStyle,
 } from '@/features/projects/view-styles'
 import {
   TaskResponsibleCell,
@@ -31,6 +31,7 @@ import {
   taskCenteredCellStyle,
   taskNumericCellStyle,
   taskRpnValueStyle,
+  TASK_TABLE_MIN_WIDTH,
   taskTableCellStyle,
   type TaskSummary,
 } from '@/features/tasks/task-page-model'
@@ -41,11 +42,11 @@ function TaskSummaryTiles({ summary }: { summary: TaskSummary }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
       <SettingsSummaryGrid columns={5} maxWidth={getSettingsSummaryGridMaxWidth(5)}>
-      <SettingsSummaryTile label="Recommended actions" value={summary.total} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
-      <SettingsSummaryTile label="Open actions" value={summary.openActions} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
-      <SettingsSummaryTile label="In progress" value={summary.inProgress} style={settingsRiskSummaryTileStyle('yellow')} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
-      <SettingsSummaryTile label="Overdue" value={summary.overdue} style={settingsRiskSummaryTileStyle('red')} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
-      <SettingsSummaryTile label="Closed" value={summary.closed} style={settingsRiskSummaryTileStyle('green')} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
+        <SettingsSummaryTile label="Recommended actions" value={summary.total} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
+        <SettingsSummaryTile label="Open actions" value={summary.openActions} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
+        <SettingsSummaryTile label="In progress" value={summary.inProgress} style={settingsRiskSummaryTileStyle('yellow')} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
+        <SettingsSummaryTile label="Overdue" value={summary.overdue} style={settingsRiskSummaryTileStyle('red')} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
+        <SettingsSummaryTile label="Closed" value={summary.closed} style={settingsRiskSummaryTileStyle('green')} valueStyle={{ ...projectsSummaryValueStyle, color: '#f8fafc' }} />
       </SettingsSummaryGrid>
     </div>
   )
@@ -108,13 +109,13 @@ export default function TaskManagementPage() {
           >
             <div
               style={{
-                ...projectsTableViewportScrollerStyle,
+                ...settingsTableScrollerStyle,
                 maxHeight: 'calc(100vh - 206px)',
-                overflowX: 'clip',
+                overflowY: 'auto',
                 width: '100%',
               }}
             >
-              <table style={{ ...projectsTableStyle, maxWidth: '100%', minWidth: 0, width: '100%' }}>
+              <table style={{ ...projectsTableStyle, minWidth: TASK_TABLE_MIN_WIDTH, width: '100%' }}>
                 <colgroup>
                   <col style={{ width: columnWidths.process }} />
                   <col style={{ width: columnWidths.site }} />

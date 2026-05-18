@@ -8,6 +8,7 @@ import {
 } from '@/features/projects/projects-service'
 import { getRiskColorFor, normalizeProjectText } from '@/features/projects/utils'
 import type { RiskColor } from '@/features/projects/types'
+import { isTerminalTaskStatus, normalizeTaskStatus } from './task-status-utils'
 
 export type TaskActionRow = {
   cause: string
@@ -110,6 +111,13 @@ function rowCreatedAtTime(row: PfmeaTaskRow) {
   return Number.isFinite(time) ? time : 0
 }
 
+function getTaskProjectRevisionId(project: {
+  current_draft_revision_id?: string | null
+  current_open_revision_id?: string | null
+}) {
+  return normalizeProjectText(project.current_open_revision_id) || normalizeProjectText(project.current_draft_revision_id)
+}
+
 function sameGroup(left: unknown, right: unknown) {
   const normalizedLeft = normalizeGroupId(left)
   const normalizedRight = normalizeGroupId(right)
@@ -179,7 +187,7 @@ export async function fetchTaskActions(supabase: SupabaseClient, userId: string)
     openProjects
       .map((project) => {
         const siteDept = project.site_department_id ? siteDeptData.siteDeptMap[project.site_department_id] : undefined
-        const revisionId = normalizeProjectText(project.current_draft_revision_id) || normalizeProjectText(project.current_open_revision_id)
+        const revisionId = getTaskProjectRevisionId(project)
         return [
           revisionId,
           {
@@ -268,7 +276,7 @@ export async function fetchTaskActions(supabase: SupabaseClient, userId: string)
         rpnAfterColor,
         rpnColor,
         site: projectMeta?.site ?? '-',
-        status: normalizeProjectText(row.action_status) || 'OPEN',
+        status: normalizeTaskStatus(row.action_status),
         targetDate: row.target_date ?? null,
       }
     })
@@ -280,15 +288,15 @@ export async function fetchTaskActions(supabase: SupabaseClient, userId: string)
     if (!row.targetDate) return false
     const parsed = new Date(row.targetDate)
     if (Number.isNaN(parsed.getTime())) return false
-    return parsed < today && !['closed', 'complete', 'completed', 'done'].includes(row.status.toLowerCase())
+    return parsed < today && !isTerminalTaskStatus(row.status)
   }).length
 
   return {
     rows,
     summary: {
-      closed: rows.filter((row) => row.status.toLowerCase() === 'closed').length,
-      inProgress: rows.filter((row) => row.status.toLowerCase() === 'in progress').length,
-      openActions: rows.filter((row) => row.status.toLowerCase() === 'open').length,
+      closed: rows.filter((row) => normalizeTaskStatus(row.status) === 'CLOSED').length,
+      inProgress: rows.filter((row) => normalizeTaskStatus(row.status) === 'IN PROGRESS').length,
+      openActions: rows.filter((row) => normalizeTaskStatus(row.status) === 'OPEN').length,
       openProjects: openProjects.length,
       overdue,
       total: rows.length,

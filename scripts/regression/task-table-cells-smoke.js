@@ -11,6 +11,9 @@ assert.match(cellsSource, /export function TaskTargetDateCell/, 'Task table cell
 assert.match(cellsSource, /export function TaskStatusCell/, 'Task table cells must export status cell.')
 assert.match(cellsSource, /onBlur=\{commit\}/, 'Responsible cell must still commit on blur.')
 assert.match(cellsSource, /onKeyDown=\{\(event\) =>/, 'Responsible cell must still handle keyboard commit/cancel.')
+assert.match(cellsSource, /&lt;/, 'Target date calendar must render a readable previous-month control.')
+assert.match(cellsSource, /&gt;/, 'Target date calendar must render a readable next-month control.')
+assert.doesNotMatch(cellsSource, /â€/, 'Task table cells must not contain mojibake calendar controls.')
 
 assert.match(pageSource, /from '@\/features\/tasks\/task-table-cells'/, 'Task page must import shared task table cells.')
 assert.match(pageSource, /TaskResponsibleCell/, 'Task page must use responsible cell from shared cells.')

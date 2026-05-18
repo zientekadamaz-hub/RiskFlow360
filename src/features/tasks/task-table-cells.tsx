@@ -208,7 +208,7 @@ export function TaskTargetDateCell({
                     fontSize: 14,
                   }}
                 >
-                  â€ą
+                  &lt;
                 </button>
                 <div style={{ fontSize: 13, color: taskCalendarAccent, fontWeight: 700 }}>
                   {taskCalendarMonths[viewMonth.month]} {viewMonth.year}
@@ -228,7 +228,7 @@ export function TaskTargetDateCell({
                     fontSize: 14,
                   }}
                 >
-                  â€ş
+                  &gt;
                 </button>
               </div>
 

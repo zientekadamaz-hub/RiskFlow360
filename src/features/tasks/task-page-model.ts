@@ -8,6 +8,7 @@ import {
 } from '@/features/projects/view-styles'
 import { errorText } from '@/lib/error-utils'
 import type { TaskActionRow } from './task-service'
+import { isTerminalTaskStatus, normalizeTaskStatus } from './task-status-utils'
 
 export type TaskSummary = {
   closed: number
@@ -84,6 +85,7 @@ export const TASK_COLUMN_BASE_WIDTHS: Record<TaskColumnKey | 'actions', number> 
   rpnAfter: 80,
   actions: 0,
 }
+export const TASK_TABLE_MIN_WIDTH = Object.values(TASK_COLUMN_BASE_WIDTHS).reduce((sum, width) => sum + width, 0)
 
 export const TASK_STATUS_OPTIONS = [
   { label: 'OPEN', value: 'OPEN' },
@@ -280,17 +282,12 @@ export function getTaskErrorMessage(error: unknown, fallback: string) {
 }
 
 export function normalizeStatus(value: string) {
-  const normalized = value.trim().toUpperCase()
-  if (!normalized) return 'OPEN'
-  if (['DONE', 'COMPLETE', 'COMPLETED', 'CLOSED'].includes(normalized)) return 'CLOSED'
-  if (['CANCELED', 'CANCELLED'].includes(normalized)) return 'CANCELED'
-  if (['IN_PROGRESS', 'IN PROGRESS', 'ONGOING'].includes(normalized)) return 'IN PROGRESS'
-  return normalized
+  return normalizeTaskStatus(value)
 }
 
 export function isTaskOverdue(row: Pick<TaskActionRow, 'status' | 'targetDate'>) {
   if (!row.targetDate) return false
-  if (['CLOSED', 'CANCELED'].includes(normalizeStatus(row.status))) return false
+  if (isTerminalTaskStatus(row.status)) return false
 
   const parsed = new Date(row.targetDate)
   if (Number.isNaN(parsed.getTime())) return false
