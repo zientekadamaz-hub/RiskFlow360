@@ -1,47 +1,47 @@
 import React, { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
+import {
+  settingsTableCellStyle,
+  settingsTableHeaderStyle,
+} from '@/components/rf-ui'
 import { normalizeClassValue } from './pcp-utils'
 import {
   CLASS_OPTION_DETAILS,
   PCP_CLASS_OPTIONS,
   SURFACE_BORDER,
-  SURFACE_PANEL_BG,
   SURFACE_RADIUS,
   SURFACE_TEXT,
   anchoredPopupStyle,
 } from './pcp-page-model'
 
-export function SummaryCard(props: {
-  title: string
-  value: number
-  displayValue?: React.ReactNode
-  bg: string
-  bd: string
-  fg: string
-  style?: React.CSSProperties
-  valueStyle?: React.CSSProperties
-}) {
-  return (
-    <div style={{ ...props.style, border: `1px solid ${props.bd}`, background: props.bg }}>
-      <div style={{ color: props.fg, fontSize: 12, marginBottom: 8 }}>{props.title}</div>
-      <div style={{ color: props.fg, ...(props.valueStyle ?? { fontSize: 24, fontWeight: 800, lineHeight: 1 }) }}>
-        {props.displayValue ?? props.value}
-      </div>
-    </div>
-  )
+const pcpTableCellStyle: React.CSSProperties = {
+  ...settingsTableCellStyle,
+  color: '#e1e5ec',
+  fontSize: 14,
+  fontWeight: 600,
+  lineHeight: 1.28,
+  minHeight: 46,
+  overflowWrap: 'anywhere',
+  position: 'relative',
+  textAlign: 'center',
+  verticalAlign: 'middle',
+  whiteSpace: 'normal',
+}
+
+const pcpSingleLineCellStyle: React.CSSProperties = {
+  ...pcpTableCellStyle,
+  height: 45,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
 }
 
 export function Th(props: { w: string; children?: React.ReactNode }) {
   return (
     <th
       style={{
-        border: '1px solid rgba(255,255,255,0.14)',
-        background: SURFACE_PANEL_BG,
-        color: SURFACE_TEXT,
+        ...settingsTableHeaderStyle,
         textAlign: 'center',
-        fontSize: 12,
-        padding: '8px 10px',
-        fontWeight: 800,
         width: props.w,
       }}
     >
@@ -52,7 +52,7 @@ export function Th(props: { w: string; children?: React.ReactNode }) {
 
 export function TdRead(props: { value: string; className?: string; style?: React.CSSProperties }) {
   return (
-    <td className={props.className ?? 'pfmeaTd singleLine'} style={props.style}>
+    <td className={props.className ?? 'pcpTd singleLine'} style={{ ...pcpSingleLineCellStyle, ...props.style }}>
       {props.value ?? ''}
     </td>
   )
@@ -70,16 +70,17 @@ export function TdText(props: {
   style?: React.CSSProperties
 }) {
   const displayValue = props.value ?? ''
-  const cellClassName = `pfmeaTd ${props.className ?? ''} ${props.singleLine ? 'singleLine' : ''}`.trim()
-  const singleLineCellStyle: React.CSSProperties | undefined = props.singleLine
+  const cellClassName = `pcpTd ${props.className ?? ''} ${props.singleLine ? 'singleLine' : ''}`.trim()
+  const cellStyle: React.CSSProperties = props.singleLine
     ? {
+        ...pcpSingleLineCellStyle,
         ...props.style,
         height: 45,
         paddingTop: 0,
         paddingBottom: 0,
         verticalAlign: 'middle',
       }
-    : props.style
+    : { ...pcpTableCellStyle, ...props.style }
   const singleLineEditorStyle: React.CSSProperties = {
     display: 'block',
     width: '100%',
@@ -91,7 +92,7 @@ export function TdText(props: {
 
   if (props.disabled) {
     return (
-      <td className={cellClassName} style={singleLineCellStyle}>
+      <td className={cellClassName} style={cellStyle}>
         {displayValue || ''}
       </td>
     )
@@ -99,14 +100,14 @@ export function TdText(props: {
 
   if (!props.editing) {
     return (
-      <td className={`${cellClassName} editable`.trim()} style={singleLineCellStyle} onClick={props.onStart}>
+      <td className={`${cellClassName} editable`.trim()} style={cellStyle} onClick={props.onStart}>
         {displayValue || ''}
       </td>
     )
   }
 
   return (
-    <td className={`${cellClassName} editable`.trim()} style={singleLineCellStyle}>
+    <td className={`${cellClassName} editable`.trim()} style={cellStyle}>
       <PcpTextEditor
         key={`${props.singleLine ? 'single' : 'multi'}:${displayValue}`}
         initialValue={displayValue}
@@ -207,8 +208,8 @@ export function TdClassPopup(props: {
     return (
       <td
         ref={setAnchorRef}
-        className="pfmeaTd center gray singleLine"
-        style={{ color: '#d9a86c' }}
+        className="pcpTd center singleLine"
+        style={{ ...pcpSingleLineCellStyle, color: '#d9a86c' }}
         onMouseEnter={() => (details ? setHoverOpen(true) : null)}
         onMouseLeave={() => setHoverOpen(false)}
       >
@@ -222,8 +223,8 @@ export function TdClassPopup(props: {
     return (
       <td
         ref={setAnchorRef}
-        className="pfmeaTd editable center gray singleLine"
-        style={{ color: '#d9a86c' }}
+        className="pcpTd editable center singleLine"
+        style={{ ...pcpSingleLineCellStyle, color: '#d9a86c' }}
         onClick={props.onStart}
         onMouseEnter={() => (details ? setHoverOpen(true) : null)}
         onMouseLeave={() => setHoverOpen(false)}
@@ -260,12 +261,12 @@ export function TdSelectPopup(props: {
   className?: string
   textColor?: string
 }) {
-  const cellClassName = `pfmeaTd center singleLine ${props.className ?? ''}`.trim()
+  const cellClassName = `pcpTd center singleLine ${props.className ?? ''}`.trim()
   const textColor = props.textColor ?? SURFACE_TEXT
 
   if (props.disabled) {
     return (
-      <td className={cellClassName} style={{ color: textColor }}>
+      <td className={cellClassName} style={{ ...pcpSingleLineCellStyle, color: textColor }}>
         {props.value ?? ''}
       </td>
     )
@@ -273,14 +274,14 @@ export function TdSelectPopup(props: {
 
   if (!props.editing) {
     return (
-      <td className={`${cellClassName} editable`.trim()} style={{ color: textColor }} onClick={props.onStart}>
+      <td className={`${cellClassName} editable`.trim()} style={{ ...pcpSingleLineCellStyle, color: textColor }} onClick={props.onStart}>
         {props.value ?? ''}
       </td>
     )
   }
 
   return (
-    <td className={`${cellClassName} editable`.trim()} style={{ position: 'relative', color: textColor }}>
+    <td className={`${cellClassName} editable`.trim()} style={{ ...pcpSingleLineCellStyle, position: 'relative', color: textColor }}>
       <button type="button" style={{ width: '100%', border: 0, background: 'transparent', fontWeight: 700, color: textColor }}>
         {props.value ?? '-'}
       </button>

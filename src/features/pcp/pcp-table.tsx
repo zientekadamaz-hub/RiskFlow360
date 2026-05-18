@@ -1,8 +1,12 @@
 import React from 'react'
+import {
+  settingsTableScrollerStyle,
+  settingsTableStyle,
+  settingsTableWrapStyle,
+} from '@/components/rf-ui'
 
 import { asInt1to10 } from './pcp-utils'
 import type { PcpColumnId } from './pcp-page-model'
-import { SURFACE_RADIUS } from './pcp-page-model'
 import type { PcpRow } from './pcp-service'
 import { TdClassPopup, TdRead, TdText, Th } from './pcp-table-cells'
 
@@ -40,9 +44,16 @@ export function PcpTable({
   widthOf,
 }: PcpTableProps) {
   return (
-    <div style={{ ...cardStyle, padding: 0, borderRadius: SURFACE_RADIUS, overflow: 'visible' }}>
-      <div className="pfmeaTable" style={{ maxHeight: 'calc(100vh - 280px)', overflowX: 'auto', overflowY: 'visible' }}>
-        <table style={{ width: `${visibleTableWidth}px`, minWidth: `${visibleTableWidth}px`, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 16, fontFamily: 'Calibri, Arial, sans-serif' }}>
+    <div style={{ ...cardStyle, ...settingsTableWrapStyle, padding: 0, overflow: 'hidden' }}>
+      <div
+        className="pcpTable"
+        style={{
+          ...settingsTableScrollerStyle,
+          maxHeight: 'calc(100vh - 280px)',
+          overflowY: 'auto',
+        }}
+      >
+        <table style={{ ...settingsTableStyle, minWidth: `${visibleTableWidth}px` }}>
           <colgroup>{visibleColumnDefs.map((c) => <col key={c.id} style={{ width: widthOf(c.id) }} />)}</colgroup>
           <thead>
             <tr>
@@ -71,16 +82,16 @@ export function PcpTable({
               const rpnHighlighted = rpnValue != null && rpnValue > pcpYellowMax
 
               return (
-                <tr key={r.id} className="pfmeaRow">
-                  {isColumnVisible('id') ? <TdRead value={String(r.operations?.operation_number ?? '-')} className="pfmeaTd center gray singleLine" /> : null}
-                  {isColumnVisible('station') ? <TdRead value={r.operations?.machine ?? ''} className="pfmeaTd gray singleLine" /> : null}
-                  {isColumnVisible('operation') ? <TdRead value={r.operations?.operation ?? ''} className="pfmeaTd gray singleLine" /> : null}
-                  {isColumnVisible('process_step') ? <TdRead value={r.operations?.name ?? ''} className="pfmeaTd gray singleLine" /> : null}
+                <tr key={r.id} className="pcpRow">
+                  {isColumnVisible('id') ? <TdRead value={String(r.operations?.operation_number ?? '-')} className="pcpTd center singleLine" /> : null}
+                  {isColumnVisible('station') ? <TdRead value={r.operations?.machine ?? ''} className="pcpTd singleLine" /> : null}
+                  {isColumnVisible('operation') ? <TdRead value={r.operations?.operation ?? ''} className="pcpTd singleLine" /> : null}
+                  {isColumnVisible('process_step') ? <TdRead value={r.operations?.name ?? ''} className="pcpTd singleLine" /> : null}
                   {isColumnVisible('failure_mode') ? <TdText value={r.failure_mode} editing={edit?.rowId === r.id && edit?.col === 'failure_mode'} onStart={() => setEdit({ rowId: r.id, col: 'failure_mode' })} onCommit={(v) => void updateRow(r, { failure_mode: v })} onCancel={() => setEdit(null)} disabled={readOnly} className="gray" /> : null}
                   {isColumnVisible('characteristic') ? <TdText value={r.characteristic} editing={edit?.rowId === r.id && edit?.col === 'characteristic'} onStart={() => setEdit({ rowId: r.id, col: 'characteristic' })} onCommit={(v) => void updateRow(r, { characteristic: v })} onCancel={() => setEdit(null)} disabled={readOnly} className="gray" /> : null}
                   {isColumnVisible('class') ? <TdClassPopup value={r.class} editing={edit?.rowId === r.id && edit?.col === 'class'} onStart={() => setEdit({ rowId: r.id, col: 'class' })} onCommit={(v) => void updateRow(r, { class: v || null })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
-                  {isColumnVisible('severity') ? <TdRead value={r.severity == null ? '' : String(r.severity)} className="pfmeaTd center gray singleLine" style={severityHighlighted ? highlightedMetricStyle : undefined} /> : null}
-                  {isColumnVisible('rpn') ? <TdRead value={r.rpn == null ? '' : String(r.rpn)} className="pfmeaTd center gray singleLine" style={rpnHighlighted ? highlightedMetricStyle : undefined} /> : null}
+                  {isColumnVisible('severity') ? <TdRead value={r.severity == null ? '' : String(r.severity)} className="pcpTd center singleLine" style={severityHighlighted ? highlightedMetricStyle : undefined} /> : null}
+                  {isColumnVisible('rpn') ? <TdRead value={r.rpn == null ? '' : String(r.rpn)} className="pcpTd center singleLine" style={rpnHighlighted ? highlightedMetricStyle : undefined} /> : null}
                   {isColumnVisible('current_prevention') ? <TdText value={r.current_prevention} editing={edit?.rowId === r.id && edit?.col === 'current_prevention'} onStart={() => setEdit({ rowId: r.id, col: 'current_prevention' })} onCommit={(v) => void updateRow(r, { current_prevention: v })} onCancel={() => setEdit(null)} disabled={readOnly} className="gray" /> : null}
                   {isColumnVisible('current_detection') ? <TdText value={r.current_detection} editing={edit?.rowId === r.id && edit?.col === 'current_detection'} onStart={() => setEdit({ rowId: r.id, col: 'current_detection' })} onCommit={(v) => void updateRow(r, { current_detection: v })} onCancel={() => setEdit(null)} disabled={readOnly} className="gray" /> : null}
                   {isColumnVisible('control_method') ? <TdText value={r.control_method} editing={edit?.rowId === r.id && edit?.col === 'control_method'} onStart={() => setEdit({ rowId: r.id, col: 'control_method' })} onCommit={(v) => void updateRow(r, { control_method: v })} onCancel={() => setEdit(null)} disabled={readOnly} /> : null}
