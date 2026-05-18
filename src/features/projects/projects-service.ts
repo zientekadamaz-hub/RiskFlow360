@@ -407,7 +407,7 @@ export async function fetchProjectPfmeaStats(
   for (const project of rawProjects) {
     const projectId = normalizeProjectText(project.id)
     if (!projectId) continue
-    const revisionId = normalizeProjectText(project.current_draft_revision_id) || normalizeProjectText(project.current_open_revision_id)
+    const revisionId = normalizeProjectText(project.current_open_revision_id) || normalizeProjectText(project.current_draft_revision_id)
     if (revisionId) {
       revisionByProject[projectId] = revisionId
       projectByRevision[revisionId] = projectId

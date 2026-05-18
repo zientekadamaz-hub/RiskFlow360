@@ -46,6 +46,12 @@ assert.match(
 
 assert.match(
   source,
+  /const revisionId = normalizeProjectText\(project\.current_open_revision_id\) \|\| normalizeProjectText\(project\.current_draft_revision_id\)/,
+  'Projects table PFMEA stats must prefer the current open revision so empty project-edit drafts do not hide risk values.'
+)
+
+assert.match(
+  source,
   /\.in\('revision_id', revisionIds\)/,
   'Projects table PFMEA stats must query current project revisions directly.'
 )
