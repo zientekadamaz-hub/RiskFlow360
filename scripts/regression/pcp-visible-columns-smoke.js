@@ -12,6 +12,7 @@ assert.match(hookSource, /PCP_VISIBLE_COLUMNS_KEY_PREFIX/, 'PCP visible columns 
 assert.match(hookSource, /window\.localStorage\.getItem/, 'PCP visible columns hook must load localStorage state.')
 assert.match(hookSource, /window\.localStorage\.setItem/, 'PCP visible columns hook must persist localStorage state.')
 assert.match(hookSource, /visibleColumnDefs/, 'PCP visible columns hook must expose visible column definitions.')
+assert.match(hookSource, /settingsHiddenTableColumnWidthPx/, 'PCP hidden columns must retain a narrow restore column width.')
 assert.match(hookSource, /widthOf/, 'PCP visible columns hook must expose width helper.')
 
 assert.match(pageSource, /usePcpVisibleColumns\(userId\)/, 'PCP page must use visible columns hook.')

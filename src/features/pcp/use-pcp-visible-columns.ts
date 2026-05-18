@@ -7,6 +7,7 @@ import {
   PCP_VISIBLE_COLUMNS_KEY_PREFIX,
   type PcpColumnId,
 } from './pcp-page-model'
+import { settingsHiddenTableColumnWidthPx } from '@/components/rf-ui'
 
 export function usePcpVisibleColumns(userId: string | null) {
   const [columnFiltersOpen, setColumnFiltersOpen] = useState(false)
@@ -39,9 +40,19 @@ export function usePcpVisibleColumns(userId: string | null) {
     })
   }, [])
 
-  const visibleColumnDefs = useMemo(() => PCP_COLUMNS.filter((col) => isColumnVisible(col.id)), [isColumnVisible])
-  const visibleTableWidth = useMemo(() => visibleColumnDefs.reduce((acc, column) => acc + column.width, 0), [visibleColumnDefs])
-  const widthOf = useCallback((id: PcpColumnId) => `${PCP_COLUMNS_BY_ID[id]?.width ?? 100}px`, [])
+  const visibleColumnDefs = useMemo(() => PCP_COLUMNS, [])
+  const visibleTableWidth = useMemo(
+    () =>
+      PCP_COLUMNS.reduce(
+        (acc, column) => acc + (isColumnVisible(column.id) ? column.width : settingsHiddenTableColumnWidthPx),
+        0
+      ),
+    [isColumnVisible]
+  )
+  const widthOf = useCallback(
+    (id: PcpColumnId) => `${isColumnVisible(id) ? PCP_COLUMNS_BY_ID[id]?.width ?? 100 : settingsHiddenTableColumnWidthPx}px`,
+    [isColumnVisible]
+  )
 
   useEffect(() => {
     if (!userId || typeof window === 'undefined') return

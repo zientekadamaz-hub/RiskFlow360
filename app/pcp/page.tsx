@@ -39,13 +39,11 @@ import { usePcpSaveRevision } from '@/features/pcp/use-pcp-save-revision'
 import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
 import {
   SettingsPageShell,
-  SettingsSummaryGrid,
-  SettingsSummaryTile,
   settingsCardStyle,
   settingsFrameStyle,
   settingsProcessAccent,
-  settingsStatValueStyle,
 } from '@/components/rf-ui'
+import { PCP_TOP_SUMMARY_MAX_WIDTH, PcpTopSummary } from '@/features/pcp/pcp-top-summary'
 import {
   backfillPcpRowsFromPfmea,
   ensurePcpProcessDraft,
@@ -645,20 +643,6 @@ function PcpPageContent() {
 
   const card: React.CSSProperties = { ...settingsCardStyle, color: SURFACE_TEXT }
   const frame: React.CSSProperties = settingsFrameStyle
-  const summaryValue: React.CSSProperties = { ...settingsStatValueStyle, marginTop: 0, lineHeight: 1 }
-  const processSummaryValue: React.CSSProperties = {
-    ...summaryValue,
-    alignItems: 'center',
-    display: 'flex',
-    fontSize: 22,
-    justifyContent: 'center',
-    lineHeight: 1.08,
-    minHeight: 34,
-    overflow: 'hidden',
-    overflowWrap: 'anywhere',
-    textAlign: 'center',
-    whiteSpace: 'normal',
-  }
 
   if (moduleAccessState !== 'allowed') {
     return null
@@ -670,12 +654,13 @@ function PcpPageContent() {
       titleStyle={{ color: settingsProcessAccent }}
       subtitle="Manage the Production Control Plan for the selected process and publish PCP revisions."
       summary={
-        <SettingsSummaryGrid columns={3} maxWidth={390}>
-          <SettingsSummaryTile label="Process" value={project?.name ?? '-'} valueStyle={processSummaryValue} />
-          <SettingsSummaryTile label="Revision" value={(workingRevisionLabel ?? '-').split('.').at(-1) ?? '-'} valueStyle={summaryValue} />
-          <SettingsSummaryTile label="PCP rows" value={rowsSorted.length} valueStyle={summaryValue} />
-        </SettingsSummaryGrid>
+        <PcpTopSummary
+          processName={project?.name}
+          revisionLabel={workingRevisionLabel}
+          rowCount={rowsSorted.length}
+        />
       }
+      summaryMaxWidth={PCP_TOP_SUMMARY_MAX_WIDTH}
     >
       <style jsx global>{`
         .pcpTable ::selection,
@@ -806,6 +791,7 @@ function PcpPageContent() {
         readOnly={readOnly}
         rows={rowsSorted}
         setEdit={setEdit}
+        toggleColumnVisibility={toggleColumnVisibility}
         updateRow={updateRow}
         visibleColumnDefs={visibleColumnDefs}
         visibleTableWidth={visibleTableWidth}
