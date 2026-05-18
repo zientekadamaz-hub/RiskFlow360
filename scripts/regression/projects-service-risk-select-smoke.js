@@ -38,4 +38,22 @@ assert.match(
 const selectUses = source.match(/\.select\(PROJECTS_PFMEA_RISK_SELECT\)/g) ?? []
 assert.equal(selectUses.length, 2, 'Both Projects PFMEA stats queries must use the shared risk select.')
 
+assert.match(
+  source,
+  /const projectByRevision: Record<string, string> = \{\}/,
+  'Projects table PFMEA stats must map rows back to projects through current revision ids.'
+)
+
+assert.match(
+  source,
+  /\.in\('revision_id', revisionIds\)/,
+  'Projects table PFMEA stats must query current project revisions directly.'
+)
+
+assert.doesNotMatch(
+  source,
+  /const projectId = normalizeProjectText\(operation\?\.project_id\)/,
+  'Projects table PFMEA stats must not depend on nested operation project ids for aggregation.'
+)
+
 console.log('projects service risk select smoke passed')

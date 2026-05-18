@@ -403,17 +403,26 @@ export async function fetchProjectPfmeaStats(
   if (!projectIds.length) return {}
 
   const revisionByProject: Record<string, string> = {}
+  const projectByRevision: Record<string, string> = {}
   for (const project of rawProjects) {
     const projectId = normalizeProjectText(project.id)
     if (!projectId) continue
     const revisionId = normalizeProjectText(project.current_draft_revision_id) || normalizeProjectText(project.current_open_revision_id)
-    if (revisionId) revisionByProject[projectId] = revisionId
+    if (revisionId) {
+      revisionByProject[projectId] = revisionId
+      projectByRevision[revisionId] = projectId
+    }
+  }
+
+  const revisionIds = Array.from(new Set(Object.values(revisionByProject).filter(Boolean)))
+  if (!revisionIds.length) {
+    return Object.fromEntries(projectIds.map((projectId) => [projectId, { avgRpn: null, riskCount: 0 }]))
   }
 
   const { data, error } = await supabase
     .from('pfmea_rows')
     .select(PROJECTS_PFMEA_RISK_SELECT)
-    .in('operations.project_id', projectIds)
+    .in('revision_id', revisionIds)
     .eq('operations.active', true)
 
   if (error) throw error
@@ -429,10 +438,8 @@ export async function fetchProjectPfmeaStats(
 
   for (const risk of collectPfmeaCurrentOpenRisks((data ?? []) as PfmeaStatsRow[])) {
     const row = risk.row as PfmeaStatsRow
-    const operationRelation = row.operations
-    const operation = Array.isArray(operationRelation) ? operationRelation[0] : operationRelation
-    const projectId = normalizeProjectText(operation?.project_id)
     const revisionId = normalizeProjectText(row.revision_id)
+    const projectId = revisionId ? projectByRevision[revisionId] : ''
     if (!projectId || !revisionId) continue
 
     const byRevision = (aggregateByProjectRevision[projectId] ??= {})
