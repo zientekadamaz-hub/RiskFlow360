@@ -14,7 +14,7 @@ import {
   isPlaceholderPcpRowId,
   normalizeClassValue,
   normalizeText,
-  uniqueSelectedPfmeaPcpSeedRows,
+  uniqueSelectedPfmeaPcpSeedRowsWithRiskColor,
 } from '@/features/pcp/pcp-utils'
 import {
   EDIT_LOCK_MS,
@@ -46,11 +46,12 @@ import {
   fetchPcpOperations,
   fetchPcpProjectView,
   fetchPcpRevisionHistory,
+  fetchPcpRiskMatrixContext,
   fetchPcpRowsForRevision,
-  fetchPcpSelectionThreshold,
   fetchPcpUserProjectRole,
   fetchPfmeaPcpSeedRows,
   findEquivalentPcpRowInRevision,
+  getPcpSeedRiskColor,
   hydratePcpDraftRows,
   insertPcpRow,
   touchPcpEditSession,
@@ -158,9 +159,9 @@ function PcpPageContent() {
     setEditSession(await fetchPcpEditSession(supabase, projectId))
   }, [projectId])
 
-  const loadPcpSelectionThreshold = useCallback(async () => {
-    if (!projectId) return 168
-    return fetchPcpSelectionThreshold(supabase, projectId)
+  const loadPcpRiskMatrixContext = useCallback(async () => {
+    if (!projectId) return null
+    return fetchPcpRiskMatrixContext(supabase, projectId)
   }, [projectId])
 
   const ensureDraftRowsHydrated = useCallback(async (draftRevisionId: string | null | undefined, sourceRevisionId: string | null | undefined) => {
@@ -208,8 +209,10 @@ function PcpPageContent() {
     setErr('')
     try {
       const pv = await loadProjectView()
-      const pcpYellowMax = await loadPcpSelectionThreshold()
+      const pcpRiskContext = await loadPcpRiskMatrixContext()
+      const pcpYellowMax = pcpRiskContext?.thresholds.yellowMax ?? 168
       setPcpYellowMax(pcpYellowMax)
+      const getSeedRiskColor = (seed: PfmeaPcpSeedRow) => pcpRiskContext ? getPcpSeedRiskColor(seed, pcpRiskContext) : null
       const operations = await fetchPcpOperations(supabase, projectId)
 
       const openRevId = pv.current_open_revision_id ?? null
@@ -232,7 +235,7 @@ function PcpPageContent() {
       }
 
       let pfmeaSeedRows = revId ? await loadPfmeaSeeds(revId) : []
-      if (uniqueSelectedPfmeaPcpSeedRows(pfmeaSeedRows, pcpYellowMax).length === 0) {
+      if (uniqueSelectedPfmeaPcpSeedRowsWithRiskColor(pfmeaSeedRows, pcpYellowMax, getSeedRiskColor).length === 0) {
         const fallbackRevisionIds = [
           pv.current_open_revision_id,
           await loadLatestPfmeaRevisionId(),
@@ -240,12 +243,19 @@ function PcpPageContent() {
 
         for (const fallbackRevisionId of fallbackRevisionIds) {
           pfmeaSeedRows = await loadPfmeaSeeds(fallbackRevisionId)
-          if (uniqueSelectedPfmeaPcpSeedRows(pfmeaSeedRows, pcpYellowMax).length > 0) break
+          if (uniqueSelectedPfmeaPcpSeedRowsWithRiskColor(pfmeaSeedRows, pcpYellowMax, getSeedRiskColor).length > 0) break
         }
       }
 
+      const allSeedRowsByOperation = new Map<string, PfmeaPcpSeedRow[]>()
+      for (const row of pfmeaSeedRows) {
+        const items = allSeedRowsByOperation.get(row.operation_id) ?? []
+        items.push(row)
+        allSeedRowsByOperation.set(row.operation_id, items)
+      }
+
       const seedRowsByOperation = new Map<string, PfmeaPcpSeedRow[]>()
-      const seedRowsFiltered = uniqueSelectedPfmeaPcpSeedRows(pfmeaSeedRows, pcpYellowMax)
+      const seedRowsFiltered = uniqueSelectedPfmeaPcpSeedRowsWithRiskColor(pfmeaSeedRows, pcpYellowMax, getSeedRiskColor)
       for (const row of seedRowsFiltered) {
         const items = seedRowsByOperation.get(row.operation_id) ?? []
         items.push(row)
@@ -268,7 +278,9 @@ function PcpPageContent() {
       let sortIndex = 0
       for (const op of operations) {
         const existing = existingByOperation.get(op.id) ?? []
+        const allPfmeaSeedIds = new Set((allSeedRowsByOperation.get(op.id) ?? []).map((seed) => seed.id))
         const pfmeaSeeds = seedRowsByOperation.get(op.id) ?? []
+        const selectedPfmeaSeedIds = new Set(pfmeaSeeds.map((seed) => seed.id))
         const pfmeaSeedById = new Map(pfmeaSeeds.map((seed) => [seed.id, seed] as const))
         const getSeedIndexForExistingRow = (row: PcpRow) => {
           if (row.pfmea_row_id) {
@@ -298,7 +310,11 @@ function PcpPageContent() {
             )
           )
         }
-        const existingSorted = [...existing].sort((a, b) => {
+        const existingSorted = existing.filter((row) => {
+          const linkedPfmeaRowId = normalizeText(row.pfmea_row_id)
+          if (!linkedPfmeaRowId || !allPfmeaSeedIds.has(linkedPfmeaRowId)) return true
+          return selectedPfmeaSeedIds.has(linkedPfmeaRowId)
+        }).sort((a, b) => {
           const aSeedIndex = getSeedIndexForExistingRow(a)
           const bSeedIndex = getSeedIndexForExistingRow(b)
           const aHasSeed = aSeedIndex >= 0
@@ -391,7 +407,7 @@ function PcpPageContent() {
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     }
-  }, [projectId, loadProjectView, loadPcpSelectionThreshold, draftRevisionIdOverride, isEditOwner])
+  }, [projectId, loadProjectView, loadPcpRiskMatrixContext, draftRevisionIdOverride, isEditOwner])
   const loadRevisionHistory = useCallback(async () => {
     if (!projectId) {
       setHistoryEntries([])

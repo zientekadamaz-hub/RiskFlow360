@@ -1,5 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  DEFAULT_RPN_THRESHOLDS,
+  riskCellKey,
+  riskColorForMatrixCell,
+  riskColorFromRpnValue,
+  type SharedRiskColor,
+  type SharedRiskMatrixMode,
+  type SharedRpnThresholds,
+} from '@/lib/risk-engine'
+import {
+  asInt1to10,
   buildPcpRowPayload,
   isEquivalentPcpRow,
   normalizeText,
@@ -74,8 +84,11 @@ export type PfmeaPcpSeedRow = {
   failure_mode: string | null
   class: string | null
   characteristic: string | null
+  detection?: number | string | null
+  occurrence?: number | string | null
   severity: number | string | null
   rpn: number | null
+  rpn_current?: number | null
   current_prevention: string | null
   current_detection: string | null
   created_at?: string | null
@@ -89,12 +102,36 @@ type PcpEditSessionDbRow = {
   last_activity_at: string
 }
 
+type PcpRiskMatrixConfigRow = {
+  id?: number | null
+  mode?: SharedRiskMatrixMode | null
+  organization_id?: string | null
+  project_id?: string | null
+  rpn_green_max?: number | null
+  rpn_orange_max?: number | null
+  rpn_yellow_max?: number | null
+}
+
+type PcpRiskMatrixCellRow = {
+  color?: SharedRiskColor | null
+  do_value?: number | null
+  organization_id?: string | null
+  project_id?: string | null
+  severity?: number | null
+}
+
+export type PcpRiskMatrixContext = {
+  cells: Record<string, SharedRiskColor>
+  mode: SharedRiskMatrixMode
+  thresholds: SharedRpnThresholds
+}
+
 const GLOBAL_PROJECT_ID = '00000000-0000-0000-0000-000000000000'
 
 const PCP_PROJECT_VIEW_SELECT = 'id,name,status,current_open_revision_id,current_draft_revision_id,open_revision_label,draft_revision_label'
 const PCP_ROW_SELECT = 'id,revision_id,operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,sample_size,frequency,reaction_plan,source,status,created_at,updated_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)'
 const PCP_ROW_COPY_SELECT = 'operation_id,pfmea_row_id,failure_mode,characteristic,class,current_prevention,current_detection,control_method,sample_size,frequency,reaction_plan,source,status'
-const PFMEA_PCP_SEED_SELECT = 'id,operation_id,pcp,failure_mode,class,characteristic,severity,rpn,current_prevention,current_detection,created_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)'
+const PFMEA_PCP_SEED_SELECT = 'id,operation_id,pcp,failure_mode,class,characteristic,severity,occurrence,detection,rpn_current,rpn,current_prevention,current_detection,created_at,operations!inner(id,project_id,operation_number,name,machine,operation,active)'
 
 function normalizeJoinedOperation<T extends { operations?: PcpOperation | PcpOperation[] | null }>(row: T): T & { operations: PcpOperation | null } {
   return {
@@ -138,6 +175,91 @@ export async function fetchPcpSelectionThreshold(supabase: SupabaseClient, proje
   const fallback = rows.find((row) => row.project_id === GLOBAL_PROJECT_ID)
   const raw = exact?.rpn_yellow_max ?? fallback?.rpn_yellow_max ?? 168
   return typeof raw === 'number' && Number.isFinite(raw) && raw >= 1 ? Math.trunc(raw) : 168
+}
+
+function normalizeRiskThreshold(value: unknown, fallback: number) {
+  const numberValue = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numberValue)) return fallback
+  return Math.max(1, Math.min(1000, Math.trunc(numberValue)))
+}
+
+function mapPcpRiskMatrixCells(rows: PcpRiskMatrixCellRow[]) {
+  const map: Record<string, SharedRiskColor> = {}
+  for (const row of rows) {
+    const severity = Number(row.severity)
+    const doValue = Number(row.do_value)
+    const color = row.color
+    if (!Number.isFinite(severity) || !Number.isFinite(doValue) || !color) continue
+    map[riskCellKey(severity, doValue)] = color
+  }
+  return map
+}
+
+export async function fetchPcpRiskMatrixContext(supabase: SupabaseClient, projectId: string): Promise<PcpRiskMatrixContext> {
+  const projectRes = await supabase.from('projects').select('organization_id').eq('id', projectId).maybeSingle()
+  const organizationId = normalizeText((projectRes.data as { organization_id?: string | null } | null)?.organization_id)
+
+  let config: PcpRiskMatrixConfigRow | null = null
+  if (organizationId) {
+    const orgConfigRes = await supabase
+      .from('risk_matrix_config')
+      .select('id,organization_id,mode,rpn_green_max,rpn_yellow_max,rpn_orange_max')
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+    if (!orgConfigRes.error) config = (orgConfigRes.data as PcpRiskMatrixConfigRow | null) ?? null
+  }
+
+  if (!config) {
+    const defaultConfigRes = await supabase
+      .from('risk_matrix_config')
+      .select('id,project_id,mode,rpn_green_max,rpn_yellow_max,rpn_orange_max')
+      .eq('id', 1)
+      .maybeSingle()
+    if (!defaultConfigRes.error) config = (defaultConfigRes.data as PcpRiskMatrixConfigRow | null) ?? null
+  }
+
+  let cells: Record<string, SharedRiskColor> = {}
+  if (organizationId) {
+    const orgCellsRes = await supabase
+      .from('risk_matrix_cells')
+      .select('organization_id,severity,do_value,color')
+      .eq('organization_id', organizationId)
+    if (!orgCellsRes.error) cells = mapPcpRiskMatrixCells((orgCellsRes.data ?? []) as PcpRiskMatrixCellRow[])
+  }
+
+  if (!Object.keys(cells).length) {
+    const cellsRes = await supabase
+      .from('risk_matrix_cells')
+      .select('project_id,severity,do_value,color')
+      .eq('project_id', GLOBAL_PROJECT_ID)
+    if (!cellsRes.error) cells = mapPcpRiskMatrixCells((cellsRes.data ?? []) as PcpRiskMatrixCellRow[])
+  }
+
+  return {
+    cells,
+    mode: config?.mode ?? 'rpn',
+    thresholds: {
+      greenMax: normalizeRiskThreshold(config?.rpn_green_max, DEFAULT_RPN_THRESHOLDS.greenMax),
+      yellowMax: normalizeRiskThreshold(config?.rpn_yellow_max, DEFAULT_RPN_THRESHOLDS.yellowMax),
+      orangeMax: normalizeRiskThreshold(config?.rpn_orange_max, DEFAULT_RPN_THRESHOLDS.orangeMax),
+    },
+  }
+}
+
+export function getPcpSeedRiskColor(row: PfmeaPcpSeedRow, context: PcpRiskMatrixContext): SharedRiskColor | null {
+  const severity = asInt1to10(row.severity)
+  const occurrence = asInt1to10(row.occurrence)
+  const detection = asInt1to10(row.detection)
+  const doValue = occurrence != null && detection != null ? occurrence * detection : null
+
+  if (severity != null && doValue != null) {
+    return riskColorForMatrixCell(severity, doValue, context.mode, context.thresholds, context.cells)
+  }
+
+  const rpn = typeof row.rpn_current === 'number' && Number.isFinite(row.rpn_current)
+    ? row.rpn_current
+    : (typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : null)
+  return rpn == null ? null : riskColorFromRpnValue(rpn, context.thresholds)
 }
 
 export async function hydratePcpDraftRows(

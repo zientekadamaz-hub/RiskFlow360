@@ -37,6 +37,7 @@ const {
   normalizePcpFlag,
   normalizeText,
   uniqueSelectedPfmeaPcpSeedRows,
+  uniqueSelectedPfmeaPcpSeedRowsWithRiskColor,
 } = loadModule(['src', 'features', 'pcp', 'pcp-utils.ts'])
 
 assert.equal(normalizeText('  abc  '), 'abc')
@@ -51,6 +52,8 @@ assert.equal(asInt1to10('11'), null)
 assert.equal(isPfmeaSeedSelectedForPcp({ pcp: false, class: 'SC', severity: 10, rpn: 400 }, 168), false)
 assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 9, rpn: 20 }, 168), true)
 assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 3, rpn: 200 }, 168), true)
+assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 8, rpn: 200 }, 100, 'yellow'), false)
+assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 8, rpn: 200 }, 100, 'orange'), true)
 assert.equal(nextPcpRevisionLabel('1.2.3'), '1.2.4')
 assert.equal(nextPcpRevisionLabel('bad'), '0.0.1')
 assert.equal(isPlaceholderPcpRowId(`${PCP_PLACEHOLDER_PREFIX}abc`), true)
@@ -109,6 +112,19 @@ assert.equal(
   ).map((row) => row.id)),
   JSON.stringify(['action-1']),
   'Multiple PFMEA action rows in the same risk/control context must create one PCP seed.'
+)
+assert.equal(
+  JSON.stringify(uniqueSelectedPfmeaPcpSeedRowsWithRiskColor(
+    [
+      { id: 'yellow-risk', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 8, rpn: 200, current_prevention: 'P', current_detection: 'D' },
+      { id: 'red-risk', operation_id: 'op', pcp: null, failure_mode: 'FM2', characteristic: 'C2', class: null, severity: 8, rpn: 200, current_prevention: 'P2', current_detection: 'D2' },
+      { id: 'manual-risk', operation_id: 'op', pcp: true, failure_mode: 'FM3', characteristic: 'C3', class: null, severity: 2, rpn: 10, current_prevention: 'P3', current_detection: 'D3' },
+    ],
+    100,
+    (row) => row.id === 'yellow-risk' ? 'yellow' : row.id === 'red-risk' ? 'red' : 'green'
+  ).map((row) => row.id)),
+  JSON.stringify(['red-risk', 'manual-risk']),
+  'PCP seed selection must follow PFMEA risk colors, excluding yellow unless PCP is explicitly checked.'
 )
 assert.equal(getComparableTime('2026-05-02T10:00:00.000Z') > 0, true)
 assert.equal(getComparableTime('not-a-date'), 0)

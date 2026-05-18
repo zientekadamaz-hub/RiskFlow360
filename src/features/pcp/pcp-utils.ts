@@ -37,13 +37,15 @@ export function asInt1to10(value: unknown): number | null {
 
 export function isPfmeaSeedSelectedForPcp(
   row: { pcp: unknown; class: string | null | undefined; severity: unknown; rpn: number | null | undefined },
-  yellowMax: number
+  yellowMax: number,
+  riskColor?: 'green' | 'yellow' | 'orange' | 'red' | null
 ) {
   const override = normalizePcpFlag(row.pcp)
   if (override != null) return override
   if (normalizeClassValue(row.class)) return true
   const severity = asInt1to10(row.severity)
   if (severity != null && severity >= 9) return true
+  if (riskColor) return riskColor === 'orange' || riskColor === 'red'
   const rpn = typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : null
   return rpn != null && rpn > yellowMax
 }
@@ -117,10 +119,18 @@ function comparePcpSeedPreference(a: PcpSeedIdentitySource, b: PcpSeedIdentitySo
 }
 
 export function uniqueSelectedPfmeaPcpSeedRows<T extends PcpSeedIdentitySource>(rows: T[], yellowMax: number): T[] {
+  return uniqueSelectedPfmeaPcpSeedRowsWithRiskColor(rows, yellowMax)
+}
+
+export function uniqueSelectedPfmeaPcpSeedRowsWithRiskColor<T extends PcpSeedIdentitySource>(
+  rows: T[],
+  yellowMax: number,
+  getRiskColor?: (row: T) => 'green' | 'yellow' | 'orange' | 'red' | null
+): T[] {
   const byKey = new Map<string, T>()
 
   for (const row of rows) {
-    if (!isPfmeaSeedSelectedForPcp(row as Parameters<typeof isPfmeaSeedSelectedForPcp>[0], yellowMax)) continue
+    if (!isPfmeaSeedSelectedForPcp(row as Parameters<typeof isPfmeaSeedSelectedForPcp>[0], yellowMax, getRiskColor?.(row) ?? null)) continue
     const key = getPcpSeedIdentityKey(row)
     const existing = byKey.get(key)
     if (!existing || comparePcpSeedPreference(row, existing) < 0) {

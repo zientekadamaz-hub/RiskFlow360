@@ -29,13 +29,17 @@ function loadTypeScriptModule(relativePath, moduleMap = {}) {
 }
 
 const pcpUtils = loadTypeScriptModule(['src', 'features', 'pcp', 'pcp-utils.ts'])
+const riskEngine = loadTypeScriptModule(['src', 'lib', 'risk-engine.ts'])
 const {
+  fetchPcpRiskMatrixContext,
   fetchPcpEditSession,
   fetchPcpRowsForRevision,
   fetchPcpSelectionThreshold,
+  getPcpSeedRiskColor,
   hydratePcpDraftRows,
   insertPcpRow,
 } = loadTypeScriptModule(['src', 'features', 'pcp', 'pcp-service.ts'], {
+  '@/lib/risk-engine': riskEngine,
   './pcp-utils': pcpUtils,
 })
 
@@ -127,6 +131,39 @@ async function main() {
       }
     })
     assert.equal(await fetchPcpSelectionThreshold(supabase, 'project-1'), 196)
+  }
+
+  {
+    const supabase = createSupabase((state) => {
+      if (state.table === 'projects') {
+        return { data: { organization_id: 'org-1' }, error: null }
+      }
+      if (state.table === 'risk_matrix_config') {
+        assert.equal(state.filters[0].column, 'organization_id')
+        assert.equal(state.filters[0].value, 'org-1')
+        return {
+          data: { id: 7, organization_id: 'org-1', mode: 'manual', rpn_green_max: 100, rpn_yellow_max: 200, rpn_orange_max: 360 },
+          error: null,
+        }
+      }
+      if (state.table === 'risk_matrix_cells') {
+        assert.equal(state.filters[0].column, 'organization_id')
+        assert.equal(state.filters[0].value, 'org-1')
+        return {
+          data: [
+            { organization_id: 'org-1', severity: 8, do_value: 18, color: 'yellow' },
+            { organization_id: 'org-1', severity: 8, do_value: 25, color: 'orange' },
+          ],
+          error: null,
+        }
+      }
+      throw new Error(`Unexpected table ${state.table}`)
+    })
+    const context = await fetchPcpRiskMatrixContext(supabase, 'project-1')
+    assert.equal(context.mode, 'manual')
+    assert.equal(context.thresholds.yellowMax, 200)
+    assert.equal(getPcpSeedRiskColor({ id: 'yellow', operation_id: 'op', pcp: null, failure_mode: null, class: null, characteristic: null, severity: 8, occurrence: 9, detection: 2, rpn: 144, current_prevention: null, current_detection: null }, context), 'yellow')
+    assert.equal(getPcpSeedRiskColor({ id: 'orange', operation_id: 'op', pcp: null, failure_mode: null, class: null, characteristic: null, severity: 8, occurrence: 5, detection: 5, rpn: 200, current_prevention: null, current_detection: null }, context), 'orange')
   }
 
   {
