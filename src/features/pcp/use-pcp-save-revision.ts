@@ -1,14 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Dispatch, SetStateAction } from 'react'
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useState } from 'react'
 
+import type { PcpEditorCommitTarget } from './pcp-table-cells'
 import {
   deletePcpEditSession,
   publishPcpRevision,
 } from './pcp-service'
 
 type PcpSaveRevisionParams = {
+  clearAllPendingCellValues: (options?: { refresh?: boolean }) => void
   currentAuthorName: string
+  editorRef: MutableRefObject<PcpEditorCommitTarget | null>
+  flushPendingCellUpdates: () => Promise<void>
   isDirty: boolean
   loadAll: () => Promise<void>
   loadEditSession: () => Promise<void>
@@ -28,7 +32,10 @@ function errorMessage(error: unknown) {
 }
 
 export function usePcpSaveRevision({
+  clearAllPendingCellValues,
   currentAuthorName,
+  editorRef,
+  flushPendingCellUpdates,
   isDirty,
   loadAll,
   loadEditSession,
@@ -61,6 +68,9 @@ export function usePcpSaveRevision({
       const uid = sess?.session?.user?.id
       if (!uid) throw new Error('Not authenticated.')
 
+      await editorRef.current?.commit()
+      await flushPendingCellUpdates()
+
       await publishPcpRevision(supabase, {
         authorId: uid,
         authorName: currentAuthorName || 'Unknown user',
@@ -71,6 +81,7 @@ export function usePcpSaveRevision({
 
       setDirtyIds([])
       setDeletedIds([])
+      clearAllPendingCellValues({ refresh: false })
       setDraftRevisionIdOverride(null)
       if (projectId && userId) await deletePcpEditSession(supabase, projectId, userId)
       await loadAll()
@@ -84,7 +95,10 @@ export function usePcpSaveRevision({
       setSaveBusy(false)
     }
   }, [
+    clearAllPendingCellValues,
     currentAuthorName,
+    editorRef,
+    flushPendingCellUpdates,
     isDirty,
     loadAll,
     loadEditSession,

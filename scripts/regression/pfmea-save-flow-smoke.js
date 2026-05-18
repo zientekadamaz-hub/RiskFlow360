@@ -6,15 +6,18 @@ const saveSourcePath = fs.existsSync(path.join(__dirname, '..', '..', 'src', 'fe
   ? path.join(__dirname, '..', '..', 'src', 'features', 'pfmea', 'use-pfmea-save-revision.ts')
   : path.join(__dirname, '..', '..', 'app', 'pfmea', 'page.tsx')
 const postPublishSourcePath = path.join(__dirname, '..', '..', 'src', 'features', 'pfmea', 'pfmea-save-orchestration.ts')
+const pageSourcePath = path.join(__dirname, '..', '..', 'app', 'pfmea', 'page.tsx')
 
 const saveSource = fs.readFileSync(saveSourcePath, 'utf8')
 const postPublishSource = fs.readFileSync(postPublishSourcePath, 'utf8')
+const pageSource = fs.readFileSync(pageSourcePath, 'utf8')
 const source = `${saveSource}\n${postPublishSource}`
 
 const expectedPrePublishOrder = [
   'validatePfmeaSaveStart',
   'validation.status ===',
   'auth session',
+  'resolve fresh draft revision',
   'preparePfmeaDraftRowsForPublish',
   'publishPfmeaRevisionForSave',
   'cleanupPfmeaSuccessfulSaveAfterPublish',
@@ -156,6 +159,10 @@ assert.match(source, /commitPfmeaEditorBeforeSave/, 'Save flow must blur/commit 
 assert.match(source, /flushPendingCellUpdates/, 'Save flow must flush queued cell updates before publishing.')
 assert.match(source, /cleanupPfmeaSuccessfulSaveAfterPublish/, 'Save flow must clean up draft rows and edit session after publish.')
 assert.match(source, /validatePfmeaSaveStart/, 'Save flow must validate initial save state before publishing.')
+assert.match(saveSource, /params\.loadProjectView\(\{ syncDraftOverride: false \}\)[\s\S]*freshProjectView\.current_draft_revision_id[\s\S]*params\.setDraftRevisionIdOverride\(freshDraftRevisionId\)/, 'Save flow must revalidate the fresh draft revision before publishing.')
+assert.match(saveSource, /activeSaveDraftRevisionIdRef\.current \?\? params\.draftRevisionIdOverride/, 'Published metadata sync must use the fresh draft revision during save.')
+assert.match(pageSource, /moduleAccessState !== 'allowed'\) \{\s*return <PfmeaPageFallback \/>/, 'PFMEA must render a dark fallback while access is checking instead of returning null.')
+assert.match(pageSource, /background: '#171f33'[\s\S]*Loading PFMEA/, 'PFMEA fallback must use the dark app background.')
 assert.match(
   postPublishSource,
   /ensurePublishedPfmeaIntegrityAfterSave[\s\S]*findEquivalentPublishedPfmeaRow/,

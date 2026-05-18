@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useImperativeHandle, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { normalizeClassValue } from './pcp-utils'
 import {
@@ -70,11 +70,16 @@ export function TdRead(props: { value: string; className?: string; style?: React
 
 export function TdText(props: {
   value: string | null
+  rowId: string
+  col: string
   editing: boolean
   onStart: () => void
-  onCommit: (v: string) => void
+  onCommit: (v: string) => void | Promise<void>
   onCancel: () => void
+  onDraftChange?: (rowId: string, col: string, value: string) => void
+  onDraftClear?: (rowId: string, col: string) => void
   disabled?: boolean
+  editorRef?: React.Ref<PcpEditorCommitTarget>
   singleLine?: boolean
   className?: string
   style?: React.CSSProperties
@@ -120,8 +125,11 @@ export function TdText(props: {
       <PcpTextEditor
         key={`${props.singleLine ? 'single' : 'multi'}:${displayValue}`}
         initialValue={displayValue}
+        editorRef={props.editorRef}
         onCancel={props.onCancel}
         onCommit={props.onCommit}
+        onDraftChange={(value) => props.onDraftChange?.(props.rowId, props.col, value)}
+        onDraftClear={() => props.onDraftClear?.(props.rowId, props.col)}
         singleLine={props.singleLine}
         singleLineEditorStyle={singleLineEditorStyle}
       />
@@ -129,17 +137,32 @@ export function TdText(props: {
   )
 }
 
+export type PcpEditorCommitTarget = {
+  commit: () => void | Promise<void>
+}
+
 function PcpTextEditor(props: {
+  editorRef?: React.Ref<PcpEditorCommitTarget>
   initialValue: string
   onCancel: () => void
-  onCommit: (value: string) => void
+  onCommit: (value: string) => void | Promise<void>
+  onDraftChange: (value: string) => void
+  onDraftClear: () => void
   singleLine?: boolean
   singleLineEditorStyle: React.CSSProperties
 }) {
   const [val, setVal] = useState(props.initialValue)
-  const commitIfChanged = () => {
+  const commitIfChanged = useCallback(() => {
     props.onCancel()
-    if (val !== props.initialValue) props.onCommit(val)
+    props.onDraftClear()
+    if (val !== props.initialValue) return props.onCommit(val)
+  }, [props, val])
+
+  useImperativeHandle(props.editorRef, () => ({ commit: commitIfChanged }), [commitIfChanged])
+
+  const handleChange = (value: string) => {
+    setVal(value)
+    props.onDraftChange(value)
   }
 
   if (props.singleLine) {
@@ -149,7 +172,7 @@ function PcpTextEditor(props: {
         className="pfmeaEditor"
         style={props.singleLineEditorStyle}
         value={val}
-        onChange={(event) => setVal(event.target.value)}
+        onChange={(event) => handleChange(event.target.value)}
         onBlur={commitIfChanged}
       />
     )
@@ -161,7 +184,7 @@ function PcpTextEditor(props: {
       className="pfmeaEditor"
       rows={1}
       value={val}
-      onChange={(event) => setVal(event.target.value)}
+      onChange={(event) => handleChange(event.target.value)}
       onBlur={commitIfChanged}
     />
   )

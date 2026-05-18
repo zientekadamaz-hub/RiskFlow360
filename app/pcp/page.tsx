@@ -1,7 +1,7 @@
 
 'use client'
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@app/lib/supabaseBrowser'
@@ -34,7 +34,10 @@ import {
 } from '@/features/pcp/pcp-page-model'
 import { PcpHistoryDialog, PcpSaveDialog } from '@/features/pcp/pcp-dialogs'
 import { PcpTable } from '@/features/pcp/pcp-table'
+import type { PcpEditorCommitTarget } from '@/features/pcp/pcp-table-cells'
 import { usePcpEditSessionActions } from '@/features/pcp/use-pcp-edit-session-actions'
+import { usePcpPendingCellUpdateQueue } from '@/features/pcp/use-pcp-pending-cell-update-queue'
+import { usePcpPendingCellValues } from '@/features/pcp/use-pcp-pending-cell-values'
 import { usePcpSaveRevision } from '@/features/pcp/use-pcp-save-revision'
 import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
 import {
@@ -113,8 +116,10 @@ function PcpPageContent() {
   const [pcpYellowMax, setPcpYellowMax] = useState(168)
 
   const [edit, setEdit] = useState<{ rowId: string; col: keyof PcpRow } | null>(null)
+  const pcpEditorRef = useRef<PcpEditorCommitTarget | null>(null)
+  const placeholderMaterializedIdRef = useRef<Record<string, string>>({})
+  const placeholderMaterializeRef = useRef<Record<string, Promise<{ id: string; created_at: string | null; updated_at: string | null }>>>({})
 
-  const isDirty = dirtyIds.length > 0 || deletedIds.length > 0
   const {
     isObsolete,
     isEditOwner,
@@ -152,7 +157,21 @@ function PcpPageContent() {
     widthOf,
   } = usePcpVisibleColumns(userId)
 
-  const rowsSorted = useMemo(() => sortPcpRows(rows), [rows])
+  const { flushPendingCellUpdates, runPendingCellUpdate } = usePcpPendingCellUpdateQueue()
+  const {
+    applyPendingCellValues,
+    clearAllPendingCellValues,
+    clearPendingCellValue,
+    clearPendingCellValuesForRow,
+    pendingCellValueCount,
+    rowsRef,
+    setPendingCellValue,
+  } = usePcpPendingCellValues(rows)
+
+  const displayRows = useMemo(() => rows.map(applyPendingCellValues), [applyPendingCellValues, rows])
+  const rowsSorted = useMemo(() => sortPcpRows(displayRows), [displayRows])
+  const hasPendingCellValues = pendingCellValueCount > 0
+  const isDirty = dirtyIds.length > 0 || deletedIds.length > 0 || hasPendingCellValues
 
   const loadProjectView = useCallback(async () => {
     const view = await fetchPcpProjectView(supabase, projectId)
@@ -413,11 +432,12 @@ function PcpPageContent() {
         })
       }
 
+      rowsRef.current = mergedRows
       setRows(mergedRows)
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     }
-  }, [projectId, loadProjectView, loadPcpRiskMatrixContext, draftRevisionIdOverride, isEditOwner])
+  }, [projectId, loadProjectView, loadPcpRiskMatrixContext, draftRevisionIdOverride, isEditOwner, rowsRef])
   const loadRevisionHistory = useCallback(async () => {
     if (!projectId) {
       setHistoryEntries([])
@@ -459,51 +479,86 @@ function PcpPageContent() {
 
   const updateRow = useCallback(async (row: PcpRow, patch: Partial<PcpRow>) => {
     if (readOnly) return
-    try {
+    const task = (async () => {
       const hadDraftBeforeEdit = !!project?.current_draft_revision_id
       const revId = await ensureDraftIfNeeded()
       const finalRev = revId ?? workingRevisionId
       if (!finalRev) throw new Error('No working revision found.')
+      const effectiveRow = applyPendingCellValues(row)
       const payload: Partial<PcpRow> = { ...patch }
       if ('source' in payload) payload.source = normalizeText(payload.source || 'MANUAL').toUpperCase()
       if ('status' in payload) payload.status = normalizeText(payload.status || 'OPEN').toUpperCase()
       if ('class' in payload) payload.class = normalizeClassValue((payload.class as string | null | undefined) ?? null)
-      let targetRow = row
+      let targetRow = effectiveRow
       let requiresReload = !hadDraftBeforeEdit
-      if (!isPlaceholderPcpRowId(row.id) && !row.__placeholder && row.revision_id !== finalRev) {
-        await ensureDraftRowsHydrated(finalRev, row.revision_id ?? project?.current_open_revision_id ?? workingRevisionId)
-        const mappedRow = await findEquivalentRowInRevision(row, finalRev)
+      if (!isPlaceholderPcpRowId(effectiveRow.id) && !effectiveRow.__placeholder && effectiveRow.revision_id !== finalRev) {
+        await ensureDraftRowsHydrated(finalRev, effectiveRow.revision_id ?? project?.current_open_revision_id ?? workingRevisionId)
+        const mappedRow = await findEquivalentRowInRevision(effectiveRow, finalRev)
         if (!mappedRow) throw new Error('Failed to map PCP row into the current draft revision.')
         targetRow = mappedRow
         requiresReload = true
-        setEdit((prev) => (prev && prev.rowId === row.id ? { ...prev, rowId: mappedRow.id } : prev))
+        setEdit((prev) => (prev && prev.rowId === effectiveRow.id ? { ...prev, rowId: mappedRow.id } : prev))
       }
-      if (isPlaceholderPcpRowId(row.id) || row.__placeholder) {
+      if (isPlaceholderPcpRowId(effectiveRow.id) || effectiveRow.__placeholder) {
+        const cachedId = placeholderMaterializedIdRef.current[effectiveRow.id]
+        const pendingMaterialization = placeholderMaterializeRef.current[effectiveRow.id]
+        if (cachedId || pendingMaterialization) {
+          const targetId = cachedId ?? (await pendingMaterialization).id
+          await updatePcpRow(supabase, targetId, finalRev, payload)
+          markDirty(targetId)
+          clearPendingCellValuesForRow(effectiveRow.id, { refresh: false })
+          const updatedRows = rowsRef.current.map((x) => (x.id === targetId ? ({ ...x, ...payload } as PcpRow) : x))
+          rowsRef.current = updatedRows
+          setRows(updatedRows)
+          setEdit((prev) => (prev && prev.rowId === effectiveRow.id ? { ...prev, rowId: targetId } : prev))
+          return
+        }
+
         const rowSource = {
-          operation_id: row.operation_id,
+          operation_id: effectiveRow.operation_id,
           revision_id: finalRev,
-          pfmea_row_id: row.pfmea_row_id ?? null,
-          failure_mode: payload.failure_mode ?? row.failure_mode ?? '',
-          characteristic: payload.characteristic ?? row.characteristic ?? '',
-          class: normalizeClassValue((payload.class as string | null | undefined) ?? row.class ?? null),
-          current_prevention: payload.current_prevention ?? row.current_prevention ?? '',
-          current_detection: payload.current_detection ?? row.current_detection ?? '',
-          control_method: payload.control_method ?? row.control_method ?? '',
-          sample_size: payload.sample_size ?? row.sample_size ?? '',
-          frequency: payload.frequency ?? row.frequency ?? '',
-          reaction_plan: payload.reaction_plan ?? row.reaction_plan ?? '',
-          source: payload.source ?? row.source ?? 'MANUAL',
-          status: payload.status ?? row.status ?? 'OPEN',
+          pfmea_row_id: effectiveRow.pfmea_row_id ?? null,
+          failure_mode: payload.failure_mode ?? effectiveRow.failure_mode ?? '',
+          characteristic: payload.characteristic ?? effectiveRow.characteristic ?? '',
+          class: normalizeClassValue((payload.class as string | null | undefined) ?? effectiveRow.class ?? null),
+          current_prevention: payload.current_prevention ?? effectiveRow.current_prevention ?? '',
+          current_detection: payload.current_detection ?? effectiveRow.current_detection ?? '',
+          control_method: payload.control_method ?? effectiveRow.control_method ?? '',
+          sample_size: payload.sample_size ?? effectiveRow.sample_size ?? '',
+          frequency: payload.frequency ?? effectiveRow.frequency ?? '',
+          reaction_plan: payload.reaction_plan ?? effectiveRow.reaction_plan ?? '',
+          source: payload.source ?? effectiveRow.source ?? 'MANUAL',
+          status: payload.status ?? effectiveRow.status ?? 'OPEN',
         }
         const insertPayload = buildPcpRowPayload(rowSource)
-        const ins = await insertPcpRow(supabase, rowSource)
+        const materializePromise = insertPcpRow(supabase, rowSource).then((ins) => {
+          placeholderMaterializedIdRef.current[effectiveRow.id] = ins.id
+          return ins
+        })
+        placeholderMaterializeRef.current[effectiveRow.id] = materializePromise
+        let ins: { id: string; created_at: string | null; updated_at: string | null }
+        try {
+          ins = await materializePromise
+        } finally {
+          delete placeholderMaterializeRef.current[effectiveRow.id]
+        }
         const newId = ins.id
+        placeholderMaterializedIdRef.current[effectiveRow.id] = newId
         markDirty(newId)
-        setRows((prev) =>
-          prev.map((x) =>
-            x.id === row.id
+        clearPendingCellValuesForRow(effectiveRow.id, { refresh: false })
+        const newRow = {
+          ...effectiveRow,
+          ...insertPayload,
+          id: newId,
+          created_at: ins.created_at ?? new Date().toISOString(),
+          updated_at: ins.updated_at ?? new Date().toISOString(),
+          revision_id: finalRev,
+          __placeholder: false,
+        } as PcpRow
+        const updatedRows = rowsRef.current.map((x) =>
+            x.id === effectiveRow.id
               ? ({
-                  ...row,
+                  ...effectiveRow,
                   ...insertPayload,
                   id: newId,
                   created_at: ins.created_at ?? new Date().toISOString(),
@@ -512,28 +567,42 @@ function PcpPageContent() {
                   __placeholder: false,
                 } as PcpRow)
               : x
-          )
         )
+        if (!updatedRows.some((x) => x.id === newId)) {
+          rowsRef.current = updatedRows
+          setRows(updatedRows)
+        } else {
+          rowsRef.current = rowsRef.current.map((x) => (x.id === newId ? newRow : x)).filter((x) => x.id !== effectiveRow.id)
+          setRows(rowsRef.current)
+        }
+        setEdit((prev) => (prev && prev.rowId === effectiveRow.id ? { ...prev, rowId: newId } : prev))
       } else {
         await updatePcpRow(supabase, targetRow.id, finalRev, payload)
         markDirty(targetRow.id)
         if (requiresReload) {
           await loadAll(finalRev)
         } else {
-          setRows((prev) => prev.map((x) => (x.id === targetRow.id ? ({ ...x, ...payload } as PcpRow) : x)))
+          const updatedRows = rowsRef.current.map((x) => (x.id === targetRow.id ? ({ ...x, ...payload } as PcpRow) : x))
+          rowsRef.current = updatedRows
+          setRows(updatedRows)
         }
       }
-      if (!hadDraftBeforeEdit && (isPlaceholderPcpRowId(row.id) || row.__placeholder)) await loadAll(finalRev)
+    })()
+    try {
+      await runPendingCellUpdate(task)
     } catch (e: any) {
       setErr(e?.message ?? String(e))
     }
-  }, [readOnly, ensureDraftIfNeeded, project?.current_draft_revision_id, project?.current_open_revision_id, workingRevisionId, markDirty, loadAll, ensureDraftRowsHydrated, findEquivalentRowInRevision])
+  }, [readOnly, project?.current_draft_revision_id, ensureDraftIfNeeded, workingRevisionId, applyPendingCellValues, project?.current_open_revision_id, ensureDraftRowsHydrated, findEquivalentRowInRevision, markDirty, clearPendingCellValuesForRow, rowsRef, loadAll, runPendingCellUpdate])
 
   const {
     handleSaveRevision,
     saveBusy,
   } = usePcpSaveRevision({
     currentAuthorName,
+    clearAllPendingCellValues,
+    editorRef: pcpEditorRef,
+    flushPendingCellUpdates,
     isDirty,
     loadAll,
     loadEditSession,
@@ -665,7 +734,7 @@ function PcpPageContent() {
   }
 
   if (moduleAccessState !== 'allowed') {
-    return null
+    return <PcpPageFallback />
   }
 
   return (
@@ -758,9 +827,9 @@ function PcpPageContent() {
         .pfmeaTd.singleLine { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .pfmeaTd.center { text-align: center; }
         .pfmeaTd.gray { background: rgba(255,255,255,0.08); }
-        .pfmeaTd.editable { cursor: text; position: relative; transition: box-shadow 0.14s ease, border-color 0.14s ease; }
-        .pfmeaTd.editable:hover,
-        .pfmeaTd.editable:focus-within { box-shadow: inset 0 0 0 1px rgba(96,165,250,0.45); border-radius: 0; }
+        .pfmeaTd:hover { background: rgba(255,255,255,0.075); }
+        .pfmeaTd.gray:hover { background: rgba(255,255,255,0.095); }
+        .pfmeaTd.editable { cursor: text; position: relative; }
         .pfmeaEditor { width: 100%; border: 0; outline: none; background: transparent; font: inherit; color: inherit; resize: vertical; min-height: 26px; }
         .rf-button { background: rgba(255,255,255,0.08); color: ${SURFACE_TEXT}; font-family: inherit; font-weight: 650; border: 1px solid rgba(255,255,255,0.18); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: ${SURFACE_RADIUS}px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; min-height: 29px; padding: 0 12px; cursor: pointer; }
         .rf-button:hover { background: rgba(59,130,246,0.18) !important; border-color: rgba(96,165,250,0.45) !important; box-shadow: 0 10px 24px rgba(37,99,235,0.18) !important; }
@@ -836,12 +905,15 @@ function PcpPageContent() {
 
       <PcpTable
         cardStyle={card}
+        clearPendingCellValue={clearPendingCellValue}
         edit={edit}
+        editorRef={pcpEditorRef}
         isColumnVisible={isColumnVisible}
         pcpYellowMax={pcpYellowMax}
         readOnly={readOnly}
         rows={rowsSorted}
         setEdit={setEdit}
+        setPendingCellValue={setPendingCellValue}
         updateRow={updateRow}
         visibleColumnDefs={visibleColumnDefs}
         widthOf={widthOf}
@@ -885,7 +957,7 @@ const actionBtn: React.CSSProperties = { padding: '6px 10px', borderRadius: SURF
 
 function PcpPageFallback() {
   return (
-    <div style={{ padding: 24, color: '#666', fontSize: 14, fontWeight: 700 }}>
+    <div style={{ minHeight: 'calc(100vh - 56px)', padding: 24, background: '#171f33', color: '#f8fafc', fontSize: 14, fontWeight: 700 }}>
       Loading PCP...
     </div>
   )

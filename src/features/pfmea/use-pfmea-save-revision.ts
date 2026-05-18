@@ -1,4 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
+import { useRef } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { isTimeoutError } from '@/lib/error-utils'
@@ -67,13 +68,17 @@ export type UsePfmeaSaveRevisionParams = {
 }
 
 export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
+  const activeSaveDraftRevisionIdRef = useRef<string | null>(null)
+  const groupIdsSupportedRef = params.groupIdsSupportedRef
+  const rowsRef = params.rowsRef
+
   const fetchPfmeaRowsForRevisionScope = async (revisionId: string, operationIds?: string[]) => {
     const result = await fetchPfmeaRowsForRevision<PfmeaRow>(params.supabase, {
-      groupIdsSupported: params.groupIdsSupportedRef.current,
+      groupIdsSupported: groupIdsSupportedRef.current,
       operationIds,
       revisionId,
     })
-    params.groupIdsSupportedRef.current = result.groupIdsSupported
+    groupIdsSupportedRef.current = result.groupIdsSupported
     return hydratePfmeaGroupIds(result.rows)
   }
 
@@ -87,11 +92,11 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
 
   const restorePfmeaSnapshotToRevision = async (revisionId: string, sourceRows: PfmeaRow[]) => {
     const result = await restorePfmeaRowsSnapshotToRevision<PfmeaRow>(params.supabase, {
-      groupIdsSupported: params.groupIdsSupportedRef.current,
+      groupIdsSupported: groupIdsSupportedRef.current,
       revisionId,
       sourceRows,
     })
-    params.groupIdsSupportedRef.current = result.groupIdsSupported
+    groupIdsSupportedRef.current = result.groupIdsSupported
     return hydratePfmeaGroupIds(result.rows)
   }
 
@@ -109,23 +114,23 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
       applyPendingCellValues: params.applyPendingCellValues,
       computeDerivedForRow: params.computeDerivedForRow,
       dirtyIds: params.dirtyPfmeaIds,
-      groupIdsSupported: params.groupIdsSupportedRef.current,
+      groupIdsSupported: groupIdsSupportedRef.current,
       remapRowsToRevision: remapPfmeaSnapshotRowsToRevision,
       revisionId,
       sourceRows,
       supabase: params.supabase,
     })
 
-    params.rowsRef.current = mappedSnapshotRows
+    rowsRef.current = mappedSnapshotRows
     params.setRows(mappedSnapshotRows)
     return mappedSnapshotRows
   }
 
   const syncPublishedPfmeaRowMetadata = async (revisionId: string, sourceRows: PfmeaRow[]) => {
     await syncPublishedPfmeaRowMetadataAfterSave({
-      draftRevisionIdOverride: params.draftRevisionIdOverride,
+      draftRevisionIdOverride: activeSaveDraftRevisionIdRef.current ?? params.draftRevisionIdOverride,
       fetchRowsForRevisionScope: fetchPfmeaRowsForRevisionScope,
-      groupIdsSupported: params.groupIdsSupportedRef.current,
+      groupIdsSupported: groupIdsSupportedRef.current,
       revisionId,
       sourceRows,
       supabase: params.supabase,
@@ -158,13 +163,22 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
     }
 
     const desc = validation.changeDescription
-    const draftRevisionId = validation.draftRevisionId
+    let draftRevisionId = validation.draftRevisionId
     const saveTiming = createPfmeaSaveTimingLogger()
 
     try {
       params.setSaveBusy(true)
       const uid = await fetchAuthenticatedPfmeaSaveUserId(params.supabase)
       saveTiming.mark('auth session')
+
+      const freshProjectView = await params.loadProjectView({ syncDraftOverride: false })
+      const freshDraftRevisionId = freshProjectView.current_draft_revision_id ?? draftRevisionId
+      if (freshDraftRevisionId !== draftRevisionId) {
+        draftRevisionId = freshDraftRevisionId
+        params.setDraftRevisionIdOverride(freshDraftRevisionId)
+      }
+      activeSaveDraftRevisionIdRef.current = draftRevisionId
+      saveTiming.mark('resolve fresh draft revision')
 
       const { orderedPersistedRows } = await preparePfmeaDraftRowsForPublish({
         cleanupEmptyTransientRows: params.cleanupEmptyTransientRows,
@@ -175,7 +189,7 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
         mark: saveTiming.mark,
         persistPfmeaDraftSnapshot,
         persistPfmeaRowOrder: params.persistPfmeaRowOrder,
-        rowsRef: params.rowsRef,
+        rowsRef,
         setRows: params.setRows,
       })
 
@@ -237,6 +251,7 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
           : pfmeaSaveErrorMessage(error)
       )
     } finally {
+      activeSaveDraftRevisionIdRef.current = null
       params.setSaveBusy(false)
     }
   }

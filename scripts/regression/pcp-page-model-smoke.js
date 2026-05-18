@@ -27,7 +27,7 @@ assert.doesNotMatch(pageSource, /function makePcpPlaceholderRow/, 'PCP page shou
 assert.doesNotMatch(pageSource, /const indexed = rows\.map/, 'PCP page should not sort rows inline.')
 assert.doesNotMatch(pageSource, /const left = Math\.max\(0, EDIT_LOCK_MS - \(sessionNow - last\)\)/, 'PCP page should not format lock timeout inline.')
 assert.match(pageSource, /getPcpEditState/, 'PCP page must use shared edit state helper.')
-assert.match(pageSource, /sortPcpRows\(rows\)/, 'PCP page must use shared row sorting helper.')
+assert.match(pageSource, /sortPcpRows\(displayRows\)/, 'PCP page must use shared row sorting helper after pending values are applied.')
 
 function loadTypeScriptModule(relativePath, moduleMap = {}) {
   const sourcePath = path.join(root, ...relativePath)

@@ -697,7 +697,7 @@ function PfmeaFullPageContent() {
   )
 
   if (moduleAccessState !== 'allowed') {
-    return null
+    return <PfmeaPageFallback />
   }
 
   return (
@@ -1130,7 +1130,7 @@ function PfmeaFullPageContent() {
 
 function PfmeaPageFallback() {
   return (
-    <div style={{ padding: 24, color: '#666', fontSize: 14, fontWeight: 700 }}>
+    <div style={{ minHeight: 'calc(100vh - 56px)', padding: 24, background: '#171f33', color: '#f8fafc', fontSize: 14, fontWeight: 700 }}>
       Loading PFMEA...
     </div>
   )

@@ -8,6 +8,7 @@ const tableSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'p
 
 assert.match(tableSource, /export function PcpTable/, 'PCP table component must be exported.')
 assert.match(tableSource, /export type PcpEditCell/, 'PCP table component must export edit cell type.')
+assert.match(tableSource, /type PcpTableProps = \{[\s\S]*editorRef: React\.Ref<PcpEditorCommitTarget>[\s\S]*clearPendingCellValue:[\s\S]*setPendingCellValue:/, 'PCP table must accept editor and pending-cell plumbing.')
 assert.match(tableSource, /<colgroup>\{visibleColumnDefs\.map/, 'PCP table must preserve visible column colgroup.')
 assert.match(tableSource, /width: '100%'/, 'PCP table must fill the available frame width.')
 assert.match(tableSource, /overflowX: 'hidden'/, 'PCP table must avoid horizontal scrolling at normal zoom.')
@@ -22,7 +23,14 @@ assert.doesNotMatch(tableSource, /value=\{r\.sample_size\}[^\n]*singleLine/, 'PC
 assert.doesNotMatch(tableSource, /value=\{r\.frequency\}[^\n]*singleLine/, 'PCP frequency text must wrap instead of truncating.')
 
 assert.match(pageSource, /from '@\/features\/pcp\/pcp-table'/, 'PCP page must import extracted table.')
+assert.match(pageSource, /usePcpPendingCellUpdateQueue/, 'PCP page must use queued pending cell updates.')
+assert.match(pageSource, /usePcpPendingCellValues/, 'PCP page must use stable pending cell values.')
+assert.match(pageSource, /const displayRows = useMemo\(\(\) => rows\.map\(applyPendingCellValues\)/, 'PCP page must render pending cell values without waiting for reloads.')
+assert.match(pageSource, /const hasPendingCellValues = pendingCellValueCount > 0[\s\S]*const isDirty = dirtyIds\.length > 0 \|\| deletedIds\.length > 0 \|\| hasPendingCellValues/, 'PCP page must treat active pending edits as dirty so Save PCP can commit them.')
 assert.match(pageSource, /<PcpTable[\s\S]*rows=\{rowsSorted\}/, 'PCP page must render extracted table with sorted rows.')
+assert.match(pageSource, /<PcpTable[\s\S]*clearPendingCellValue=\{clearPendingCellValue\}[\s\S]*editorRef=\{pcpEditorRef\}[\s\S]*setPendingCellValue=\{setPendingCellValue\}/, 'PCP page must pass pending-cell and editor hooks into the table.')
+assert.match(pageSource, /placeholderMaterializedIdRef/, 'PCP page must cache materialized placeholder IDs.')
+assert.match(pageSource, /placeholderMaterializeRef/, 'PCP page must cache in-flight placeholder materialization promises.')
 assert.doesNotMatch(pageSource, /<tbody>\s*\{\s*rowsSorted\.map/, 'PCP page should not render table body inline after extraction.')
 assert.doesNotMatch(pageSource, /<Th w=\{widthOf\('failure_mode'\)\}>FAILURE MODE<\/Th>/, 'PCP page should not render table headers inline after extraction.')
 
