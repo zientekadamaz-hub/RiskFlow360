@@ -62,8 +62,8 @@ const closedSummary = summarizeProgressCurrentRows([
 
 assert.equal(
   closedSummary.averageRpn,
-  1000,
-  'Progress Chart current summary must align with Projects by preferring saved current RPN.'
+  10,
+  'Progress Chart current summary must recalculate CLOSED risk from OCC/DET after values.'
 )
 
 console.log('progress chart service smoke passed')

@@ -67,8 +67,8 @@ let currentRisk = getPfmeaCurrentOpenRisk({
   rpn_current: 1000,
 })
 assert.equal(currentRisk.severity, 10)
-assert.equal(currentRisk.doValue, 100)
-assert.equal(currentRisk.rpn, 1000)
+assert.equal(currentRisk.doValue, 63)
+assert.equal(currentRisk.rpn, 630)
 
 currentRisk = getPfmeaCurrentOpenRisk({ severity: 8, occurrence: 9, detection: 9, oxd_current: 10, rpn_current: 80 })
 assert.equal(currentRisk.doValue, 10)

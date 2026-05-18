@@ -48,6 +48,11 @@ export function getPfmeaReportRisk(row: PfmeaReportRiskRow) {
 }
 
 export function getPfmeaCurrentOpenRisk(row: PfmeaReportRiskRow) {
+  const actionStatus = (row.action_status ?? '').trim().toUpperCase()
+  if (actionStatus === 'CLOSED') {
+    return getPfmeaReportRisk(row)
+  }
+
   const severity = toReportNumber(row.severity)
   const occurrence = toReportNumber(row.occurrence)
   const detection = toReportNumber(row.detection)
