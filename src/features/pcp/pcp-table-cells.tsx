@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  settingsHiddenTableColumnWidthPx,
   settingsTableCellStyle,
   settingsTableHeaderStyle,
 } from '@/components/rf-ui'
@@ -15,7 +14,7 @@ import {
   anchoredPopupStyle,
 } from './pcp-page-model'
 
-export const pcpTableCellStyle: React.CSSProperties = {
+const pcpTableCellStyle: React.CSSProperties = {
   ...settingsTableCellStyle,
   color: '#e1e5ec',
   fontSize: 14,
@@ -37,28 +36,18 @@ const pcpSingleLineCellStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
-export const pcpTableHeaderStyle: React.CSSProperties = {
-  ...settingsTableHeaderStyle,
-  boxSizing: 'border-box',
-  overflow: 'hidden',
-  padding: '8px 7px',
-  position: 'sticky',
-  textAlign: 'center',
-  textOverflow: 'ellipsis',
-  top: 0,
-  zIndex: 5,
-}
-
-export const pcpHiddenTableCellStyle: React.CSSProperties = {
-  ...pcpTableCellStyle,
-  padding: '0 6px',
-  width: settingsHiddenTableColumnWidthPx,
-}
-
-export const pcpHiddenTableHeaderStyle: React.CSSProperties = {
-  ...pcpTableHeaderStyle,
-  padding: '0 6px',
-  width: settingsHiddenTableColumnWidthPx,
+export function Th(props: { w: string; children?: React.ReactNode }) {
+  return (
+    <th
+      style={{
+        ...settingsTableHeaderStyle,
+        textAlign: 'center',
+        width: props.w,
+      }}
+    >
+      {props.children}
+    </th>
+  )
 }
 
 export function TdRead(props: { value: string; className?: string; style?: React.CSSProperties }) {

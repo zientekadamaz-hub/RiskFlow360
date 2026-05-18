@@ -25,13 +25,6 @@ export type PcpColumnId =
   | 'frequency'
   | 'reaction_plan'
 
-export type PcpSortState = {
-  column: PcpColumnId
-  direction: 'asc' | 'desc'
-} | null
-
-export type PcpFilterState = Record<PcpColumnId, string[] | null>
-
 export const PCP_VISIBLE_COLUMNS_KEY_PREFIX = '__PCP_VISIBLE_COLUMNS__'
 const EDIT_LOCK_HOURS = 48
 export const EDIT_LOCK_MS = EDIT_LOCK_HOURS * 60 * 60 * 1000
@@ -64,20 +57,20 @@ export const CLASS_OPTION_DETAILS: Record<string, { title: string; description: 
 
 export const PCP_COLUMNS: Array<{ id: PcpColumnId; label: string; width: number }> = [
   { id: 'id', label: 'ID#', width: 60 },
-  { id: 'station', label: 'Station', width: 120 },
-  { id: 'operation', label: 'Operation', width: 140 },
-  { id: 'process_step', label: 'Process step', width: 180 },
-  { id: 'failure_mode', label: 'Failure mode', width: 180 },
-  { id: 'characteristic', label: 'Characteristic', width: 120 },
-  { id: 'class', label: 'Class', width: 60 },
-  { id: 'severity', label: 'Sev', width: 60 },
+  { id: 'station', label: 'STATION', width: 120 },
+  { id: 'operation', label: 'OPERATION', width: 140 },
+  { id: 'process_step', label: 'PROCESS STEP', width: 180 },
+  { id: 'failure_mode', label: 'FAILURE MODE', width: 180 },
+  { id: 'characteristic', label: 'CHARACTERISTIC', width: 120 },
+  { id: 'class', label: 'CLASS', width: 60 },
+  { id: 'severity', label: 'SEV', width: 60 },
   { id: 'rpn', label: 'RPN', width: 60 },
-  { id: 'current_prevention', label: 'Current controls (prev)', width: 180 },
-  { id: 'current_detection', label: 'Current controls (det)', width: 180 },
-  { id: 'control_method', label: 'Control method', width: 180 },
-  { id: 'sample_size', label: 'Sample size', width: 100 },
-  { id: 'frequency', label: 'Frequency', width: 100 },
-  { id: 'reaction_plan', label: 'Reaction plan', width: 180 },
+  { id: 'current_prevention', label: 'CURRENT CONTROLS (PREV)', width: 180 },
+  { id: 'current_detection', label: 'CURRENT CONTROLS (DET)', width: 180 },
+  { id: 'control_method', label: 'CONTROL METHOD', width: 180 },
+  { id: 'sample_size', label: 'SAMPLE SIZE', width: 100 },
+  { id: 'frequency', label: 'FREQUENCY', width: 100 },
+  { id: 'reaction_plan', label: 'REACTION PLAN', width: 180 },
 ]
 
 export const PCP_COLUMNS_BY_ID: Record<PcpColumnId, { id: PcpColumnId; label: string; width: number }> = PCP_COLUMNS.reduce(
@@ -111,11 +104,6 @@ export const DEFAULT_VISIBLE_COLUMNS: Record<PcpColumnId, boolean> = {
   frequency: true,
   reaction_plan: true,
 }
-
-export const DEFAULT_PCP_FILTERS: PcpFilterState = PCP_COLUMNS.reduce((acc, column) => {
-  acc[column.id] = null
-  return acc
-}, {} as PcpFilterState)
 
 export function formatDateTimePL(iso: string | null | undefined) {
   if (!iso) return '-'
@@ -181,45 +169,6 @@ export function sortPcpRows(rows: PcpRow[]) {
     return as - bs
   })
   return indexed.map((item) => item.row)
-}
-
-export function formatPcpCellNumber(value: number | string | null | undefined) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? String(Math.round(numeric)) : '-'
-}
-
-export function pcpColumnDisplayValue(row: PcpRow, column: PcpColumnId) {
-  if (column === 'id') return formatPcpCellNumber(row.operations?.operation_number)
-  if (column === 'station') return normalizeText(row.operations?.machine) || '-'
-  if (column === 'operation') return normalizeText(row.operations?.operation) || '-'
-  if (column === 'process_step') return normalizeText(row.operations?.name) || '-'
-  if (column === 'failure_mode') return normalizeText(row.failure_mode) || '-'
-  if (column === 'characteristic') return normalizeText(row.characteristic) || '-'
-  if (column === 'class') return normalizeClassValue(row.class) ?? '-'
-  if (column === 'severity') return formatPcpCellNumber(row.severity)
-  if (column === 'rpn') return formatPcpCellNumber(row.rpn)
-  if (column === 'current_prevention') return normalizeText(row.current_prevention) || '-'
-  if (column === 'current_detection') return normalizeText(row.current_detection) || '-'
-  if (column === 'control_method') return normalizeText(row.control_method) || '-'
-  if (column === 'sample_size') return normalizeText(row.sample_size) || '-'
-  if (column === 'frequency') return normalizeText(row.frequency) || '-'
-  return normalizeText(row.reaction_plan) || '-'
-}
-
-export function pcpColumnSortValue(row: PcpRow, column: PcpColumnId) {
-  if (column === 'id') return Number(row.operations?.operation_number ?? Number.MAX_SAFE_INTEGER)
-  if (column === 'severity') return asInt1to10(row.severity) ?? -1
-  if (column === 'rpn') {
-    const numeric = Number(row.rpn)
-    return Number.isFinite(numeric) ? numeric : -1
-  }
-  return pcpColumnDisplayValue(row, column)
-}
-
-export function uniqueSortedPcpValues(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
-  )
 }
 
 export function anchoredPopupStyle(anchorEl: HTMLElement, width: number, gap = 8, minViewportPadding = 24): CSSProperties {

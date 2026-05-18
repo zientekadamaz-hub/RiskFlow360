@@ -9,10 +9,7 @@ const pageSource = fs.readFileSync(path.join(root, 'app', 'pcp', 'page.tsx'), 'u
 const modelSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'pcp-page-model.ts'), 'utf8')
 
 assert.match(modelSource, /export type PcpColumnId/, 'PCP page model must export column ids.')
-assert.match(modelSource, /export type PcpSortState/, 'PCP page model must export table sort state type.')
-assert.match(modelSource, /export type PcpFilterState/, 'PCP page model must export table filter state type.')
 assert.match(modelSource, /export const PCP_COLUMNS/, 'PCP page model must export table columns.')
-assert.match(modelSource, /export const DEFAULT_PCP_FILTERS/, 'PCP page model must export default table filters.')
 assert.match(modelSource, /export const DEFAULT_VISIBLE_COLUMNS/, 'PCP page model must export default visible columns.')
 assert.match(modelSource, /export const EDIT_LOCK_MS/, 'PCP page model must export edit lock timeout.')
 assert.match(modelSource, /export function makePcpPlaceholderRow/, 'PCP page model must export placeholder row factory.')
@@ -22,8 +19,6 @@ assert.match(modelSource, /export function getPcpEditState/, 'PCP page model mus
 assert.match(modelSource, /export function formatPcpLockRemainingText/, 'PCP page model must export lock remaining formatter.')
 assert.match(modelSource, /export function getPcpWorkingRevision/, 'PCP page model must export working revision helper.')
 assert.match(modelSource, /export function sortPcpRows/, 'PCP page model must export row sorting helper.')
-assert.match(modelSource, /export function pcpColumnDisplayValue/, 'PCP page model must export table display values.')
-assert.match(modelSource, /export function pcpColumnSortValue/, 'PCP page model must export table sort values.')
 
 assert.match(pageSource, /from '@\/features\/pcp\/pcp-page-model'/, 'PCP page must import shared page model.')
 assert.doesNotMatch(pageSource, /type PcpColumnId =/, 'PCP page should not define column ids inline.')
@@ -65,9 +60,7 @@ const model = loadTypeScriptModule(['src', 'features', 'pcp', 'pcp-page-model.ts
 })
 
 assert.equal(model.PCP_COLUMNS.length, 15)
-assert.equal(model.PCP_COLUMNS.find((column) => column.id === 'failure_mode').label, 'Failure mode')
 assert.equal(model.DEFAULT_VISIBLE_COLUMNS.reaction_plan, true)
-assert.equal(model.DEFAULT_PCP_FILTERS.failure_mode, null)
 assert.equal(model.formatDateTimePL(null), '-')
 const placeholder = model.makePcpPlaceholderRow(
   { id: 'op-1', project_id: 'project-1', operation_number: 10, name: 'Assembly', machine: 'Line 1', operation: 'Fit' },
@@ -118,10 +111,5 @@ const sorted = model.sortPcpRows([
   { ...placeholder, id: 'row-a', operations: { ...placeholder.operations, operation_number: 10 }, __sortIndex: 1 },
 ]).map((row) => row.id)
 assert.deepEqual(sorted, ['row-a', 'row-c', 'row-b'])
-
-assert.equal(model.pcpColumnDisplayValue(placeholder, 'station'), 'Line 1')
-assert.equal(model.pcpColumnDisplayValue(placeholder, 'failure_mode'), 'Leak')
-assert.equal(model.pcpColumnSortValue(placeholder, 'severity'), 9)
-assert.equal(JSON.stringify(model.uniqueSortedPcpValues(['B', 'A', 'B'])), JSON.stringify(['A', 'B']))
 
 console.log('pcp page model smoke passed')
