@@ -167,6 +167,50 @@ assert.equal(individualCurrentRowsSummary.avg, (27 + 100 + 180) / 3)
 assert.equal(individualCurrentRowsSummary.count, 3)
 assertJsonEqual(individualCurrentRowsSummary.buckets, { green: 1, yellow: 2, orange: 0, red: 0 })
 
+const rpnBucketColorSummary = computePfmeaAverageRpnSummary(
+  [
+    {
+      id: 'closed-yellow-by-rpn',
+      riskKey: 'risk-a',
+      status: 'CLOSED',
+      currentRisk: { sev: 9, doVal: 90, rpn: 810 },
+      residualRisk: { sev: 9, doVal: 9, rpn: 81 },
+    },
+    {
+      id: 'open-red-by-rpn',
+      riskKey: 'risk-b',
+      status: 'OPEN',
+      currentRisk: { sev: 9, doVal: 40, rpn: 360 },
+      residualRisk: { sev: 9, doVal: 1, rpn: 9 },
+    },
+  ],
+  (row) => row.currentRisk,
+  () => 'red',
+  (rpn) => {
+    if (rpn <= 50) return 'green'
+    if (rpn <= 113) return 'yellow'
+    if (rpn <= 230) return 'orange'
+    return 'red'
+  },
+  {
+    countCurrentRowsIndividually: true,
+    getResidualRisk: (row) => row.residualRisk,
+    getRiskColorForRpn: (rpn) => {
+      if (rpn == null) return null
+      if (rpn <= 50) return 'green'
+      if (rpn <= 113) return 'yellow'
+      if (rpn <= 230) return 'orange'
+      return 'red'
+    },
+    getRiskKey: (row) => row.riskKey,
+    isClosedAction: (row) => row.status === 'CLOSED',
+  }
+)
+
+assert.equal(rpnBucketColorSummary.avg, (81 + 360) / 2)
+assert.equal(rpnBucketColorSummary.count, 2)
+assertJsonEqual(rpnBucketColorSummary.buckets, { green: 0, yellow: 1, orange: 0, red: 1 })
+
 const duplicatedGroupIdRows = [
   { id: 'risk-a', operation_id: 'op-1', action_plan_group_id: 'duplicated-group', currentRisk: { sev: 8, doVal: 25, rpn: 200 } },
   { id: 'risk-b', operation_id: 'op-1', action_plan_group_id: 'duplicated-group', currentRisk: { sev: 7, doVal: 20, rpn: 140 } },

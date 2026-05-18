@@ -475,6 +475,7 @@ function PfmeaFullPageContent() {
             rpn: riskContext.residualRisk.rpn,
           }
         },
+        getRiskColorForRpn: getRiskColorForAverageRpn,
         getRiskKey: (row, index) => getPfmeaSummaryRiskKey(row, index, rowHierarchy[index]),
         isClosedAction: (row) => (row.action_status ?? '').trim().toUpperCase() === 'CLOSED',
       }

@@ -63,11 +63,12 @@ export function getPfmeaSummaryRiskKey(
 function buildSummaryRisk<T>(
   row: T,
   getRisk: (row: T) => PfmeaCurrentRiskMetrics,
-  getRiskColorFor: (severity: number | null, occurrenceDetection: number | null) => RiskColor | null
+  getRiskColorFor: (severity: number | null, occurrenceDetection: number | null) => RiskColor | null,
+  getRiskColorForRpn?: (rpn: number | null) => RiskColor | null
 ): PfmeaSummaryRisk | null {
   const risk = getRisk(row)
-  const color = getRiskColorFor(risk.sev, risk.doVal)
   const rpn = hasFiniteRpn(risk.rpn) ? risk.rpn : null
+  const color = getRiskColorForRpn?.(rpn) ?? getRiskColorFor(risk.sev, risk.doVal)
   if (!color && rpn == null) return null
   return { color, rpn }
 }
@@ -81,6 +82,7 @@ export function computePfmeaAverageRpnSummary<T>(
     countCurrentRowsIndividually?: boolean
     getRiskKey?: (row: T, index: number) => string | null
     getResidualRisk?: (row: T) => PfmeaCurrentRiskMetrics
+    getRiskColorForRpn?: (rpn: number | null) => RiskColor | null
     isClosedAction?: (row: T) => boolean
   } = {}
 ): PfmeaAverageRpnSummary {
@@ -90,10 +92,10 @@ export function computePfmeaAverageRpnSummary<T>(
   const bestClosedResidualRiskByKey = new Map<string, PfmeaSummaryRisk>()
 
   rows.forEach((row, index) => {
-    const currentRisk = buildSummaryRisk(row, getCurrentRisk, getRiskColorFor)
+    const currentRisk = buildSummaryRisk(row, getCurrentRisk, getRiskColorFor, options.getRiskColorForRpn)
     const isClosedAction = options.isClosedAction?.(row) ?? false
     const residualRisk = isClosedAction && options.getResidualRisk
-      ? buildSummaryRisk(row, options.getResidualRisk, getRiskColorFor)
+      ? buildSummaryRisk(row, options.getResidualRisk, getRiskColorFor, options.getRiskColorForRpn)
       : null
 
     if (!currentRisk && !residualRisk) return
