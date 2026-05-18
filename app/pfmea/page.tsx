@@ -466,6 +466,7 @@ function PfmeaFullPageContent() {
       getRiskColorFor,
       getRiskColorForAverageRpn,
       {
+        countCurrentRowsIndividually: true,
         getResidualRisk: (row) => {
           const riskContext = computePfmeaDerivedFromContext(row)
           return {

@@ -36,6 +36,11 @@ type PfmeaSummaryRiskBucket = {
   bestClosedResidualRisk: PfmeaSummaryRisk | null
 }
 
+type PfmeaSummaryCurrentEntry = {
+  key: string
+  risk: PfmeaSummaryRisk
+}
+
 function hasFiniteRpn(value: number | null) {
   return value != null && Number.isFinite(value)
 }
@@ -73,6 +78,7 @@ export function computePfmeaAverageRpnSummary<T>(
   getRiskColorFor: (severity: number | null, occurrenceDetection: number | null) => RiskColor | null,
   getRiskColorForAverageRpn: (averageRpn: number) => RiskColor | null,
   options: {
+    countCurrentRowsIndividually?: boolean
     getRiskKey?: (row: T, index: number) => string | null
     getResidualRisk?: (row: T) => PfmeaCurrentRiskMetrics
     isClosedAction?: (row: T) => boolean
@@ -80,6 +86,8 @@ export function computePfmeaAverageRpnSummary<T>(
 ): PfmeaAverageRpnSummary {
   const buckets: Record<RiskColor, number> = { green: 0, yellow: 0, orange: 0, red: 0 }
   const currentRisksByKey = new Map<string, PfmeaSummaryRiskBucket>()
+  const currentRiskEntries: PfmeaSummaryCurrentEntry[] = []
+  const bestClosedResidualRiskByKey = new Map<string, PfmeaSummaryRisk>()
 
   rows.forEach((row, index) => {
     const currentRisk = buildSummaryRisk(row, getCurrentRisk, getRiskColorFor)
@@ -91,6 +99,20 @@ export function computePfmeaAverageRpnSummary<T>(
     if (!currentRisk && !residualRisk) return
 
     const riskKey = options.getRiskKey?.(row, index) ?? `__row:${index}`
+    if (options.countCurrentRowsIndividually) {
+      if (currentRisk) {
+        currentRiskEntries.push({ key: riskKey, risk: currentRisk })
+      }
+
+      if (residualRisk && residualRisk.rpn != null) {
+        const currentBest = bestClosedResidualRiskByKey.get(riskKey)
+        if (!currentBest || currentBest.rpn == null || residualRisk.rpn < currentBest.rpn) {
+          bestClosedResidualRiskByKey.set(riskKey, residualRisk)
+        }
+      }
+      return
+    }
+
     const existing = currentRisksByKey.get(riskKey) ?? { currentRisk: null, bestClosedResidualRisk: null }
 
     if (currentRisk) {
@@ -108,6 +130,35 @@ export function computePfmeaAverageRpnSummary<T>(
   })
 
   const values: number[] = []
+  if (options.countCurrentRowsIndividually) {
+    for (const selectedRisk of bestClosedResidualRiskByKey.values()) {
+      const { color, rpn } = selectedRisk
+      if (color) buckets[color] += 1
+      if (rpn != null) values.push(rpn)
+    }
+
+    for (const entry of currentRiskEntries) {
+      if (bestClosedResidualRiskByKey.has(entry.key)) continue
+      const { color, rpn } = entry.risk
+      if (color) buckets[color] += 1
+      if (rpn != null) values.push(rpn)
+    }
+
+    if (values.length === 0) {
+      return {
+        avg: null,
+        color: null,
+        count: 0,
+        buckets,
+      }
+    }
+
+    const avg = values.reduce((acc, value) => acc + value, 0) / values.length
+    const color = getRiskColorForAverageRpn(avg) ?? 'red'
+
+    return { avg, color, count: values.length, buckets }
+  }
+
   for (const riskBucket of currentRisksByKey.values()) {
     const selectedRisk = riskBucket.bestClosedResidualRisk ?? riskBucket.currentRisk
     if (!selectedRisk) continue
