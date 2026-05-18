@@ -40,7 +40,6 @@ import {
   buildPfmeaBlockMergeInfoByHierarchy,
   buildPfmeaHierarchy,
   isPlaceholderRowId,
-  normalizePfmeaGroupId,
   type PfmeaRowHierarchy,
 } from '@/features/pfmea/pfmea-hierarchy-utils'
 import {
@@ -52,7 +51,7 @@ import {
   computePfmeaDerivedFromContext as computePfmeaDerivedFromRowContext,
 } from '@/features/pfmea/pfmea-row-context-utils'
 import { isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
-import { computePfmeaAverageRpnSummary } from '@/features/pfmea/pfmea-summary-utils'
+import { computePfmeaAverageRpnSummary, getPfmeaSummaryRiskKey } from '@/features/pfmea/pfmea-summary-utils'
 import { buildPfmeaDisplayOperations, buildPfmeaTableRows } from '@/features/pfmea/pfmea-visible-rows-utils'
 import { buildPfmeaOperationMergeInfo } from '@/features/pfmea/pfmea-table-merge-utils'
 import {
@@ -475,11 +474,7 @@ function PfmeaFullPageContent() {
             rpn: riskContext.residualRisk.rpn,
           }
         },
-        getRiskKey: (row, index) => {
-          const operationId = row.operation_id || row.operations?.id || 'operation'
-          const groupId = normalizePfmeaGroupId(row.action_plan_group_id)
-          return groupId ? `${operationId}:${groupId}` : (rowHierarchy[index]?.causeBlockKey ?? row.id)
-        },
+        getRiskKey: (row, index) => getPfmeaSummaryRiskKey(row, index, rowHierarchy[index]),
         isClosedAction: (row) => (row.action_status ?? '').trim().toUpperCase() === 'CLOSED',
       }
     )

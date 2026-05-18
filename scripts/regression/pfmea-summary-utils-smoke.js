@@ -20,7 +20,7 @@ function loadModule(relativePath) {
   return sandbox.module.exports
 }
 
-const { computePfmeaAverageRpnSummary } = loadModule(['src', 'features', 'pfmea', 'pfmea-summary-utils.ts'])
+const { computePfmeaAverageRpnSummary, getPfmeaSummaryRiskKey } = loadModule(['src', 'features', 'pfmea', 'pfmea-summary-utils.ts'])
 
 function assertJsonEqual(actual, expected) {
   assert.equal(JSON.stringify(actual), JSON.stringify(expected))
@@ -115,6 +115,26 @@ const closedActionSummary = computePfmeaAverageRpnSummary(
 assert.equal(closedActionSummary.avg, (45 + 100) / 2)
 assert.equal(closedActionSummary.count, 2)
 assertJsonEqual(closedActionSummary.buckets, { green: 1, yellow: 1, orange: 0, red: 0 })
+
+const duplicatedGroupIdRows = [
+  { id: 'risk-a', operation_id: 'op-1', action_plan_group_id: 'duplicated-group', currentRisk: { sev: 8, doVal: 25, rpn: 200 } },
+  { id: 'risk-b', operation_id: 'op-1', action_plan_group_id: 'duplicated-group', currentRisk: { sev: 7, doVal: 20, rpn: 140 } },
+]
+const duplicatedGroupIdHierarchy = [
+  { causeBlockKey: '10.1.1.1' },
+  { causeBlockKey: '10.1.1.2' },
+]
+const duplicatedGroupSummary = computePfmeaAverageRpnSummary(
+  duplicatedGroupIdRows,
+  (row) => row.currentRisk,
+  () => 'orange',
+  (avg) => (avg >= 100 ? 'orange' : 'green'),
+  { getRiskKey: (row, index) => getPfmeaSummaryRiskKey(row, index, duplicatedGroupIdHierarchy[index]) }
+)
+
+assert.equal(duplicatedGroupSummary.avg, (200 + 140) / 2)
+assert.equal(duplicatedGroupSummary.count, 2)
+assertJsonEqual(duplicatedGroupSummary.buckets, { green: 0, yellow: 0, orange: 2, red: 0 })
 
 const emptySummary = computePfmeaAverageRpnSummary(
   [{ id: 'empty', currentRisk: { sev: null, doVal: null, rpn: null } }],

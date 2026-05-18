@@ -13,6 +13,19 @@ export type PfmeaAverageRpnSummary = {
   buckets: Record<RiskColor, number>
 }
 
+export type PfmeaSummaryRiskKeyRow = {
+  id: string
+  action_plan_group_id?: string | null
+  operation_id?: string | null
+  operations?: {
+    id?: string | null
+  } | null
+}
+
+export type PfmeaSummaryRiskKeyHierarchy = {
+  causeBlockKey?: string | null
+}
+
 type PfmeaSummaryRisk = {
   color: RiskColor | null
   rpn: number | null
@@ -25,6 +38,21 @@ type PfmeaSummaryRiskBucket = {
 
 function hasFiniteRpn(value: number | null) {
   return value != null && Number.isFinite(value)
+}
+
+export function getPfmeaSummaryRiskKey(
+  row: PfmeaSummaryRiskKeyRow,
+  index: number,
+  hierarchy?: PfmeaSummaryRiskKeyHierarchy | null
+) {
+  const operationId = row.operation_id || row.operations?.id || 'operation'
+  const causeBlockKey = (hierarchy?.causeBlockKey ?? '').trim()
+  if (causeBlockKey) return `${operationId}:cause:${causeBlockKey}`
+
+  const groupId = (row.action_plan_group_id ?? '').trim()
+  if (groupId) return `${operationId}:group:${groupId}`
+
+  return row.id || `__row:${index}`
 }
 
 function buildSummaryRisk<T>(
