@@ -162,7 +162,8 @@ assert.match(source, /validatePfmeaSaveStart/, 'Save flow must validate initial 
 assert.match(saveSource, /params\.loadProjectView\(\{ syncDraftOverride: false \}\)[\s\S]*freshProjectView\.current_draft_revision_id[\s\S]*params\.setDraftRevisionIdOverride\(freshDraftRevisionId\)/, 'Save flow must revalidate the fresh draft revision before publishing.')
 assert.match(saveSource, /activeSaveDraftRevisionIdRef\.current \?\? params\.draftRevisionIdOverride/, 'Published metadata sync must use the fresh draft revision during save.')
 assert.match(pageSource, /moduleAccessState !== 'allowed'\) \{\s*return <PfmeaPageFallback \/>/, 'PFMEA must render a dark fallback while access is checking instead of returning null.')
-assert.match(pageSource, /background: '#171f33'[\s\S]*Loading PFMEA/, 'PFMEA fallback must use the dark app background.')
+assert.match(pageSource, /function PfmeaPageFallback\(\)[\s\S]*<SettingsBackdrop \/>/, 'PFMEA fallback must use the same textured backdrop instead of a flat loading screen.')
+assert.doesNotMatch(pageSource, /Loading PFMEA/, 'PFMEA fallback must avoid visible loading text flashes between modules.')
 assert.match(
   postPublishSource,
   /ensurePublishedPfmeaIntegrityAfterSave[\s\S]*findEquivalentPublishedPfmeaRow/,

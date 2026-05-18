@@ -42,6 +42,7 @@ import { usePcpSaveRevision } from '@/features/pcp/use-pcp-save-revision'
 import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
 import {
   SettingsPageShell,
+  SettingsBackdrop,
   SettingsSummaryGrid,
   SettingsSummaryTile,
   getSettingsSummaryGridMaxWidth,
@@ -957,8 +958,8 @@ const actionBtn: React.CSSProperties = { padding: '6px 10px', borderRadius: SURF
 
 function PcpPageFallback() {
   return (
-    <div style={{ minHeight: 'calc(100vh - 56px)', padding: 24, background: '#171f33', color: '#f8fafc', fontSize: 14, fontWeight: 700 }}>
-      Loading PCP...
+    <div style={{ minHeight: 'calc(100vh - 56px)', position: 'relative', overflow: 'hidden', background: '#171f33' }}>
+      <SettingsBackdrop />
     </div>
   )
 }

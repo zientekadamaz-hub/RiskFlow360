@@ -20,6 +20,9 @@ assert.match(paletteSource, /export function ThumbOperation/, 'PFD operation thu
 
 assert.match(pageSource, /from '@\/features\/pfd\/pfd-page-styles'/, 'PFD page must import shared PFD styles.')
 assert.match(pageSource, /from '@\/features\/pfd\/pfd-left-rail'/, 'PFD page must import left rail after palette extraction.')
+assert.match(pageSource, /moduleAccessState !== 'allowed'\) \{\s*return <PfdPageFallback \/>/, 'PFD must render a textured fallback while access is checking instead of exposing the body background.')
+assert.match(pageSource, /function PfdPageFallback\(\)[\s\S]*home-hero-bg\.svg[\s\S]*linear-gradient/, 'PFD fallback must use the same background treatment as the loaded canvas page.')
+assert.doesNotMatch(pageSource, /Loading PFD/, 'PFD fallback must avoid visible loading text flashes between modules.')
 assert.match(railSource, /from '\.\/pfd-symbol-palette'/, 'PFD left rail must import palette button and thumbnails.')
 assert.doesNotMatch(pageSource, /function PaletteButton/, 'PFD page should not define PaletteButton after extraction.')
 assert.doesNotMatch(pageSource, /const baseBtn: React\.CSSProperties/, 'PFD page should not define base button style after extraction.')

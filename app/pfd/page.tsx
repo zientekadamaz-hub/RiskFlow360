@@ -105,8 +105,26 @@ const ZOOM_BASE = 0.6
 
 function PfdPageFallback() {
   return (
-    <div style={{ padding: 24, color: '#666', fontSize: 14, fontWeight: 700 }}>
-      Loading PFD...
+    <div style={{ width: '100%', minHeight: 'calc(100vh - 56px)', position: 'relative', overflow: 'hidden', background: '#171f33' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: "url('/home-hero-bg.svg')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(180deg, rgba(88, 58, 39, 0.58), rgba(23, 31, 51, 0.86))',
+        }}
+      />
     </div>
   )
 }
@@ -933,7 +951,7 @@ function PfdPageContent() {
   const panelHeight = pfmeaOpen ? '25vh' : '0px'
 
   if (moduleAccessState !== 'allowed') {
-    return null
+    return <PfdPageFallback />
   }
 
   if (!canWork) {

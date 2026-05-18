@@ -1130,8 +1130,8 @@ function PfmeaFullPageContent() {
 
 function PfmeaPageFallback() {
   return (
-    <div style={{ minHeight: 'calc(100vh - 56px)', padding: 24, background: '#171f33', color: '#f8fafc', fontSize: 14, fontWeight: 700 }}>
-      Loading PFMEA...
+    <div style={{ minHeight: 'calc(100vh - 56px)', position: 'relative', overflow: 'hidden', background: '#171f33' }}>
+      <SettingsBackdrop />
     </div>
   )
 }
