@@ -51,7 +51,7 @@ import {
   computePfmeaDerivedFromContext as computePfmeaDerivedFromRowContext,
 } from '@/features/pfmea/pfmea-row-context-utils'
 import { isPfmeaTransientRowEmpty } from '@/features/pfmea/pfmea-transient-row-utils'
-import { computePfmeaAverageRpnSummary, getPfmeaSummaryRiskKey } from '@/features/pfmea/pfmea-summary-utils'
+import { computePfmeaAverageRpnSummary } from '@/features/pfmea/pfmea-summary-utils'
 import { buildPfmeaDisplayOperations, buildPfmeaTableRows } from '@/features/pfmea/pfmea-visible-rows-utils'
 import { buildPfmeaOperationMergeInfo } from '@/features/pfmea/pfmea-table-merge-utils'
 import {
@@ -469,6 +469,17 @@ function PfmeaFullPageContent() {
     return buildPfmeaBlockMergeInfoByHierarchy(tableRows, rowHierarchy, (item) => item.causeBlockKey)
   }, [rowHierarchy, tableRows])
 
+  const visibleRiskSummaryKeyFor = useCallback((index: number) => {
+    for (let rowIndex = index; rowIndex >= 0; rowIndex -= 1) {
+      const mergeItem = actionPlanBlockMergeInfo[rowIndex]
+      if (mergeItem?.span && mergeItem.end >= index) {
+        return `visible-risk:${tableRows[rowIndex]?.id ?? rowIndex}`
+      }
+    }
+
+    return `visible-risk:${tableRows[index]?.id ?? index}`
+  }, [actionPlanBlockMergeInfo, tableRows])
+
   const avgRpnSummary = useMemo(() => {
     return computePfmeaAverageRpnSummary(
       tableRows,
@@ -493,7 +504,7 @@ function PfmeaFullPageContent() {
           }
         },
         getRiskColorForRpn: getRiskColorForAverageRpn,
-        getRiskKey: (row, index) => getPfmeaSummaryRiskKey(row, index, rowHierarchy[index]),
+        getRiskKey: (_row, index) => visibleRiskSummaryKeyFor(index),
         includeCurrentRisk: (_row, index) => (actionPlanBlockMergeInfo[index]?.span ?? 0) > 0,
         isClosedAction: (row) =>
           (row.action_status ?? '').trim().toUpperCase() === 'CLOSED' &&
@@ -501,7 +512,7 @@ function PfmeaFullPageContent() {
       }
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actionPlanBlockMergeInfo, tableRows, rowHierarchy, getRiskColorFor, getRiskColorForAverageRpn])
+  }, [actionPlanBlockMergeInfo, tableRows, visibleRiskSummaryKeyFor, getRiskColorFor, getRiskColorForAverageRpn])
 
   const {
     addCauseContinuationRow,
