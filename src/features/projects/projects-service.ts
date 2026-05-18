@@ -78,7 +78,7 @@ type PfmeaStatsRow = {
 const PROJECT_STATUSES = ['DRAFT', 'OPEN', 'OBSOLETE'] as const
 const GLOBAL_RISK_MATRIX_CONFIG_ID = 1
 const GLOBAL_PROJECT_ID = '00000000-0000-0000-0000-000000000000'
-const PROJECTS_PFMEA_RISK_SELECT = `${PFMEA_REPORT_RISK_FIELDS},operations!inner(id,project_id,active)`
+const PROJECTS_PFMEA_RISK_SELECT = `revision_id,${PFMEA_REPORT_RISK_FIELDS},operations!inner(id,project_id,active)`
 
 function requireOrganizationId(orgId: string | null): string {
   const normalized = normalizeProjectText(orgId)

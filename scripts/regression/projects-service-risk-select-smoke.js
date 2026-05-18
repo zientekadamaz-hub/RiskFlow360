@@ -13,8 +13,8 @@ assert.match(
 
 assert.match(
   source,
-  /PROJECTS_PFMEA_RISK_SELECT = `\$\{PFMEA_REPORT_RISK_FIELDS\},operations!inner\(id,project_id,active\)`/,
-  'Projects service must fetch the same PFMEA risk fields as Progress Chart and RPN Matrix.'
+  /PROJECTS_PFMEA_RISK_SELECT = `revision_id,\$\{PFMEA_REPORT_RISK_FIELDS\},operations!inner\(id,project_id,active\)`/,
+  'Projects service must fetch the same PFMEA risk fields as Progress Chart and RPN Matrix, including revision_id for table aggregation.'
 )
 
 assert.match(
