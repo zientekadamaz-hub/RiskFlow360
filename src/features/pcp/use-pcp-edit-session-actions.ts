@@ -121,7 +121,7 @@ export function usePcpEditSessionActions({
       clearDraftTracking()
       await loadEditSession()
       await loadAll()
-      setSessionMsg('Draft discarded. Session closed without publishing.')
+      setSessionMsg('')
     } catch (error) {
       setError(errorMessage(error))
     } finally {

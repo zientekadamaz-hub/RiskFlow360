@@ -13,7 +13,7 @@ assert.match(hookSource, /deletePcpDraftRows/, 'PCP edit session actions must ow
 assert.match(hookSource, /upsertPcpEditSession/, 'PCP edit session actions must own edit session start.')
 assert.match(hookSource, /deletePcpEditSession/, 'PCP edit session actions must own explicit session close.')
 assert.match(hookSource, /Previous PCP draft was discarded/, 'PCP edit session actions must preserve takeover timeout notice.')
-assert.match(hookSource, /Draft discarded\. Session closed without publishing\./, 'PCP edit session actions must preserve discard notice.')
+assert.doesNotMatch(hookSource, /Draft discarded\. Session closed without publishing\./, 'PCP discard should not show a success notice, matching PFMEA.')
 
 assert.match(pageSource, /usePcpEditSessionActions\(\{/, 'PCP page must use edit session actions hook.')
 assert.doesNotMatch(pageSource, /fetchPcpSessionLock/, 'PCP page should not check locks directly after action extraction.')

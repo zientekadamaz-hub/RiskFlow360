@@ -60,6 +60,7 @@ const model = loadTypeScriptModule(['src', 'features', 'pcp', 'pcp-page-model.ts
 })
 
 assert.equal(model.PCP_COLUMNS.length, 15)
+assert.equal(model.PCP_COLUMNS.reduce((sum, column) => sum + column.width, 0), 1236)
 assert.equal(model.DEFAULT_VISIBLE_COLUMNS.reaction_plan, true)
 assert.equal(model.formatDateTimePL(null), '-')
 const placeholder = model.makePcpPlaceholderRow(

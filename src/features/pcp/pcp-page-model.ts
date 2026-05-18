@@ -56,21 +56,21 @@ export const CLASS_OPTION_DETAILS: Record<string, { title: string; description: 
 }
 
 export const PCP_COLUMNS: Array<{ id: PcpColumnId; label: string; width: number }> = [
-  { id: 'id', label: 'ID#', width: 60 },
-  { id: 'station', label: 'STATION', width: 120 },
-  { id: 'operation', label: 'OPERATION', width: 140 },
-  { id: 'process_step', label: 'PROCESS STEP', width: 180 },
-  { id: 'failure_mode', label: 'FAILURE MODE', width: 180 },
-  { id: 'characteristic', label: 'CHARACTERISTIC', width: 120 },
-  { id: 'class', label: 'CLASS', width: 60 },
-  { id: 'severity', label: 'SEV', width: 60 },
-  { id: 'rpn', label: 'RPN', width: 60 },
-  { id: 'current_prevention', label: 'CURRENT CONTROLS (PREV)', width: 180 },
-  { id: 'current_detection', label: 'CURRENT CONTROLS (DET)', width: 180 },
-  { id: 'control_method', label: 'CONTROL METHOD', width: 180 },
-  { id: 'sample_size', label: 'SAMPLE SIZE', width: 100 },
-  { id: 'frequency', label: 'FREQUENCY', width: 100 },
-  { id: 'reaction_plan', label: 'REACTION PLAN', width: 180 },
+  { id: 'id', label: 'ID#', width: 42 },
+  { id: 'station', label: 'STATION', width: 72 },
+  { id: 'operation', label: 'OPERATION', width: 84 },
+  { id: 'process_step', label: 'PROCESS STEP', width: 108 },
+  { id: 'failure_mode', label: 'FAILURE MODE', width: 112 },
+  { id: 'characteristic', label: 'CHARACTERISTIC', width: 92 },
+  { id: 'class', label: 'CLASS', width: 44 },
+  { id: 'severity', label: 'SEV', width: 42 },
+  { id: 'rpn', label: 'RPN', width: 48 },
+  { id: 'current_prevention', label: 'CURRENT CONTROLS (PREV)', width: 112 },
+  { id: 'current_detection', label: 'CURRENT CONTROLS (DET)', width: 112 },
+  { id: 'control_method', label: 'CONTROL METHOD', width: 112 },
+  { id: 'sample_size', label: 'SAMPLE SIZE', width: 72 },
+  { id: 'frequency', label: 'FREQUENCY', width: 72 },
+  { id: 'reaction_plan', label: 'REACTION PLAN', width: 112 },
 ]
 
 export const PCP_COLUMNS_BY_ID: Record<PcpColumnId, { id: PcpColumnId; label: string; width: number }> = PCP_COLUMNS.reduce(

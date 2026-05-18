@@ -35,14 +35,24 @@ export function Th(props: { w: string; children?: React.ReactNode }) {
   return (
     <th
       style={{
-        border: '1px solid rgba(255,255,255,0.14)',
-        background: SURFACE_PANEL_BG,
-        color: SURFACE_TEXT,
         textAlign: 'center',
-        fontSize: 12,
-        padding: '8px 10px',
-        fontWeight: 800,
+        padding: '10px 8px',
+        fontSize: 13,
+        color: 'rgba(255,255,255,0.78)',
         width: props.w,
+        maxWidth: props.w,
+        borderBottom: '1px solid rgba(255,255,255,0.2)',
+        borderRight: '1px solid rgba(255,255,255,0.14)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        background: SURFACE_PANEL_BG,
+        boxShadow: 'none',
+        whiteSpace: 'normal',
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word',
+        lineHeight: 1.15,
+        fontWeight: 650,
       }}
     >
       {props.children}

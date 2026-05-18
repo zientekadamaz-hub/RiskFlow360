@@ -9,6 +9,10 @@ const tableSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'p
 
 assert.match(cellsSource, /export function SummaryCard/, 'PCP table cells must export SummaryCard.')
 assert.match(cellsSource, /export function Th/, 'PCP table cells must export table header cell.')
+assert.match(cellsSource, /borderBottom: '1px solid rgba\(255,255,255,0\.2\)'/, 'PCP header must use PFMEA-style bottom border.')
+assert.match(cellsSource, /borderRight: '1px solid rgba\(255,255,255,0\.14\)'/, 'PCP header must use PFMEA-style right border.')
+assert.match(cellsSource, /padding: '10px 8px'/, 'PCP header must keep PFMEA-like header height with tighter horizontal padding.')
+assert.doesNotMatch(cellsSource, /border: '1px solid rgba\(255,255,255,0\.14\)'/, 'PCP header must avoid full-cell borders that thicken the table frame.')
 assert.match(cellsSource, /export function TdRead/, 'PCP table cells must export read-only cell.')
 assert.match(cellsSource, /export function TdText/, 'PCP table cells must export editable text cell.')
 assert.match(cellsSource, /export function TdClassPopup/, 'PCP table cells must export class popup cell.')
