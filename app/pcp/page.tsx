@@ -34,18 +34,10 @@ import {
 } from '@/features/pcp/pcp-page-model'
 import { PcpHistoryDialog, PcpSaveDialog } from '@/features/pcp/pcp-dialogs'
 import { PcpTable } from '@/features/pcp/pcp-table'
+import { SummaryCard } from '@/features/pcp/pcp-table-cells'
 import { usePcpEditSessionActions } from '@/features/pcp/use-pcp-edit-session-actions'
 import { usePcpSaveRevision } from '@/features/pcp/use-pcp-save-revision'
 import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
-import {
-  SettingsPageShell,
-  SettingsSummaryGrid,
-  SettingsSummaryTile,
-  settingsCardStyle,
-  settingsFrameStyle,
-  settingsProcessAccent,
-  settingsStatValueStyle,
-} from '@/components/rf-ui'
 import {
   backfillPcpRowsFromPfmea,
   ensurePcpProcessDraft,
@@ -643,21 +635,34 @@ function PcpPageContent() {
     return () => clearInterval(beat)
   }, [projectId, userId, isEditOwner])
 
-  const card: React.CSSProperties = { ...settingsCardStyle, color: SURFACE_TEXT }
-  const frame: React.CSSProperties = settingsFrameStyle
-  const summaryValue: React.CSSProperties = { ...settingsStatValueStyle, marginTop: 0, lineHeight: 1 }
-  const processSummaryValue: React.CSSProperties = {
-    ...summaryValue,
-    alignItems: 'center',
+  const card: React.CSSProperties = {
+    background: SURFACE_BG,
+    borderStyle: 'solid',
+    borderWidth: 1,
+    borderColor: SURFACE_BORDER,
+    borderRadius: SURFACE_RADIUS,
+    boxShadow: '0 18px 40px rgba(0,0,0,0.18)',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    color: SURFACE_TEXT,
+  }
+  const heroCard: React.CSSProperties = { ...card }
+  const titleStyle: React.CSSProperties = { fontSize: 28, fontWeight: 600, letterSpacing: -0.3, color: SURFACE_TEXT }
+  const subtitleStyle: React.CSSProperties = { marginTop: 4, fontSize: 13.5, color: 'rgba(255,255,255,0.78)' }
+  const frame: React.CSSProperties = { width: '96%', marginLeft: 'auto', marginRight: 'auto' }
+  const summaryTile: React.CSSProperties = {
+    minHeight: 82,
+    padding: '10px 12px',
+    borderRadius: SURFACE_RADIUS,
     display: 'flex',
-    fontSize: 22,
-    justifyContent: 'center',
-    lineHeight: 1.08,
-    minHeight: 34,
-    overflow: 'hidden',
-    overflowWrap: 'anywhere',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
     textAlign: 'center',
-    whiteSpace: 'normal',
+  }
+  const summaryValue: React.CSSProperties = {
+    fontSize: 24,
+    fontWeight: 800,
+    lineHeight: 1,
   }
 
   if (moduleAccessState !== 'allowed') {
@@ -665,31 +670,40 @@ function PcpPageContent() {
   }
 
   return (
-    <SettingsPageShell
-      title="PCP"
-      titleStyle={{ color: settingsProcessAccent }}
-      subtitle="Manage the Production Control Plan for the selected process and publish PCP revisions."
-      summary={
-        <SettingsSummaryGrid columns={3} maxWidth={390}>
-          <SettingsSummaryTile label="Process" value={project?.name ?? '-'} valueStyle={processSummaryValue} />
-          <SettingsSummaryTile label="Revision" value={(workingRevisionLabel ?? '-').split('.').at(-1) ?? '-'} valueStyle={summaryValue} />
-          <SettingsSummaryTile label="PCP rows" value={rowsSorted.length} valueStyle={summaryValue} />
-        </SettingsSummaryGrid>
-      }
-    >
+    <div style={{ minHeight: '100vh', paddingBottom: 18, position: 'relative', overflow: 'hidden', background: '#171f33' }}>
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: "url('/home-hero-bg.svg')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        }}
+      />
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(180deg, rgba(88, 58, 39, 0.58), rgba(23, 31, 51, 0.86))',
+        }}
+      />
+      <div style={{ position: 'relative', zIndex: 1 }}>
       <style jsx global>{`
-        .pcpTable ::selection,
-        .pcpTable .pfmeaEditor::selection {
+        .pfmeaTable ::selection,
+        .pfmeaTable .pfmeaEditor::selection {
           background: rgba(148, 163, 184, 0.38);
           color: #f8fafc;
         }
-        .pcpTable ::-moz-selection,
-        .pcpTable .pfmeaEditor::-moz-selection {
+        .pfmeaTable ::-moz-selection,
+        .pfmeaTable .pfmeaEditor::-moz-selection {
           background: rgba(148, 163, 184, 0.38);
           color: #f8fafc;
         }
-        .pcpTable .pfmeaEditor,
-        .pcpTable .pfmeaEditor:focus {
+        .pfmeaTable .pfmeaEditor,
+        .pfmeaTable .pfmeaEditor:focus {
           border: 0 !important;
           outline: 0 !important;
           box-shadow: none !important;
@@ -703,10 +717,10 @@ function PcpPageContent() {
           line-height: inherit !important;
           text-align: inherit !important;
         }
-        .pcpTable input.pfmeaEditor {
+        .pfmeaTable input.pfmeaEditor {
           height: 1.25em !important;
         }
-        .pcpTable textarea.pfmeaEditor {
+        .pfmeaTable textarea.pfmeaEditor {
           white-space: pre-wrap !important;
           overflow-wrap: anywhere !important;
           word-break: break-word !important;
@@ -715,16 +729,39 @@ function PcpPageContent() {
           min-height: 1.25em !important;
           height: 1.25em !important;
         }
-        .pcpTd.singleLine.editable {
+        .pfmeaTd {
+          padding: 10px 10px !important;
+          vertical-align: middle;
+          background: rgba(255,255,255,0.03);
+          color: #e1e5ec;
+          text-align: center;
+          overflow: hidden;
+          position: relative;
+          font-weight: 500;
+          font-size: 16px;
+          line-height: 1.25;
+          border: 0 !important;
+        }
+        .pfmeaTd.singleLine.editable {
           height: 45px;
           padding-top: 0 !important;
           padding-bottom: 0 !important;
         }
-        .pcpTd.singleLine { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .pcpTd.center { text-align: center; }
-        .pcpTd.editable { cursor: text; position: relative; transition: background 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease; }
-        .pcpTd.editable:hover,
-        .pcpTd.editable:focus-within { background: rgba(255,255,255,0.065) !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); border-radius: 0; }
+        .pfmeaRow:not(:last-child) .pfmeaTd {
+          border-bottom: 1px solid rgba(255,255,255,0.14) !important;
+        }
+        .pfmeaTd {
+          border-right: 1px solid rgba(255,255,255,0.14) !important;
+        }
+        .pfmeaRow .pfmeaTd:last-child {
+          border-right: 0 !important;
+        }
+        .pfmeaTd.singleLine { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pfmeaTd.center { text-align: center; }
+        .pfmeaTd.gray { background: rgba(255,255,255,0.08); }
+        .pfmeaTd.editable { cursor: text; position: relative; transition: box-shadow 0.14s ease, border-color 0.14s ease; }
+        .pfmeaTd.editable:hover,
+        .pfmeaTd.editable:focus-within { box-shadow: inset 0 0 0 1px rgba(96,165,250,0.45); border-radius: 0; }
         .pfmeaEditor { width: 100%; border: 0; outline: none; background: transparent; font: inherit; color: inherit; resize: vertical; min-height: 26px; }
         .rf-button { background: rgba(255,255,255,0.08); color: ${SURFACE_TEXT}; font-family: inherit; font-weight: 650; border: 1px solid rgba(255,255,255,0.18); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: ${SURFACE_RADIUS}px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; min-height: 29px; padding: 0 12px; cursor: pointer; }
         .rf-button:hover { background: rgba(59,130,246,0.18) !important; border-color: rgba(96,165,250,0.45) !important; box-shadow: 0 10px 24px rgba(37,99,235,0.18) !important; }
@@ -749,7 +786,23 @@ function PcpPageContent() {
         .trashBtn:active { transform: translateY(1px); }
       `}</style>
 
-      <div style={{ ...frame, marginTop: 10, marginBottom: 16 }}>
+      <div style={{ ...frame, marginTop: 20 }}>
+      <div style={{ ...heroCard, padding: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 360px', maxWidth: 520 }}>
+            <div style={titleStyle}>PCP</div>
+            <div style={subtitleStyle}>Manage the Production Control Plan for the selected process and publish PCP revisions.</div>
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'grid', gridTemplateColumns: '174px 116px 116px', gap: 10, alignSelf: 'flex-start' }}>
+            <SummaryCard title="Process" value={project?.name ? 1 : 0} displayValue={project?.name ?? '-'} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={{ ...summaryValue, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
+            <SummaryCard title="Revision" value={0} displayValue={(workingRevisionLabel ?? '-').split('.').at(-1) ?? '-'} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
+            <SummaryCard title="PCP rows" value={rowsSorted.length} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <div style={{ ...frame, marginTop: 10 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Link href="/projects" className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }}>Project</Link>
@@ -841,7 +894,8 @@ function PcpPageContent() {
           onClose={() => setHistoryOpen(false)}
         />
       ) : null}
-    </SettingsPageShell>
+      </div>
+    </div>
   )
 }
 

@@ -8,10 +8,6 @@ const tableSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'p
 
 assert.match(tableSource, /export function PcpTable/, 'PCP table component must be exported.')
 assert.match(tableSource, /export type PcpEditCell/, 'PCP table component must export edit cell type.')
-assert.match(tableSource, /settingsTableWrapStyle/, 'PCP table must use the shared standard table wrapper.')
-assert.match(tableSource, /settingsTableStyle/, 'PCP table must use the shared standard table style.')
-assert.match(tableSource, /className="pcpTable"/, 'PCP table must use the PCP table scope class.')
-assert.match(tableSource, /minWidth: `\$\{visibleTableWidth\}px`/, 'PCP table must preserve visible table minimum width for horizontal overflow.')
 assert.match(tableSource, /<colgroup>\{visibleColumnDefs\.map/, 'PCP table must preserve visible column colgroup.')
 assert.match(tableSource, /isColumnVisible\('failure_mode'\)/, 'PCP table must preserve failure mode visibility.')
 assert.match(tableSource, /isColumnVisible\('reaction_plan'\)/, 'PCP table must preserve reaction plan visibility.')
@@ -22,8 +18,6 @@ assert.match(tableSource, /TdClassPopup/, 'PCP table must keep class popup cell.
 assert.match(tableSource, /TdText/, 'PCP table must keep editable text cells.')
 
 assert.match(pageSource, /from '@\/features\/pcp\/pcp-table'/, 'PCP page must import extracted table.')
-assert.match(pageSource, /<SettingsPageShell/, 'PCP page must use the shared standard page shell.')
-assert.match(pageSource, /<SettingsSummaryGrid columns=\{3\}/, 'PCP page must use the shared summary tile grid.')
 assert.match(pageSource, /<PcpTable[\s\S]*rows=\{rowsSorted\}/, 'PCP page must render extracted table with sorted rows.')
 assert.doesNotMatch(pageSource, /<tbody>\s*\{\s*rowsSorted\.map/, 'PCP page should not render table body inline after extraction.')
 assert.doesNotMatch(pageSource, /<Th w=\{widthOf\('failure_mode'\)\}>FAILURE MODE<\/Th>/, 'PCP page should not render table headers inline after extraction.')
