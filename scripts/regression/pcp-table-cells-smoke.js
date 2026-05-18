@@ -24,12 +24,14 @@ assert.match(cellsSource, /function PcpTextEditor/, 'PCP text cell must keep loc
 assert.match(cellsSource, /const commitIfChanged = \(\) => \{[\s\S]*props\.onCancel\(\)[\s\S]*props\.onCommit\(val\)/, 'PCP text cell must keep blur commit behavior.')
 assert.match(cellsSource, /onBlur=\{commitIfChanged\}/, 'PCP editor must commit on blur.')
 
-assert.match(pageSource, /from '@\/features\/pcp\/pcp-table-cells'/, 'PCP page must import extracted table cells.')
+assert.match(pageSource, /SettingsPageShell/, 'PCP page must use the shared settings page shell for the top frame.')
+assert.match(pageSource, /<SettingsSummaryGrid columns=\{3\} maxWidth=\{390\}>/, 'PCP page must keep the standard compact summary grid.')
+assert.match(pageSource, /<SettingsSummaryTile label="Process"/, 'PCP page must keep the standard process summary tile.')
+assert.doesNotMatch(pageSource, /<SummaryCard/, 'PCP page must not render custom summary cards in the standard header.')
 assert.doesNotMatch(pageSource, /function TdText/, 'PCP page should not define TdText inline.')
 assert.doesNotMatch(pageSource, /function TdClassPopup/, 'PCP page should not define TdClassPopup inline.')
 assert.doesNotMatch(pageSource, /createPortal/, 'PCP page should not import portal directly after extraction.')
 assert.match(tableSource, /<TdClassPopup/, 'PCP table must still render class popup cells.')
 assert.match(tableSource, /<TdText/, 'PCP table must still render editable text cells.')
-assert.match(pageSource, /<SummaryCard/, 'PCP page must still render summary cards.')
 
 console.log('pcp table cells smoke passed')

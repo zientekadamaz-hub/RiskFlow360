@@ -34,10 +34,18 @@ import {
 } from '@/features/pcp/pcp-page-model'
 import { PcpHistoryDialog, PcpSaveDialog } from '@/features/pcp/pcp-dialogs'
 import { PcpTable } from '@/features/pcp/pcp-table'
-import { SummaryCard } from '@/features/pcp/pcp-table-cells'
 import { usePcpEditSessionActions } from '@/features/pcp/use-pcp-edit-session-actions'
 import { usePcpSaveRevision } from '@/features/pcp/use-pcp-save-revision'
 import { usePcpVisibleColumns } from '@/features/pcp/use-pcp-visible-columns'
+import {
+  SettingsPageShell,
+  SettingsSummaryGrid,
+  SettingsSummaryTile,
+  settingsCardStyle,
+  settingsFrameStyle,
+  settingsProcessAccent,
+  settingsStatValueStyle,
+} from '@/components/rf-ui'
 import {
   backfillPcpRowsFromPfmea,
   ensurePcpProcessDraft,
@@ -634,34 +642,21 @@ function PcpPageContent() {
     return () => clearInterval(beat)
   }, [projectId, userId, isEditOwner])
 
-  const card: React.CSSProperties = {
-    background: SURFACE_BG,
-    borderStyle: 'solid',
-    borderWidth: 1,
-    borderColor: SURFACE_BORDER,
-    borderRadius: SURFACE_RADIUS,
-    boxShadow: '0 18px 40px rgba(0,0,0,0.18)',
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
-    color: SURFACE_TEXT,
-  }
-  const heroCard: React.CSSProperties = { ...card }
-  const titleStyle: React.CSSProperties = { fontSize: 28, fontWeight: 600, letterSpacing: -0.3, color: SURFACE_TEXT }
-  const subtitleStyle: React.CSSProperties = { marginTop: 4, fontSize: 13.5, color: 'rgba(255,255,255,0.78)' }
-  const frame: React.CSSProperties = { width: '96%', marginLeft: 'auto', marginRight: 'auto' }
-  const summaryTile: React.CSSProperties = {
-    minHeight: 82,
-    padding: '10px 12px',
-    borderRadius: SURFACE_RADIUS,
+  const card: React.CSSProperties = { ...settingsCardStyle, color: SURFACE_TEXT }
+  const frame: React.CSSProperties = settingsFrameStyle
+  const summaryValue: React.CSSProperties = { ...settingsStatValueStyle, marginTop: 0, lineHeight: 1 }
+  const processSummaryValue: React.CSSProperties = {
+    ...summaryValue,
+    alignItems: 'center',
     display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
+    fontSize: 22,
+    justifyContent: 'center',
+    lineHeight: 1.08,
+    minHeight: 34,
+    overflow: 'hidden',
+    overflowWrap: 'anywhere',
     textAlign: 'center',
-  }
-  const summaryValue: React.CSSProperties = {
-    fontSize: 24,
-    fontWeight: 800,
-    lineHeight: 1,
+    whiteSpace: 'normal',
   }
 
   if (moduleAccessState !== 'allowed') {
@@ -669,27 +664,18 @@ function PcpPageContent() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', paddingBottom: 18, position: 'relative', overflow: 'hidden', background: '#171f33' }}>
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: "url('/home-hero-bg.svg')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-        }}
-      />
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'linear-gradient(180deg, rgba(88, 58, 39, 0.58), rgba(23, 31, 51, 0.86))',
-        }}
-      />
-      <div style={{ position: 'relative', zIndex: 1 }}>
+    <SettingsPageShell
+      title="PCP"
+      titleStyle={{ color: settingsProcessAccent, fontWeight: 600 }}
+      subtitle="Manage the Production Control Plan for the selected process and publish PCP revisions."
+      summary={
+        <SettingsSummaryGrid columns={3} maxWidth={390}>
+          <SettingsSummaryTile label="Process" value={project?.name ?? '-'} valueStyle={processSummaryValue} />
+          <SettingsSummaryTile label="Revision" value={(workingRevisionLabel ?? '-').split('.').at(-1) ?? '-'} valueStyle={summaryValue} />
+          <SettingsSummaryTile label="PCP rows" value={rowsSorted.length} valueStyle={summaryValue} />
+        </SettingsSummaryGrid>
+      }
+    >
       <style jsx global>{`
         .pfmeaTable ::selection,
         .pfmeaTable .pfmeaEditor::selection {
@@ -788,22 +774,6 @@ function PcpPageContent() {
         .trashBtn:active { transform: translateY(1px); }
       `}</style>
 
-      <div style={{ ...frame, marginTop: 20 }}>
-      <div style={{ ...heroCard, padding: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 360px', maxWidth: 520 }}>
-            <div style={titleStyle}>PCP</div>
-            <div style={subtitleStyle}>Manage the Production Control Plan for the selected process and publish PCP revisions.</div>
-          </div>
-          <div style={{ marginLeft: 'auto', display: 'grid', gridTemplateColumns: '174px 116px 116px', gap: 10, alignSelf: 'flex-start' }}>
-            <SummaryCard title="Process" value={project?.name ? 1 : 0} displayValue={project?.name ?? '-'} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={{ ...summaryValue, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
-            <SummaryCard title="Revision" value={0} displayValue={(workingRevisionLabel ?? '-').split('.').at(-1) ?? '-'} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
-            <SummaryCard title="PCP rows" value={rowsSorted.length} bg="rgba(255,255,255,0.12)" bd="rgba(255,255,255,0.22)" fg="#f8fafc" style={summaryTile} valueStyle={summaryValue} />
-          </div>
-        </div>
-      </div>
-      </div>
-
       <div style={{ ...frame, marginTop: 10 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -895,8 +865,7 @@ function PcpPageContent() {
           onClose={() => setHistoryOpen(false)}
         />
       ) : null}
-      </div>
-    </div>
+    </SettingsPageShell>
   )
 }
 
