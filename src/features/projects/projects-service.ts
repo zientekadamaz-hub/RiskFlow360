@@ -23,6 +23,7 @@ import {
   sectionRevisionFromLabel,
 } from './utils'
 import { collectPfmeaCurrentOpenRisks, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
+import { PFMEA_REPORT_RISK_FIELDS } from '@/features/reports/pfmea-report-query'
 
 type ProfileOrgRow = {
   active_organization_id?: string | null
@@ -55,10 +56,13 @@ type RiskMatrixCellRow = {
 
 type PfmeaStatsRow = {
   action_plan_group_id?: string | null
+  action_status?: string | null
+  detection2?: number | null
   failure_block_group_id?: string | null
   failure_mode_group_id?: string | null
   id?: string | null
   operation_id?: string | null
+  occurrence2?: number | null
   row_no?: string | null
   revision_id?: string | null
   rpn?: number | null
@@ -74,6 +78,7 @@ type PfmeaStatsRow = {
 const PROJECT_STATUSES = ['DRAFT', 'OPEN', 'OBSOLETE'] as const
 const GLOBAL_RISK_MATRIX_CONFIG_ID = 1
 const GLOBAL_PROJECT_ID = '00000000-0000-0000-0000-000000000000'
+const PROJECTS_PFMEA_RISK_SELECT = `${PFMEA_REPORT_RISK_FIELDS},operations!inner(id,project_id,active)`
 
 function requireOrganizationId(orgId: string | null): string {
   const normalized = normalizeProjectText(orgId)
@@ -407,7 +412,7 @@ export async function fetchProjectPfmeaStats(
 
   const { data, error } = await supabase
     .from('pfmea_rows')
-    .select('id,operation_id,row_no,revision_id,failure_mode_group_id,failure_block_group_id,action_plan_group_id,rpn,rpn_current,severity,occurrence,detection,oxd_current,created_at,operations!inner(id,project_id,active)')
+    .select(PROJECTS_PFMEA_RISK_SELECT)
     .in('operations.project_id', projectIds)
     .eq('operations.active', true)
 
@@ -585,7 +590,7 @@ export async function fetchOpenRiskSummary(
 
   const { data, error } = await supabase
     .from('pfmea_rows')
-    .select('id,operation_id,row_no,revision_id,failure_mode_group_id,failure_block_group_id,action_plan_group_id,severity,occurrence,detection,oxd_current,rpn_current,rpn,created_at,operations!inner(id,project_id,active)')
+    .select(PROJECTS_PFMEA_RISK_SELECT)
     .in('revision_id', normalizedRevisionIds)
     .eq('operations.active', true)
 
