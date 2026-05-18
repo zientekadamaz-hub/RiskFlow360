@@ -452,6 +452,23 @@ function PfmeaFullPageContent() {
 
   const rowHierarchy = useMemo(() => buildPfmeaHierarchy(tableRows), [tableRows])
 
+  // ROWSPAN MAP: scalanie dla 4 pierwszych kolumn
+  const mergeInfo = useMemo(() => {
+    return buildPfmeaOperationMergeInfo(tableRows)
+  }, [tableRows])
+
+  const failureModeMergeInfo = useMemo(() => {
+    return buildPfmeaBlockMergeInfoByHierarchy(tableRows, rowHierarchy, (item) => item.failureModeKey)
+  }, [rowHierarchy, tableRows])
+
+  const failureBlockMergeInfo = useMemo(() => {
+    return buildPfmeaBlockMergeInfoByHierarchy(tableRows, rowHierarchy, (item) => item.failureBlockKey)
+  }, [rowHierarchy, tableRows])
+
+  const actionPlanBlockMergeInfo = useMemo(() => {
+    return buildPfmeaBlockMergeInfoByHierarchy(tableRows, rowHierarchy, (item) => item.causeBlockKey)
+  }, [rowHierarchy, tableRows])
+
   const avgRpnSummary = useMemo(() => {
     return computePfmeaAverageRpnSummary(
       tableRows,
@@ -477,11 +494,14 @@ function PfmeaFullPageContent() {
         },
         getRiskColorForRpn: getRiskColorForAverageRpn,
         getRiskKey: (row, index) => getPfmeaSummaryRiskKey(row, index, rowHierarchy[index]),
-        isClosedAction: (row) => (row.action_status ?? '').trim().toUpperCase() === 'CLOSED',
+        includeCurrentRisk: (_row, index) => (actionPlanBlockMergeInfo[index]?.span ?? 0) > 0,
+        isClosedAction: (row) =>
+          (row.action_status ?? '').trim().toUpperCase() === 'CLOSED' &&
+          (row.recommended_action ?? '').trim().length > 0,
       }
     )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableRows, rowHierarchy, getRiskColorFor, getRiskColorForAverageRpn])
+  }, [actionPlanBlockMergeInfo, tableRows, rowHierarchy, getRiskColorFor, getRiskColorForAverageRpn])
 
   const {
     addCauseContinuationRow,
@@ -619,23 +639,6 @@ function PfmeaFullPageContent() {
     },
     [colOrder, startEditCell, edit, clearPendingCellValue, nextCell, prevCell]
   )
-
-  // ROWSPAN MAP: scalanie dla 4 pierwszych kolumn
-  const mergeInfo = useMemo(() => {
-    return buildPfmeaOperationMergeInfo(tableRows)
-  }, [tableRows])
-
-  const failureModeMergeInfo = useMemo(() => {
-    return buildPfmeaBlockMergeInfoByHierarchy(tableRows, rowHierarchy, (item) => item.failureModeKey)
-  }, [rowHierarchy, tableRows])
-
-  const failureBlockMergeInfo = useMemo(() => {
-    return buildPfmeaBlockMergeInfoByHierarchy(tableRows, rowHierarchy, (item) => item.failureBlockKey)
-  }, [rowHierarchy, tableRows])
-
-  const actionPlanBlockMergeInfo = useMemo(() => {
-    return buildPfmeaBlockMergeInfoByHierarchy(tableRows, rowHierarchy, (item) => item.causeBlockKey)
-  }, [rowHierarchy, tableRows])
 
   const visibleColumnDefs = useMemo(() => PFMEA_COLUMNS.filter((col) => isColumnVisible(col.id)), [isColumnVisible])
   const widthOf = useCallback(

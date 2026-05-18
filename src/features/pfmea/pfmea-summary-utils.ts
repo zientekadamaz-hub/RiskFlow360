@@ -83,6 +83,7 @@ export function computePfmeaAverageRpnSummary<T>(
     getRiskKey?: (row: T, index: number) => string | null
     getResidualRisk?: (row: T) => PfmeaCurrentRiskMetrics
     getRiskColorForRpn?: (rpn: number | null) => RiskColor | null
+    includeCurrentRisk?: (row: T, index: number) => boolean
     isClosedAction?: (row: T) => boolean
   } = {}
 ): PfmeaAverageRpnSummary {
@@ -102,7 +103,8 @@ export function computePfmeaAverageRpnSummary<T>(
 
     const riskKey = options.getRiskKey?.(row, index) ?? `__row:${index}`
     if (options.countCurrentRowsIndividually) {
-      if (currentRisk) {
+      const includeCurrentRisk = options.includeCurrentRisk?.(row, index) ?? true
+      if (currentRisk && includeCurrentRisk) {
         currentRiskEntries.push({ key: riskKey, risk: currentRisk })
       }
 

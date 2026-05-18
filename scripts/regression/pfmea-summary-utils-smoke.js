@@ -146,6 +146,14 @@ const individualCurrentRowsSummary = computePfmeaAverageRpnSummary(
       currentRisk: { sev: 8, doVal: 64, rpn: 512 },
       residualRisk: { sev: 8, doVal: 2, rpn: 16 },
     },
+    {
+      id: 'risk-c-hidden-merged-current',
+      hiddenCurrent: true,
+      riskKey: 'risk-c',
+      status: 'OPEN',
+      currentRisk: { sev: 9, doVal: 100, rpn: 900 },
+      residualRisk: { sev: 9, doVal: 1, rpn: 9 },
+    },
   ],
   (row) => row.currentRisk,
   (sev, doVal) => {
@@ -159,6 +167,7 @@ const individualCurrentRowsSummary = computePfmeaAverageRpnSummary(
     countCurrentRowsIndividually: true,
     getResidualRisk: (row) => row.residualRisk,
     getRiskKey: (row) => row.riskKey,
+    includeCurrentRisk: (row) => !row.hiddenCurrent,
     isClosedAction: (row) => row.status === 'CLOSED',
   }
 )
