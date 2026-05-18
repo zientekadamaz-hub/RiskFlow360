@@ -1,9 +1,13 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const vm = require('node:vm')
+const ts = require('typescript')
 
 const root = path.join(__dirname, '..', '..')
 const source = fs.readFileSync(path.join(root, 'src', 'features', 'projects', 'projects-service.ts'), 'utf8')
+const utilsSourcePath = path.join(root, 'src', 'features', 'projects', 'utils.ts')
+const utilsSource = fs.readFileSync(utilsSourcePath, 'utf8')
 
 assert.match(
   source,
@@ -46,14 +50,20 @@ assert.match(
 
 assert.match(
   source,
-  /normalizeProjectText\(project\.current_open_revision_id\)[\s\S]*normalizeProjectText\(project\.current_draft_revision_id\)/,
-  'Projects table PFMEA stats must query open and draft revisions so stale pointers do not zero risk values.'
+  /normalizeProjectText\(project\.current_draft_revision_id\)[\s\S]*normalizeProjectText\(project\.current_open_revision_id\)/,
+  'Projects table PFMEA stats must query draft and open revisions in the same priority order as the displayed current revision.'
 )
 
 assert.match(
   source,
-  /candidateRevisionIds\.map\(\(revisionId\) => byRevision\[revisionId\]\)\.find\(Boolean\)/,
-  'Projects table PFMEA stats must prefer open revision data while falling back to draft data when needed.'
+  /let selectedRevisionId = candidateRevisionIds\.find\(\(revisionId\) => byRevision\[revisionId\]\)/,
+  'Projects table PFMEA stats must select the same revision candidate used for the displayed row and summary.'
+)
+
+assert.match(
+  source,
+  /revisionId: selectedRevisionId \?\? fallbackRevisionId/,
+  'Projects table PFMEA stats must return the revision actually used so summary tiles query the same revision.'
 )
 
 assert.match(
@@ -67,5 +77,63 @@ assert.doesNotMatch(
   /const projectId = normalizeProjectText\(operation\?\.project_id\)/,
   'Projects table PFMEA stats must not depend on nested operation project ids for aggregation.'
 )
+
+function loadTypeScriptModule(sourcePath, moduleMap = {}) {
+  const transpiled = ts.transpileModule(fs.readFileSync(sourcePath, 'utf8'), {
+    compilerOptions: {
+      esModuleInterop: true,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+    },
+  }).outputText
+
+  const sandbox = {
+    exports: {},
+    module: { exports: {} },
+    require: (request) => {
+      if (Object.prototype.hasOwnProperty.call(moduleMap, request)) return moduleMap[request]
+      return require(request)
+    },
+  }
+  sandbox.exports = sandbox.module.exports
+  vm.runInNewContext(transpiled, sandbox, { filename: sourcePath })
+  return sandbox.module.exports
+}
+
+const utils = loadTypeScriptModule(utilsSourcePath, {
+  '@/lib/error-utils': { errorText: (error) => String(error?.message ?? error) },
+  '@/lib/risk-engine': {
+    clampRiskInt: (value, min, max) => Math.max(min, Math.min(max, Number(value) || min)),
+    riskCellKey: (severity, doValue) => `${severity}|${doValue}`,
+    riskColorForMatrixCell: () => null,
+    riskColorFromRpn: () => 'green',
+  },
+})
+
+assert.match(utilsSource, /export function getProjectCurrentRevisionId/, 'Projects utils must expose the shared current revision resolver.')
+assert.equal(
+  utils.getProjectCurrentRevisionId({ current_draft_revision_id: 'draft-rev', current_open_revision_id: 'open-rev' }),
+  'draft-rev',
+  'Projects current revision resolver must prefer draft over open.'
+)
+
+const [uiRow] = utils.mapProjectsToUiRows(
+  [{
+    id: 'project-1',
+    name: 'Process',
+    products: 'A',
+    site_department_id: 'site-dept-1',
+    status: 'OPEN',
+    current_draft_revision_id: 'draft-rev',
+    current_open_revision_id: 'open-rev',
+    draft_revision_label: '1.2.0',
+    open_revision_label: '1.1.0',
+    created_at: '2026-05-18T00:00:00Z',
+  }],
+  { 'site-dept-1': { site: 'Krakow', department: 'Engineering' } },
+  { 'project-1': { avgRpn: 144, revisionId: 'open-rev', riskCount: 3 } }
+)
+assert.equal(uiRow.currentRevisionId, 'open-rev', 'Projects UI row must use the stat revision so summary tiles query the same rows as the table.')
+assert.equal(uiRow.riskCount, 3, 'Projects UI row must keep risk count from the selected stats revision.')
 
 console.log('projects service risk select smoke passed')

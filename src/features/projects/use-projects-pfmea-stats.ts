@@ -29,9 +29,16 @@ export function useProjectsPfmeaStats({
         if (!cancelled) setProjectPfmeaStats(next)
       } catch {
         if (!cancelled) {
-          const projectIds = Array.from(new Set(projects.map((project) => normalizeProjectText(project.id)).filter(Boolean)))
           const fallback: Record<string, ProjectPfmeaStat> = {}
-          for (const projectId of projectIds) fallback[projectId] = { avgRpn: null, riskCount: 0 }
+          for (const project of projects) {
+            const projectId = normalizeProjectText(project.id)
+            if (!projectId) continue
+            fallback[projectId] = {
+              avgRpn: null,
+              revisionId: normalizeProjectText(project.current_draft_revision_id) || normalizeProjectText(project.current_open_revision_id),
+              riskCount: 0,
+            }
+          }
           setProjectPfmeaStats(fallback)
         }
       }

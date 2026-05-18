@@ -116,6 +116,10 @@ export function parseProductList(value: string) {
   return [...parts, '']
 }
 
+export function getProjectCurrentRevisionId(project: Pick<ProjectRowDb, 'current_draft_revision_id' | 'current_open_revision_id'>) {
+  return normalizeProjectText(project.current_draft_revision_id) || normalizeProjectText(project.current_open_revision_id)
+}
+
 export function mapProjectsToUiRows(
   rawProjects: ProjectRowDb[],
   siteDeptMap: Record<string, { site: string; department: string }>,
@@ -129,9 +133,9 @@ export function mapProjectsToUiRows(
     const department = normalizeProjectText(siteDepartment?.department) || '-'
     const updated = project.updated_at ?? project.created_at
     const revision = normalizeProjectText(project.draft_revision_label) || normalizeProjectText(project.open_revision_label) || '0.0.0'
-    const currentRevisionId = normalizeProjectText(project.current_draft_revision_id) || normalizeProjectText(project.current_open_revision_id)
+    const stats = projectPfmeaStats[project.id] ?? { avgRpn: null, revisionId: getProjectCurrentRevisionId(project), riskCount: 0 }
+    const currentRevisionId = normalizeProjectText(stats.revisionId) || getProjectCurrentRevisionId(project)
     const status = normalizeProjectText(project.status) || 'DRAFT'
-    const stats = projectPfmeaStats[project.id] ?? { avgRpn: null, riskCount: 0 }
 
     return {
       id: project.id,

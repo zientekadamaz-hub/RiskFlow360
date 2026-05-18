@@ -20,6 +20,7 @@ import {
   clampInt,
   cellKey,
   formatDateTimePL,
+  getProjectCurrentRevisionId,
   sectionRevisionFromLabel,
 } from './utils'
 import { collectPfmeaCurrentOpenRisks, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
@@ -408,8 +409,8 @@ export async function fetchProjectPfmeaStats(
     const projectId = normalizeProjectText(project.id)
     if (!projectId) continue
     const candidateRevisionIds = [
-      normalizeProjectText(project.current_open_revision_id),
       normalizeProjectText(project.current_draft_revision_id),
+      normalizeProjectText(project.current_open_revision_id),
     ].filter((revisionId, index, arr): revisionId is string => !!revisionId && arr.indexOf(revisionId) === index)
     if (candidateRevisionIds.length) {
       revisionIdsByProject[projectId] = candidateRevisionIds
@@ -421,7 +422,7 @@ export async function fetchProjectPfmeaStats(
 
   const revisionIds = Array.from(new Set(Object.values(revisionIdsByProject).flat().filter(Boolean)))
   if (!revisionIds.length) {
-    return Object.fromEntries(projectIds.map((projectId) => [projectId, { avgRpn: null, riskCount: 0 }]))
+    return Object.fromEntries(projectIds.map((projectId) => [projectId, { avgRpn: null, revisionId: '', riskCount: 0 }]))
   }
 
   const { data, error } = await supabase
@@ -462,21 +463,29 @@ export async function fetchProjectPfmeaStats(
   }
 
   const next: Record<string, ProjectPfmeaStat> = {}
+  const projectById = new Map(rawProjects.map((project) => [normalizeProjectText(project.id), project] as const))
   for (const projectId of projectIds) {
     const byRevision = aggregateByProjectRevision[projectId] ?? {}
     const candidateRevisionIds = revisionIdsByProject[projectId] ?? []
-    let slot = candidateRevisionIds.map((revisionId) => byRevision[revisionId]).find(Boolean)
+    let selectedRevisionId = candidateRevisionIds.find((revisionId) => byRevision[revisionId])
+    let slot = selectedRevisionId ? byRevision[selectedRevisionId] : undefined
     if (!slot) {
       let latest: RevisionAggregate | undefined
       for (const revisionId of Object.keys(byRevision)) {
         const current = byRevision[revisionId]
-        if (!latest || current.lastCreatedAt > latest.lastCreatedAt) latest = current
+        if (!latest || current.lastCreatedAt > latest.lastCreatedAt) {
+          latest = current
+          selectedRevisionId = revisionId
+        }
       }
       slot = latest
     }
+    const project = projectById.get(projectId)
+    const fallbackRevisionId = project ? getProjectCurrentRevisionId(project) : ''
     next[projectId] = {
       riskCount: slot?.riskCount ?? 0,
       avgRpn: slot && slot.rpnCount > 0 ? Number((slot.rpnSum / slot.rpnCount).toFixed(1)) : null,
+      revisionId: selectedRevisionId ?? fallbackRevisionId,
     }
   }
 

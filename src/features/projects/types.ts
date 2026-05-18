@@ -33,6 +33,7 @@ export type UiProjectRow = {
 export type ProjectPfmeaStat = {
   avgRpn: number | null
   riskCount: number
+  revisionId: string
 }
 
 export type OpenRiskSummary = {
