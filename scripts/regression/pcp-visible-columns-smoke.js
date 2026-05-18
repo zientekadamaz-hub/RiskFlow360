@@ -13,6 +13,8 @@ assert.match(hookSource, /window\.localStorage\.getItem/, 'PCP visible columns h
 assert.match(hookSource, /window\.localStorage\.setItem/, 'PCP visible columns hook must persist localStorage state.')
 assert.match(hookSource, /visibleColumnDefs/, 'PCP visible columns hook must expose visible column definitions.')
 assert.match(hookSource, /widthOf/, 'PCP visible columns hook must expose width helper.')
+assert.match(hookSource, /baseWidth \/ totalWidth/, 'PCP visible columns hook must convert column widths to proportions.')
+assert.match(hookSource, /visibleTableWidth \|\| baseWidth/, 'PCP visible columns hook must keep a non-zero proportional width fallback.')
 
 assert.match(pageSource, /usePcpVisibleColumns\(userId\)/, 'PCP page must use visible columns hook.')
 assert.doesNotMatch(pageSource, /useState<Record<PcpColumnId, boolean>>/, 'PCP page should not own visible column state.')

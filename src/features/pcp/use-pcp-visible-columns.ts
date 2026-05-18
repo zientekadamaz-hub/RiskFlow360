@@ -41,7 +41,11 @@ export function usePcpVisibleColumns(userId: string | null) {
 
   const visibleColumnDefs = useMemo(() => PCP_COLUMNS.filter((col) => isColumnVisible(col.id)), [isColumnVisible])
   const visibleTableWidth = useMemo(() => visibleColumnDefs.reduce((acc, column) => acc + column.width, 0), [visibleColumnDefs])
-  const widthOf = useCallback((id: PcpColumnId) => `${PCP_COLUMNS_BY_ID[id]?.width ?? 100}px`, [])
+  const widthOf = useCallback((id: PcpColumnId) => {
+    const baseWidth = PCP_COLUMNS_BY_ID[id]?.width ?? 100
+    const totalWidth = visibleTableWidth || baseWidth
+    return `${(baseWidth / totalWidth) * 100}%`
+  }, [visibleTableWidth])
 
   useEffect(() => {
     if (!userId || typeof window === 'undefined') return

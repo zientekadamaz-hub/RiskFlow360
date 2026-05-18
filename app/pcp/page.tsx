@@ -138,7 +138,6 @@ function PcpPageContent() {
     toggleColumnVisibility,
     uncheckColumnGroup,
     visibleColumnDefs,
-    visibleTableWidth,
     widthOf,
   } = usePcpVisibleColumns(userId)
 
@@ -736,6 +735,9 @@ function PcpPageContent() {
           color: #e1e5ec;
           text-align: center;
           overflow: hidden;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: break-word;
           position: relative;
           font-weight: 500;
           font-size: 16px;
@@ -861,7 +863,6 @@ function PcpPageContent() {
         setEdit={setEdit}
         updateRow={updateRow}
         visibleColumnDefs={visibleColumnDefs}
-        visibleTableWidth={visibleTableWidth}
         widthOf={widthOf}
       />
       </div>

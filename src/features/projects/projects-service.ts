@@ -402,19 +402,24 @@ export async function fetchProjectPfmeaStats(
   const projectIds = Array.from(new Set(rawProjects.map((project) => normalizeProjectText(project.id)).filter(Boolean)))
   if (!projectIds.length) return {}
 
-  const revisionByProject: Record<string, string> = {}
+  const revisionIdsByProject: Record<string, string[]> = {}
   const projectByRevision: Record<string, string> = {}
   for (const project of rawProjects) {
     const projectId = normalizeProjectText(project.id)
     if (!projectId) continue
-    const revisionId = normalizeProjectText(project.current_open_revision_id) || normalizeProjectText(project.current_draft_revision_id)
-    if (revisionId) {
-      revisionByProject[projectId] = revisionId
+    const candidateRevisionIds = [
+      normalizeProjectText(project.current_open_revision_id),
+      normalizeProjectText(project.current_draft_revision_id),
+    ].filter((revisionId, index, arr): revisionId is string => !!revisionId && arr.indexOf(revisionId) === index)
+    if (candidateRevisionIds.length) {
+      revisionIdsByProject[projectId] = candidateRevisionIds
+    }
+    for (const revisionId of candidateRevisionIds) {
       projectByRevision[revisionId] = projectId
     }
   }
 
-  const revisionIds = Array.from(new Set(Object.values(revisionByProject).filter(Boolean)))
+  const revisionIds = Array.from(new Set(Object.values(revisionIdsByProject).flat().filter(Boolean)))
   if (!revisionIds.length) {
     return Object.fromEntries(projectIds.map((projectId) => [projectId, { avgRpn: null, riskCount: 0 }]))
   }
@@ -459,8 +464,8 @@ export async function fetchProjectPfmeaStats(
   const next: Record<string, ProjectPfmeaStat> = {}
   for (const projectId of projectIds) {
     const byRevision = aggregateByProjectRevision[projectId] ?? {}
-    const preferredRevision = revisionByProject[projectId] ?? ''
-    let slot = preferredRevision ? byRevision[preferredRevision] : undefined
+    const candidateRevisionIds = revisionIdsByProject[projectId] ?? []
+    let slot = candidateRevisionIds.map((revisionId) => byRevision[revisionId]).find(Boolean)
     if (!slot) {
       let latest: RevisionAggregate | undefined
       for (const revisionId of Object.keys(byRevision)) {

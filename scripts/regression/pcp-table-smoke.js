@@ -9,6 +9,8 @@ const tableSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'p
 assert.match(tableSource, /export function PcpTable/, 'PCP table component must be exported.')
 assert.match(tableSource, /export type PcpEditCell/, 'PCP table component must export edit cell type.')
 assert.match(tableSource, /<colgroup>\{visibleColumnDefs\.map/, 'PCP table must preserve visible column colgroup.')
+assert.match(tableSource, /width: '100%'/, 'PCP table must fill the available frame width.')
+assert.match(tableSource, /overflowX: 'hidden'/, 'PCP table must avoid horizontal scrolling at normal zoom.')
 assert.match(tableSource, /isColumnVisible\('failure_mode'\)/, 'PCP table must preserve failure mode visibility.')
 assert.match(tableSource, /isColumnVisible\('reaction_plan'\)/, 'PCP table must preserve reaction plan visibility.')
 assert.match(tableSource, /asInt1to10\(r\.severity\)/, 'PCP table must preserve severity highlight calculation.')
@@ -16,6 +18,8 @@ assert.match(tableSource, /rpnValue != null && rpnValue > pcpYellowMax/, 'PCP ta
 assert.match(tableSource, /onCommit=\{\(v\) => void updateRow\(r, \{ control_method: v \}\)\}/, 'PCP table must keep editable control method commit.')
 assert.match(tableSource, /TdClassPopup/, 'PCP table must keep class popup cell.')
 assert.match(tableSource, /TdText/, 'PCP table must keep editable text cells.')
+assert.doesNotMatch(tableSource, /value=\{r\.sample_size\}[^\n]*singleLine/, 'PCP sample size text must wrap instead of truncating.')
+assert.doesNotMatch(tableSource, /value=\{r\.frequency\}[^\n]*singleLine/, 'PCP frequency text must wrap instead of truncating.')
 
 assert.match(pageSource, /from '@\/features\/pcp\/pcp-table'/, 'PCP page must import extracted table.')
 assert.match(pageSource, /<PcpTable[\s\S]*rows=\{rowsSorted\}/, 'PCP page must render extracted table with sorted rows.')

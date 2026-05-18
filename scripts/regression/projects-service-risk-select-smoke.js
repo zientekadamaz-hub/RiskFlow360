@@ -40,14 +40,20 @@ assert.equal(selectUses.length, 2, 'Both Projects PFMEA stats queries must use t
 
 assert.match(
   source,
-  /const projectByRevision: Record<string, string> = \{\}/,
-  'Projects table PFMEA stats must map rows back to projects through current revision ids.'
+  /const revisionIdsByProject: Record<string, string\[\]> = \{\}/,
+  'Projects table PFMEA stats must keep all current project revision candidates.'
 )
 
 assert.match(
   source,
-  /const revisionId = normalizeProjectText\(project\.current_open_revision_id\) \|\| normalizeProjectText\(project\.current_draft_revision_id\)/,
-  'Projects table PFMEA stats must prefer the current open revision so empty project-edit drafts do not hide risk values.'
+  /normalizeProjectText\(project\.current_open_revision_id\)[\s\S]*normalizeProjectText\(project\.current_draft_revision_id\)/,
+  'Projects table PFMEA stats must query open and draft revisions so stale pointers do not zero risk values.'
+)
+
+assert.match(
+  source,
+  /candidateRevisionIds\.map\(\(revisionId\) => byRevision\[revisionId\]\)\.find\(Boolean\)/,
+  'Projects table PFMEA stats must prefer open revision data while falling back to draft data when needed.'
 )
 
 assert.match(
