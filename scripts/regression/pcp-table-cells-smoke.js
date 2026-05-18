@@ -25,8 +25,11 @@ assert.match(cellsSource, /const commitIfChanged = \(\) => \{[\s\S]*props\.onCan
 assert.match(cellsSource, /onBlur=\{commitIfChanged\}/, 'PCP editor must commit on blur.')
 
 assert.match(pageSource, /SettingsPageShell/, 'PCP page must use the shared settings page shell for the top frame.')
-assert.match(pageSource, /<SettingsSummaryGrid columns=\{3\} maxWidth=\{390\}>/, 'PCP page must keep the standard compact summary grid.')
-assert.match(pageSource, /<SettingsSummaryTile label="Process"/, 'PCP page must keep the standard process summary tile.')
+assert.match(pageSource, /const PCP_TOP_SUMMARY_MAX_WIDTH = getSettingsSummaryGridMaxWidth\(4\)/, 'PCP page must size the top summary with the shared grid helper.')
+assert.match(pageSource, /summaryMaxWidth=\{PCP_TOP_SUMMARY_MAX_WIDTH\}/, 'PCP page shell must receive the same summary max width as the summary grid.')
+assert.match(pageSource, /<SettingsSummaryGrid columns=\{4\} maxWidth=\{PCP_TOP_SUMMARY_MAX_WIDTH\}>/, 'PCP page must keep the PFMEA-style summary grid proportions.')
+assert.match(pageSource, /<SettingsSummaryTile[\s\S]*label="Process"/, 'PCP page must keep the standard process summary tile.')
+assert.match(pageSource, /label="Process"[\s\S]*style=\{\{ gridColumn: 'span 2' \}\}/, 'PCP process summary tile must be medium width like PFMEA.')
 assert.doesNotMatch(pageSource, /<SummaryCard/, 'PCP page must not render custom summary cards in the standard header.')
 assert.doesNotMatch(pageSource, /function TdText/, 'PCP page should not define TdText inline.')
 assert.doesNotMatch(pageSource, /function TdClassPopup/, 'PCP page should not define TdClassPopup inline.')

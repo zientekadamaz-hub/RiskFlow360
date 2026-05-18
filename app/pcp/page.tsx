@@ -41,11 +41,12 @@ import {
   SettingsPageShell,
   SettingsSummaryGrid,
   SettingsSummaryTile,
+  getSettingsSummaryGridMaxWidth,
   settingsCardStyle,
   settingsFrameStyle,
   settingsProcessAccent,
-  settingsStatValueStyle,
 } from '@/components/rf-ui'
+import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
 import {
   backfillPcpRowsFromPfmea,
   ensurePcpProcessDraft,
@@ -70,6 +71,8 @@ import {
   type PcpRow,
   type PfmeaPcpSeedRow,
 } from '@/features/pcp/pcp-service'
+
+const PCP_TOP_SUMMARY_MAX_WIDTH = getSettingsSummaryGridMaxWidth(4)
 
 export default function PcpPage() {
   return (
@@ -644,19 +647,21 @@ function PcpPageContent() {
 
   const card: React.CSSProperties = { ...settingsCardStyle, color: SURFACE_TEXT }
   const frame: React.CSSProperties = settingsFrameStyle
-  const summaryValue: React.CSSProperties = { ...settingsStatValueStyle, marginTop: 0, lineHeight: 1 }
+  const summaryValue: React.CSSProperties = { ...projectsSummaryValueStyle, color: '#f8fafc' }
+  const processName = project?.name ?? '-'
+  const processNameLength = processName.length
+  const processSummaryFontSize = processNameLength > 42 ? 13 : processNameLength > 28 ? 15 : processNameLength > 18 ? 18 : 24
   const processSummaryValue: React.CSSProperties = {
-    ...summaryValue,
+    ...projectsSummaryValueStyle,
     alignItems: 'center',
     display: 'flex',
-    fontSize: 22,
+    fontSize: processSummaryFontSize,
     justifyContent: 'center',
-    lineHeight: 1.08,
-    minHeight: 34,
-    overflow: 'hidden',
+    lineHeight: 1.12,
+    minHeight: 36,
     overflowWrap: 'anywhere',
-    textAlign: 'center',
     whiteSpace: 'normal',
+    wordBreak: 'break-word',
   }
 
   if (moduleAccessState !== 'allowed') {
@@ -669,12 +674,18 @@ function PcpPageContent() {
       titleStyle={{ color: settingsProcessAccent, fontWeight: 600 }}
       subtitle="Manage the Production Control Plan for the selected process and publish PCP revisions."
       summary={
-        <SettingsSummaryGrid columns={3} maxWidth={390}>
-          <SettingsSummaryTile label="Process" value={project?.name ?? '-'} valueStyle={processSummaryValue} />
+        <SettingsSummaryGrid columns={4} maxWidth={PCP_TOP_SUMMARY_MAX_WIDTH}>
+          <SettingsSummaryTile
+            label="Process"
+            style={{ gridColumn: 'span 2' }}
+            value={processName}
+            valueStyle={processSummaryValue}
+          />
           <SettingsSummaryTile label="Revision" value={(workingRevisionLabel ?? '-').split('.').at(-1) ?? '-'} valueStyle={summaryValue} />
           <SettingsSummaryTile label="PCP rows" value={rowsSorted.length} valueStyle={summaryValue} />
         </SettingsSummaryGrid>
       }
+      summaryMaxWidth={PCP_TOP_SUMMARY_MAX_WIDTH}
     >
       <style jsx global>{`
         .pfmeaTable ::selection,
