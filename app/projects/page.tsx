@@ -8,6 +8,7 @@ import { ProjectsToolbar } from '@/features/projects/ProjectsToolbar'
 import { useProjectsData } from '@/features/projects/use-projects-data'
 import { useProjectsEditor } from '@/features/projects/use-projects-editor'
 import { useProjectsPfmeaStats } from '@/features/projects/use-projects-pfmea-stats'
+import { useProjectsRevisionEditing } from '@/features/projects/use-projects-revision-editing'
 import { useProjectsRevisionPopups } from '@/features/projects/use-projects-revision-popups'
 import { useProjectsRiskSummary } from '@/features/projects/use-projects-risk-summary'
 import { useProjectsTableState } from '@/features/projects/use-projects-table-state'
@@ -61,11 +62,12 @@ export default function ProjectsPage() {
   })
 
   const projectPfmeaStats = useProjectsPfmeaStats({ projects: rawProjects, supabase })
+  const projectRevisionEditing = useProjectsRevisionEditing({ projects: rawProjects, supabase })
   const { revisionDataFor } = useProjectsRevisionPopups({ projects: rawProjects, supabase })
 
   const uiProjects = useMemo<UiProjectRow[]>(() => {
-    return mapProjectsToUiRows(rawProjects, siteDeptMap, projectPfmeaStats)
-  }, [rawProjects, siteDeptMap, projectPfmeaStats])
+    return mapProjectsToUiRows(rawProjects, siteDeptMap, projectPfmeaStats, projectRevisionEditing)
+  }, [rawProjects, siteDeptMap, projectPfmeaStats, projectRevisionEditing])
 
   const {
     deptOptionsMerged,

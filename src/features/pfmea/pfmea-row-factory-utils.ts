@@ -1,4 +1,5 @@
 import { createPfmeaGroupIds, PLACEHOLDER_ROW_PREFIX, type PfmeaGroupIds } from './pfmea-hierarchy-utils'
+import { createPfmeaRiskUid } from './pfmea-risk-uid-utils'
 
 export type PfmeaRowFactoryOperation = {
   id: string
@@ -12,6 +13,7 @@ export type PfmeaRowFactoryOperation = {
 
 export type PfmeaEmptyPayload = PfmeaGroupIds & {
   revision_id: string
+  risk_uid: string
   operation_id: string
   row_no: string | null
   failure_mode: string
@@ -43,6 +45,7 @@ export function makeEmptyPfmeaPayload(operationId: string, revisionId: string, g
   const groupIds = createPfmeaGroupIds(groups)
   return {
     revision_id: revisionId,
+    risk_uid: createPfmeaRiskUid(),
     operation_id: operationId,
     row_no: null,
     ...groupIds,

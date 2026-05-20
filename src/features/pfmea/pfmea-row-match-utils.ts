@@ -1,9 +1,11 @@
 import { normalizePfmeaGroupId, normalizePfmeaRowNo } from './pfmea-hierarchy-utils'
+import { normalizePfmeaRiskUid } from './pfmea-risk-uid-utils'
 import { asInt1to10 } from './pfmea-risk-utils'
 import { normalizeClassValue } from './pfmea-value-utils'
 
 export type PfmeaMatchRow = {
   id?: string
+  risk_uid?: string | null
   operation_id?: string | null
   row_no?: string | null
   failure_mode_group_id?: string | null
@@ -47,6 +49,13 @@ function findByPfmeaGroupIds<Row extends PfmeaMatchRow>(rows: Row[], sourceRow: 
 
   const byGroupIds = rows.filter((row) => buildPfmeaGroupKey(row) === sourceGroupKey)
   return byGroupIds.length === 1 ? byGroupIds[0] : null
+}
+
+function findByRiskUid<Row extends PfmeaMatchRow>(rows: Row[], sourceRow: PfmeaMatchRow) {
+  const riskUid = normalizePfmeaRiskUid(sourceRow.risk_uid)
+  if (!riskUid) return null
+  const matches = rows.filter((row) => normalizePfmeaRiskUid(row.risk_uid) === riskUid)
+  return matches.length === 1 ? matches[0] : null
 }
 
 export function buildPfmeaRowMatchKey(row: PfmeaMatchRow) {
@@ -103,6 +112,9 @@ export function findEquivalentPublishedPfmeaRow<Row extends PfmeaMatchRow>(rows:
   const sameOperationRows = rows.filter((row) => (pfmeaRowOperationId(row) || null) === operationId)
   if (sameOperationRows.length === 0) return null
 
+  const byRiskUid = findByRiskUid(sameOperationRows, sourceRow)
+  if (byRiskUid) return byRiskUid
+
   const byGroupIds = findByPfmeaGroupIds(sameOperationRows, sourceRow)
   if (byGroupIds) return byGroupIds
 
@@ -137,6 +149,9 @@ export function findEquivalentPfmeaRow<Row extends PfmeaMatchRow>(
   const operationId = pfmeaRowOperationId(sourceRow) || null
   const sameOperationRows = rows.filter((row) => (pfmeaRowOperationId(row) || null) === operationId)
   if (sameOperationRows.length === 0) return null
+
+  const byRiskUid = findByRiskUid(sameOperationRows, sourceRow)
+  if (byRiskUid) return byRiskUid
 
   const byGroupIds = findByPfmeaGroupIds(sameOperationRows, sourceRow)
   if (byGroupIds) return byGroupIds

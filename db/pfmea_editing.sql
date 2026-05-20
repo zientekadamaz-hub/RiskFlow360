@@ -13,6 +13,9 @@ alter table if exists public.pfmea_rows
   add column if not exists characteristic text null;
 
 alter table if exists public.pfmea_rows
+  add column if not exists risk_uid uuid not null default gen_random_uuid();
+
+alter table if exists public.pfmea_rows
   add column if not exists pcp boolean null;
 
 alter table if exists public.pfmea_rows

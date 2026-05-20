@@ -66,16 +66,19 @@ export function buildPfmeaRecommendedActionContinuationInsertPayload(
   finalRevisionId: string,
   createdAt: string
 ) {
+  const emptyPayload = makeEmptyPfmeaPayload(
+    targetRow.operation_id,
+    finalRevisionId,
+    createPfmeaGroupIds({
+      failure_mode_group_id: targetSourceRow.failure_mode_group_id ?? undefined,
+      failure_block_group_id: targetSourceRow.failure_block_group_id ?? undefined,
+      action_plan_group_id: targetSourceRow.action_plan_group_id ?? undefined,
+    })
+  )
+
   return {
-    ...makeEmptyPfmeaPayload(
-      targetRow.operation_id,
-      finalRevisionId,
-      createPfmeaGroupIds({
-        failure_mode_group_id: targetSourceRow.failure_mode_group_id ?? undefined,
-        failure_block_group_id: targetSourceRow.failure_block_group_id ?? undefined,
-        action_plan_group_id: targetSourceRow.action_plan_group_id ?? undefined,
-      })
-    ),
+    ...emptyPayload,
+    risk_uid: targetSourceRow.risk_uid ?? emptyPayload.risk_uid,
     failure_mode: targetSourceRow.failure_mode,
     effect: targetSourceRow.effect,
     severity: asInt1to10(targetSourceRow.severity),

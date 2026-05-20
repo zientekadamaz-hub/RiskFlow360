@@ -38,6 +38,9 @@ const controllerMarkers = [
   'runPendingCellUpdate',
   'setConfirmDialog',
   'removePfmeaTransientIdsFromSets',
+  'PFMEA row update did not persist',
+  "select\\('id'\\)",
+  'maybeSingle\\(\\)',
 ]
 
 for (const marker of controllerMarkers) {

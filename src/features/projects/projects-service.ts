@@ -5,6 +5,7 @@ import type {
   OpenRiskSummary,
   PfdHistoryTooltipRow,
   ProjectPfmeaStat,
+  ProjectRevisionEditingState,
   ProjectRowDb,
   RevisionPopupData,
   RevisionPopupRow,
@@ -64,10 +65,12 @@ type PfmeaStatsRow = {
   id?: string | null
   operation_id?: string | null
   occurrence2?: number | null
+  oxd2?: number | null
   row_no?: string | null
   revision_id?: string | null
   rpn?: number | null
   rpn_current?: number | null
+  rpn2?: number | null
   severity?: number | null
   occurrence?: number | null
   detection?: number | null
@@ -80,6 +83,13 @@ const PROJECT_STATUSES = ['DRAFT', 'OPEN', 'OBSOLETE'] as const
 const GLOBAL_RISK_MATRIX_CONFIG_ID = 1
 const GLOBAL_PROJECT_ID = '00000000-0000-0000-0000-000000000000'
 const PROJECTS_PFMEA_RISK_SELECT = `revision_id,${PFMEA_REPORT_RISK_FIELDS},operations!inner(id,project_id,active)`
+const PROJECTS_EDIT_SESSION_LOCK_MS = 48 * 60 * 60 * 1000
+
+function getPfmeaStatsRowProjectId(row: PfmeaStatsRow) {
+  const operationRelation = row.operations
+  const operation = Array.isArray(operationRelation) ? operationRelation[0] : operationRelation
+  return normalizeProjectText(operation?.project_id)
+}
 
 function requireOrganizationId(orgId: string | null): string {
   const normalized = normalizeProjectText(orgId)
@@ -193,6 +203,58 @@ export async function fetchProjectsWithRevision(
 
   if (error) throw error
   return (data ?? []) as ProjectRowDb[]
+}
+
+type ProjectsEditSessionRow = {
+  last_activity_at?: string | null
+  project_id?: string | null
+}
+
+function isActiveProjectsEditSession(row: ProjectsEditSessionRow, nowMs: number) {
+  const projectId = normalizeProjectText(row.project_id)
+  const lastActivityMs = row.last_activity_at ? new Date(row.last_activity_at).getTime() : 0
+  return !!projectId && Number.isFinite(lastActivityMs) && nowMs - lastActivityMs < PROJECTS_EDIT_SESSION_LOCK_MS
+}
+
+function markProjectEditingModule(
+  states: Record<string, ProjectRevisionEditingState>,
+  rows: ProjectsEditSessionRow[],
+  module: keyof ProjectRevisionEditingState,
+  nowMs: number
+) {
+  for (const row of rows) {
+    if (!isActiveProjectsEditSession(row, nowMs)) continue
+    const projectId = normalizeProjectText(row.project_id)
+    const state = (states[projectId] ??= { pcp: false, pfd: false, pfmea: false })
+    state[module] = true
+  }
+}
+
+export async function fetchProjectRevisionEditingStates(
+  supabase: SupabaseClient,
+  rawProjects: ProjectRowDb[],
+  options?: { nowMs?: number }
+): Promise<Record<string, ProjectRevisionEditingState>> {
+  const projectIds = Array.from(new Set(rawProjects.map((project) => normalizeProjectText(project.id)).filter(Boolean)))
+  if (!projectIds.length) return {}
+
+  const nowMs = options?.nowMs ?? Date.now()
+  const [pfdRes, pfmeaRes, pcpRes] = await Promise.all([
+    supabase.from('pfd_edit_sessions').select('project_id,last_activity_at').in('project_id', projectIds),
+    supabase.from('pfmea_edit_sessions').select('project_id,last_activity_at').in('project_id', projectIds),
+    supabase.from('pcp_edit_sessions').select('project_id,last_activity_at').in('project_id', projectIds),
+  ])
+
+  if (pfdRes.error) throw pfdRes.error
+  if (pfmeaRes.error) throw pfmeaRes.error
+  if (pcpRes.error) throw pcpRes.error
+
+  const states: Record<string, ProjectRevisionEditingState> = {}
+  markProjectEditingModule(states, (pfdRes.data ?? []) as ProjectsEditSessionRow[], 'pfd', nowMs)
+  markProjectEditingModule(states, (pfmeaRes.data ?? []) as ProjectsEditSessionRow[], 'pfmea', nowMs)
+  markProjectEditingModule(states, (pcpRes.data ?? []) as ProjectsEditSessionRow[], 'pcp', nowMs)
+
+  return states
 }
 
 export async function createProjectRecord(
@@ -421,17 +483,16 @@ export async function fetchProjectPfmeaStats(
   }
 
   const revisionIds = Array.from(new Set(Object.values(revisionIdsByProject).flat().filter(Boolean)))
-  if (!revisionIds.length) {
-    return Object.fromEntries(projectIds.map((projectId) => [projectId, { avgRpn: null, revisionId: '', riskCount: 0 }]))
+  let currentRevisionRows: PfmeaStatsRow[] = []
+  if (revisionIds.length > 0) {
+    const { data, error } = await supabase
+      .from('pfmea_rows')
+      .select(PROJECTS_PFMEA_RISK_SELECT)
+      .in('revision_id', revisionIds)
+
+    if (error) throw error
+    currentRevisionRows = (data ?? []) as PfmeaStatsRow[]
   }
-
-  const { data, error } = await supabase
-    .from('pfmea_rows')
-    .select(PROJECTS_PFMEA_RISK_SELECT)
-    .in('revision_id', revisionIds)
-    .eq('operations.active', true)
-
-  if (error) throw error
 
   type RevisionAggregate = {
     riskCount: number
@@ -442,24 +503,45 @@ export async function fetchProjectPfmeaStats(
 
   const aggregateByProjectRevision: Record<string, Record<string, RevisionAggregate>> = {}
 
-  for (const risk of collectPfmeaCurrentOpenRisks((data ?? []) as PfmeaStatsRow[])) {
-    const row = risk.row as PfmeaStatsRow
-    const revisionId = normalizeProjectText(row.revision_id)
-    const projectId = revisionId ? projectByRevision[revisionId] : ''
-    if (!projectId || !revisionId) continue
+  const addRowsToAggregates = (rows: PfmeaStatsRow[]) => {
+    for (const risk of collectPfmeaCurrentOpenRisks(rows)) {
+      const row = risk.row as PfmeaStatsRow
+      const revisionId = normalizeProjectText(row.revision_id)
+      const projectId = revisionId ? projectByRevision[revisionId] || getPfmeaStatsRowProjectId(row) : ''
+      if (!projectId || !revisionId) continue
 
-    const byRevision = (aggregateByProjectRevision[projectId] ??= {})
-    const createdAtMs = new Date(row.created_at ?? 0).getTime()
-    const slot = byRevision[revisionId] ?? { riskCount: 0, rpnCount: 0, rpnSum: 0, lastCreatedAt: 0 }
-    slot.riskCount += 1
-    if (Number.isFinite(createdAtMs)) slot.lastCreatedAt = Math.max(slot.lastCreatedAt, createdAtMs)
+      const byRevision = (aggregateByProjectRevision[projectId] ??= {})
+      const createdAtMs = new Date(row.created_at ?? 0).getTime()
+      const slot = byRevision[revisionId] ?? { riskCount: 0, rpnCount: 0, rpnSum: 0, lastCreatedAt: 0 }
+      slot.riskCount += 1
+      if (Number.isFinite(createdAtMs)) slot.lastCreatedAt = Math.max(slot.lastCreatedAt, createdAtMs)
 
-    if (risk.rpn != null) {
-      slot.rpnCount += 1
-      slot.rpnSum += risk.rpn
+      if (risk.rpn != null) {
+        slot.rpnCount += 1
+        slot.rpnSum += risk.rpn
+      }
+
+      byRevision[revisionId] = slot
     }
+  }
 
-    byRevision[revisionId] = slot
+  addRowsToAggregates(currentRevisionRows)
+
+  const projectIdsWithoutCandidateRows = projectIds.filter((projectId) => {
+    const byRevision = aggregateByProjectRevision[projectId] ?? {}
+    const candidateRevisionIds = revisionIdsByProject[projectId] ?? []
+    return !candidateRevisionIds.some((revisionId) => !!byRevision[revisionId])
+  })
+
+  if (projectIdsWithoutCandidateRows.length > 0) {
+    const latestRowsRes = await supabase
+      .from('pfmea_rows')
+      .select(PROJECTS_PFMEA_RISK_SELECT)
+      .in('operations.project_id', projectIdsWithoutCandidateRows)
+      .order('created_at', { ascending: false })
+
+    if (latestRowsRes.error) throw latestRowsRes.error
+    addRowsToAggregates((latestRowsRes.data ?? []) as PfmeaStatsRow[])
   }
 
   const next: Record<string, ProjectPfmeaStat> = {}
@@ -613,7 +695,6 @@ export async function fetchOpenRiskSummary(
     .from('pfmea_rows')
     .select(PROJECTS_PFMEA_RISK_SELECT)
     .in('revision_id', normalizedRevisionIds)
-    .eq('operations.active', true)
 
   if (error) throw error
 

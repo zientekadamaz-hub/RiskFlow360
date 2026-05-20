@@ -1,16 +1,29 @@
-export function errorText(error: unknown, fallback = 'unknown') {
+export function errorText(error: unknown, fallback = 'unknown'): string {
   if (!error) return fallback
   if (error instanceof Error && error.message) return error.message
   if (typeof error === 'object') {
     const candidate = error as {
+      code?: unknown
       details?: unknown
       error_description?: unknown
       hint?: unknown
       message?: unknown
       name?: unknown
     }
-    const text = candidate.message ?? candidate.error_description ?? candidate.details ?? candidate.hint ?? candidate.name
-    return text == null || text === '' ? fallback : String(text)
+    const text = candidate.message ?? candidate.error_description ?? candidate.details ?? candidate.hint ?? candidate.name ?? candidate.code
+    if (text != null && text !== '') {
+      if (typeof text === 'object') {
+        const nested: string = errorText(text, '')
+        if (nested) return nested
+      }
+      return String(text)
+    }
+    try {
+      const serialized = JSON.stringify(error)
+      return serialized && serialized !== '{}' ? serialized : fallback
+    } catch {
+      return fallback
+    }
   }
   return String(error) || fallback
 }

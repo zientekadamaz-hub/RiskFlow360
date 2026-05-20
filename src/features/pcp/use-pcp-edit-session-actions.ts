@@ -2,9 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Dispatch, SetStateAction } from 'react'
 import { useCallback } from 'react'
 
+import { errorText } from '@/lib/error-utils'
 import {
   deletePcpDraftRows,
   deletePcpEditSession,
+  ensurePcpProcessDraft,
   fetchCurrentPcpDraftRevisionId,
   fetchPcpSessionLock,
   upsertPcpEditSession,
@@ -16,7 +18,7 @@ type PcpEditSessionActionsParams = {
   isChampion: boolean
   isEditOwner: boolean
   isObsolete: boolean
-  loadAll: () => Promise<void>
+  loadAll: (forceRevisionId?: string | null) => Promise<void>
   loadEditSession: () => Promise<void>
   projectId: string
   sessionNow: number
@@ -28,10 +30,6 @@ type PcpEditSessionActionsParams = {
   setSessionMsg: (message: string) => void
   supabase: SupabaseClient
   userId: string | null
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
 }
 
 export function usePcpEditSessionActions({
@@ -86,10 +84,12 @@ export function usePcpEditSessionActions({
       }
 
       await upsertPcpEditSession(supabase, projectId, userId, nowIso)
+      const draftId = await ensurePcpProcessDraft(supabase, projectId, userId)
+      if (draftId) setDraftRevisionIdOverride(draftId)
       await loadEditSession()
-      await loadAll()
+      await loadAll(draftId)
     } catch (error) {
-      setError(errorMessage(error))
+      setError(errorText(error, 'Could not start PCP edit session.'))
     } finally {
       setSessionBusy(false)
     }
@@ -103,6 +103,7 @@ export function usePcpEditSessionActions({
     loadEditSession,
     projectId,
     sessionNow,
+    setDraftRevisionIdOverride,
     setError,
     setSessionBusy,
     setSessionMsg,
@@ -123,7 +124,7 @@ export function usePcpEditSessionActions({
       await loadAll()
       setSessionMsg('')
     } catch (error) {
-      setError(errorMessage(error))
+      setError(errorText(error, 'Could not discard PCP draft.'))
     } finally {
       setSessionBusy(false)
     }

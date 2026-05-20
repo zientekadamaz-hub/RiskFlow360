@@ -1,4 +1,4 @@
-import type { ProjectPfmeaStat, RevisionPopupRow, RiskColor, RpnThresholds, UiProjectRow, ProjectRowDb } from './types'
+import type { ProjectPfmeaStat, ProjectRevisionEditingState, RevisionPopupRow, RiskColor, RpnThresholds, UiProjectRow, ProjectRowDb } from './types'
 import {
   clampRiskInt,
   riskCellKey,
@@ -123,7 +123,8 @@ export function getProjectCurrentRevisionId(project: Pick<ProjectRowDb, 'current
 export function mapProjectsToUiRows(
   rawProjects: ProjectRowDb[],
   siteDeptMap: Record<string, { site: string; department: string }>,
-  projectPfmeaStats: Record<string, ProjectPfmeaStat>
+  projectPfmeaStats: Record<string, ProjectPfmeaStat>,
+  projectRevisionEditing: Record<string, ProjectRevisionEditingState> = {}
 ): UiProjectRow[] {
   return rawProjects.map((project) => {
     const process = normalizeProjectText(project.name) || '-'
@@ -132,14 +133,18 @@ export function mapProjectsToUiRows(
     const site = normalizeProjectText(siteDepartment?.site) || '-'
     const department = normalizeProjectText(siteDepartment?.department) || '-'
     const updated = project.updated_at ?? project.created_at
-    const revision = normalizeProjectText(project.draft_revision_label) || normalizeProjectText(project.open_revision_label) || '0.0.0'
+    const openRevision = normalizeProjectText(project.open_revision_label)
+    const draftRevision = normalizeProjectText(project.draft_revision_label)
+    const revision = openRevision || draftRevision || '0.0.0'
     const stats = projectPfmeaStats[project.id] ?? { avgRpn: null, revisionId: getProjectCurrentRevisionId(project), riskCount: 0 }
     const currentRevisionId = normalizeProjectText(stats.revisionId) || getProjectCurrentRevisionId(project)
     const status = normalizeProjectText(project.status) || 'DRAFT'
+    const editingModules = projectRevisionEditing[project.id] ?? { pcp: false, pfd: false, pfmea: false }
 
     return {
       id: project.id,
       currentRevisionId,
+      editingModules,
       site,
       department,
       process,

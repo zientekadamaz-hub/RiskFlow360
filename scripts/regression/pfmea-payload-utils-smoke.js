@@ -19,6 +19,7 @@ function loadModule(relativePath) {
     module: { exports: {} },
     require: (request) => {
       if (request === './pfmea-hierarchy-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-hierarchy-utils.ts'])
+      if (request === './pfmea-risk-uid-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-risk-uid-utils.ts'])
       if (request === './pfmea-risk-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-risk-utils.ts'])
       if (request === './pfmea-row-order-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-row-order-utils.ts'])
       if (request === './pfmea-value-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-value-utils.ts'])
@@ -49,6 +50,7 @@ function assertJsonEqual(actual, expected) {
 
 const row = {
   id: 'row-1',
+  risk_uid: '11111111-1111-4111-8111-111111111111',
   operation_id: 'op-1',
   row_no: ' 10.1.1.1.1 ',
   failure_mode_group_id: ' fm ',
@@ -81,6 +83,7 @@ const row = {
 }
 
 const patch = buildPfmeaPublishedSyncPatch(row)
+assert.equal(patch.risk_uid, '11111111-1111-4111-8111-111111111111')
 assert.equal(patch.row_no, '10.1.1.1.1')
 assert.equal(patch.failure_mode_group_id, 'fm')
 assert.equal(patch.action_plan_group_id, null)
@@ -90,6 +93,7 @@ assert.equal(patch.severity, 6)
 assert.equal(patch.detection, 4)
 
 assert.equal(PFMEA_CLONE_FIELDS.includes('row_no'), true)
+assert.equal(PFMEA_CLONE_FIELDS.includes('risk_uid'), true)
 assert.equal(PFMEA_CLONE_FIELDS_LEGACY.includes('row_no'), false)
 assert.equal(PFMEA_SELECT_FIELDS.includes('operations!inner'), true)
 assert.equal(PFMEA_SELECT_FIELDS_LEGACY.includes('failure_mode_group_id'), false)

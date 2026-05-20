@@ -12,9 +12,11 @@ export type PfmeaReportRiskRow = {
   occurrence2?: number | string | null
   operations?: { id?: string | null; project_id?: string | null; active?: boolean | null } | Array<{ id?: string | null; project_id?: string | null; active?: boolean | null }> | null
   oxd_current?: number | string | null
+  oxd2?: number | string | null
   revision_id?: string | null
   rpn?: number | string | null
   rpn_current?: number | string | null
+  rpn2?: number | string | null
   row_no?: string | null
   severity?: number | string | null
 }
@@ -34,11 +36,13 @@ export function getPfmeaReportRisk(row: PfmeaReportRiskRow) {
   const detection = toReportNumber(usePostAction ? row.detection2 : row.detection)
   const rawDoValue = occurrence != null && detection != null ? occurrence * detection : null
   const persistedCurrentDoValue = toReportNumber(row.oxd_current)
-  const doValue = rawDoValue ?? persistedCurrentDoValue
+  const persistedResidualDoValue = toReportNumber(row.oxd2)
+  const doValue = rawDoValue ?? (usePostAction ? persistedResidualDoValue : null) ?? persistedCurrentDoValue
   const rawRpn = severity != null && rawDoValue != null ? severity * rawDoValue : null
   const persistedCurrentRpn = toReportNumber(row.rpn_current)
+  const persistedResidualRpn = toReportNumber(row.rpn2)
   const persistedRpn = toReportNumber(row.rpn)
-  const rpn = rawRpn ?? persistedCurrentRpn ?? persistedRpn
+  const rpn = rawRpn ?? (usePostAction ? persistedResidualRpn : null) ?? persistedCurrentRpn ?? persistedRpn
 
   return {
     doValue,

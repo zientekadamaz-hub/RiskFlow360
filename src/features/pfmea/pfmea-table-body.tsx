@@ -76,7 +76,7 @@ export function PfmeaTableBody(props: {
           canAddEffectRow,
           canAddFailureModeRow,
           canAddRecommendedActionRow,
-          currentRisk: a1,
+          effectiveCurrentRisk,
           effectiveActionPlanOwnerRow,
           effectiveCurrentRow,
           effectiveFailureBlockOwnerRow,
@@ -307,7 +307,7 @@ export function PfmeaTableBody(props: {
 
             <PfmeaCurrentRiskCells
               actionPlanBlockSpan={actionPlanBlockSpan}
-              currentRpn={a1.rpn}
+              currentRpn={effectiveCurrentRisk.rpn}
               isColumnVisible={props.isColumnVisible}
               onExpandOperation={props.setExpandedOperationId}
               onTogglePcp={() => {

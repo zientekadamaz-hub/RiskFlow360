@@ -10,8 +10,8 @@ import {
   fetchRiskMatrixConfig,
 } from '@/features/projects/projects-service'
 import { clampInt, normalizeProjectText } from '@/features/projects/utils'
-import { PFMEA_REPORT_RISK_SELECT_WITH_REVISION } from '@/features/reports/pfmea-report-query'
-import { collectPfmeaCurrentOpenRisks, toReportNumber, type PfmeaReportRiskRow } from '@/features/reports/pfmea-report-risk-utils'
+import { collectPfmeaCurrentOpenRisks, toReportNumber } from '@/features/reports/pfmea-report-risk-utils'
+import { fetchCurrentPfmeaRowsForReportProjects } from '@/features/reports/report-current-pfmea-rows'
 import { buildOpenReportProjectScope, normalizeReportOptionList } from '@/features/reports/report-project-scope'
 import type { RpnMatrixCellSummary, RpnMatrixFilters, RpnMatrixProject, RpnMatrixProjectColorCounts, RpnMatrixReportData } from './types'
 
@@ -47,11 +47,9 @@ export async function fetchRpnMatrixReportData(
     fetchRiskMatrixCells(supabase, { orgId: userCtx.orgId }),
   ])
 
-  const allOpenProjects = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, { departments: [], projectIds: [], sites: [] }, { requireRevision: true }) as RpnMatrixProject[]
-  const projectOptions = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, filters, { includeProjectFilter: false, requireRevision: true }) as RpnMatrixProject[]
-  const filteredProjects = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, filters, { requireRevision: true }) as RpnMatrixProject[]
-  const revisionIds = filteredProjects.map((project) => project.revisionId)
-  const projectIdByRevision = new Map(filteredProjects.map((project) => [project.revisionId, project.id]))
+  const allOpenProjects = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, { departments: [], projectIds: [], sites: [] }) as RpnMatrixProject[]
+  const projectOptions = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, filters, { includeProjectFilter: false }) as RpnMatrixProject[]
+  const filteredProjects = buildOpenReportProjectScope(projects, siteDeptData.siteDeptMap, filters) as RpnMatrixProject[]
   const projectColorCounts = new Map<string, RpnMatrixProjectColorCounts>(
     filteredProjects.map((project) => [
       project.id,
@@ -73,17 +71,13 @@ export async function fetchRpnMatrixReportData(
   let rpnSum = 0
   let rpnCount = 0
 
-  if (revisionIds.length) {
-    const { data, error } = await supabase
-      .from('pfmea_rows')
-      .select(PFMEA_REPORT_RISK_SELECT_WITH_REVISION)
-      .in('revision_id', revisionIds)
-
-    if (error) throw error
-
-    for (const currentRisk of collectPfmeaCurrentOpenRisks((data ?? []) as Array<PfmeaReportRiskRow & { revision_id?: string | null }>)) {
+  if (filteredProjects.length) {
+    const rows = await fetchCurrentPfmeaRowsForReportProjects(supabase, filteredProjects)
+    for (const currentRisk of collectPfmeaCurrentOpenRisks(rows)) {
       const row = currentRisk.row
-      const projectId = projectIdByRevision.get(normalizeProjectText(row.revision_id))
+      const operationRelation = row.operations
+      const operation = Array.isArray(operationRelation) ? operationRelation[0] : operationRelation
+      const projectId = normalizeProjectText(operation?.project_id)
       if (!projectId) continue
 
       const severity = currentRisk.severity

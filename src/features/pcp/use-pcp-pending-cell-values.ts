@@ -10,7 +10,7 @@ export function usePcpPendingCellValues(rows: PcpRow[]) {
   const rowsRef = useRef<PcpRow[]>([])
   const pendingCellValuesRef = useRef<Record<string, unknown>>({})
   const [pendingCellValueCount, setPendingCellValueCount] = useState(0)
-  const [, setPendingCellRenderVersion] = useState(0)
+  const [pendingCellRenderVersion, setPendingCellRenderVersion] = useState(0)
 
   const refreshPendingCellRender = useCallback(() => {
     setPendingCellValueCount(Object.keys(pendingCellValuesRef.current).length)
@@ -66,6 +66,7 @@ export function usePcpPendingCellValues(rows: PcpRow[]) {
     clearPendingCellValue,
     clearPendingCellValuesForRow,
     pendingCellValueCount,
+    pendingCellRenderVersion,
     pendingCellValuesRef,
     refreshPendingCellRender,
     rowsRef,

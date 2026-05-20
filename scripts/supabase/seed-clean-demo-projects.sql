@@ -381,6 +381,7 @@ select
   sr.project_key,
   sr.row_no,
   r.id as pfmea_row_id,
+  r.risk_uid,
   r.operation_id,
   r.revision_id,
   r.failure_mode,
@@ -400,6 +401,7 @@ join public.pfmea_rows r
 insert into public.control_plan_rows(
   operation_id,
   revision_id,
+  risk_uid,
   pfmea_row_id,
   characteristic,
   failure_mode,
@@ -418,6 +420,7 @@ insert into public.control_plan_rows(
 select
   r.operation_id,
   r.revision_id,
+  r.risk_uid,
   r.pfmea_row_id,
   coalesce(nullif(r.characteristic, ''), r.failure_mode),
   r.failure_mode,
@@ -433,12 +436,12 @@ select
   now() - interval '1 day',
   now() - interval '1 hour'
 from (
-  select distinct on (operation_id, coalesce(nullif(characteristic, ''), failure_mode))
+  select distinct on (revision_id, risk_uid)
     *
   from seed_pfmea_row_map
-  order by operation_id, coalesce(nullif(characteristic, ''), failure_mode), row_no
+  order by revision_id, risk_uid, row_no
 ) r
-on conflict (operation_id, characteristic) where (source = 'AUTO') do nothing;
+on conflict do nothing;
 
 insert into public.pfd_diagrams(project_id, nodes, edges, updated_at)
 select

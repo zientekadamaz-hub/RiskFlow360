@@ -21,6 +21,7 @@ function loadModule(relativePath) {
       if (request === './pfmea-operation-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-operation-utils.ts'])
       if (request === './pfmea-row-factory-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-row-factory-utils.ts'])
       if (request === './pfmea-hierarchy-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-hierarchy-utils.ts'])
+      if (request === './pfmea-risk-uid-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-risk-uid-utils.ts'])
       return require(request)
     },
   }

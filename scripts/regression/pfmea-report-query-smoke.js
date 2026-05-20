@@ -32,6 +32,8 @@ const {
 
 assert.ok(PFMEA_REPORT_RISK_FIELDS.includes('occurrence2'))
 assert.ok(PFMEA_REPORT_RISK_FIELDS.includes('detection2'))
+assert.ok(PFMEA_REPORT_RISK_FIELDS.includes('oxd2'))
+assert.ok(PFMEA_REPORT_RISK_FIELDS.includes('rpn2'))
 assert.ok(PFMEA_REPORT_RISK_SELECT.includes('operations!inner(project_id)'))
 assert.ok(PFMEA_REPORT_RISK_SELECT_WITH_REVISION.startsWith('revision_id,'))
 assert.equal(PFMEA_REPORT_RISK_SELECT.includes('active'), false)

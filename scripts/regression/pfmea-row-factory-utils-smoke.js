@@ -19,6 +19,7 @@ function loadModule(relativePath) {
     module: { exports: {} },
     require: (request) => {
       if (request === './pfmea-hierarchy-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-hierarchy-utils.ts'])
+      if (request === './pfmea-risk-uid-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-risk-uid-utils.ts'])
       return require(request)
     },
   }
@@ -37,6 +38,7 @@ const groups = {
 const empty = makeEmptyPfmeaPayload('op-1', 'rev-1', groups)
 assert.equal(empty.operation_id, 'op-1')
 assert.equal(empty.revision_id, 'rev-1')
+assert.match(empty.risk_uid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
 assert.equal(empty.failure_mode_group_id, 'fm')
 assert.equal(empty.failure_mode, '')
 assert.equal(empty.pcp, null)
@@ -56,6 +58,7 @@ const placeholder = makePlaceholderRow(
   3
 )
 assert.equal(placeholder.id, '__pfmea_placeholder__:op-1:token')
+assert.match(placeholder.risk_uid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
 assert.equal(placeholder.__sortIndex, 3)
 assert.equal(placeholder.operations.project_id, 'project-1')
 

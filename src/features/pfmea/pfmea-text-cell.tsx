@@ -87,6 +87,12 @@ export function TdText(props: {
       activeEditorNodeRef.current = el
       initialEditValueRef.current = latestValueRef.current
       if (el instanceof HTMLTextAreaElement) resizeTextareaToContent(el)
+      window.setTimeout(() => {
+        if (activeEditorNodeRef.current !== el) return
+        const end = el.value.length
+        el.focus()
+        el.setSelectionRange(end, end)
+      }, 0)
     },
     [editorRef]
   )

@@ -25,6 +25,11 @@ assert.match(
   /defaultValue=\{val\}/,
   'TdText editor must seed its initial DOM value when editing starts.'
 )
+assert.match(
+  source,
+  /el\.setSelectionRange\(end, end\)/,
+  'TdText editor must place the caret at the end when editing starts.'
+)
 assert.doesNotMatch(
   source,
   /value=\{val\}/,

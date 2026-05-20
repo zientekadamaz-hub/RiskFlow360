@@ -8,7 +8,7 @@ import {
   settingsPopoverTitleStyle,
   settingsSurfaceRadius,
 } from '@/components/rf-ui'
-import type { RevisionPopupData } from './types'
+import type { ProjectRevisionEditingState, RevisionPopupData } from './types'
 import { ProjectsRevisionHintIcon } from './icons'
 
 type PopoverPosition = {
@@ -38,10 +38,12 @@ function getRevisionPopoverPosition(rect: DOMRect): PopoverPosition {
 }
 
 export function RevisionDetailsPopover({
+  editingModules = { pcp: false, pfd: false, pfmea: false },
   projectId,
   revisionLabel,
   popup,
 }: {
+  editingModules?: ProjectRevisionEditingState
   projectId: string
   revisionLabel: string
   popup: RevisionPopupData
@@ -81,6 +83,8 @@ export function RevisionDetailsPopover({
 
   const show = () => setOpen(true)
   const hide = () => setOpen(false)
+  const revisionParts = revisionLabel.split('.')
+  const editingByRevisionPart = [editingModules.pfd, editingModules.pfmea, editingModules.pcp]
 
   return (
     <div
@@ -106,7 +110,30 @@ export function RevisionDetailsPopover({
           whiteSpace: 'nowrap',
         }}
       >
-        <span>{revisionLabel}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'baseline' }}>
+          {revisionParts.map((part, index) => {
+            const isEditingPart = editingByRevisionPart[index] === true
+
+            return (
+              <React.Fragment key={`${part}-${index}`}>
+                {index > 0 ? <span style={{ color: 'rgba(248,250,252,0.72)' }}>.</span> : null}
+                <span
+                  style={
+                    isEditingPart
+                      ? {
+                          color: '#f6b45f',
+                          fontWeight: 900,
+                          textShadow: '0 0 10px rgba(246, 180, 95, 0.25)',
+                        }
+                      : undefined
+                  }
+                >
+                  {part}
+                </span>
+              </React.Fragment>
+            )
+          })}
+        </span>
         <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
           <ProjectsRevisionHintIcon active={hasData || popup.loading} />
         </span>

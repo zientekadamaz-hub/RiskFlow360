@@ -19,6 +19,7 @@ function loadModule(relativePath) {
     module: { exports: {} },
     require: (request) => {
       if (request === './pfmea-hierarchy-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-hierarchy-utils.ts'])
+      if (request === './pfmea-risk-uid-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-risk-uid-utils.ts'])
       if (request === './pfmea-risk-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-risk-utils.ts'])
       if (request === './pfmea-value-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-value-utils.ts'])
       return require(request)
@@ -72,6 +73,16 @@ const rows = [
 assert.equal(findEquivalentPfmeaRow(rows, { ...base, id: 'source-copy' })?.id, 'row-a')
 assert.equal(findEquivalentPublishedPfmeaRow(rows, { ...base, id: 'source-copy' })?.id, 'row-a')
 assert.equal(findEquivalentPfmeaRow(rows, { ...base, operation_id: 'missing-op' }), null)
+
+const rowsWithRiskUid = [
+  { ...base, id: 'risk-wrong-row-no', risk_uid: 'risk-stable', row_no: '10.9.9.9.9', failure_mode_group_id: 'other' },
+  { ...base, id: 'risk-row-no-only', risk_uid: 'other-risk', row_no: '10.1.1.1.1' },
+]
+assert.equal(
+  findEquivalentPfmeaRow(rowsWithRiskUid, { ...base, id: 'source-copy', risk_uid: 'risk-stable' })?.id,
+  'risk-wrong-row-no',
+  'Draft row matching must prefer stable risk_uid over row_no/text fallbacks.'
+)
 
 const draftRowsWithDuplicateRowNo = [
   { ...base, id: 'draft-a', row_no: '10.1.1.1.1', failure_mode_group_id: 'fm-1', failure_block_group_id: 'fb-1', action_plan_group_id: 'ap-1' },

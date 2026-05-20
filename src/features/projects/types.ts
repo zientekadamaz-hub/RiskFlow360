@@ -19,6 +19,7 @@ export type ProjectRowDb = {
 export type UiProjectRow = {
   id: string
   currentRevisionId: string
+  editingModules: ProjectRevisionEditingState
   site: string
   department: string
   process: string
@@ -28,6 +29,12 @@ export type UiProjectRow = {
   updated: string
   revision: string
   status: string
+}
+
+export type ProjectRevisionEditingState = {
+  pcp: boolean
+  pfd: boolean
+  pfmea: boolean
 }
 
 export type ProjectPfmeaStat = {

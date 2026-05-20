@@ -2,9 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { useCallback, useState } from 'react'
 
+import { errorText } from '@/lib/error-utils'
 import type { PcpEditorCommitTarget } from './pcp-table-cells'
 import {
   deletePcpEditSession,
+  preparePcpDraftForPublish,
   publishPcpRevision,
 } from './pcp-service'
 
@@ -12,6 +14,7 @@ type PcpSaveRevisionParams = {
   clearAllPendingCellValues: (options?: { refresh?: boolean }) => void
   currentAuthorName: string
   editorRef: MutableRefObject<PcpEditorCommitTarget | null>
+  editLockMs: number
   flushPendingCellUpdates: () => Promise<void>
   isDirty: boolean
   loadAll: () => Promise<void>
@@ -27,14 +30,11 @@ type PcpSaveRevisionParams = {
   userId: string | null
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
-}
-
 export function usePcpSaveRevision({
   clearAllPendingCellValues,
   currentAuthorName,
   editorRef,
+  editLockMs,
   flushPendingCellUpdates,
   isDirty,
   loadAll,
@@ -70,6 +70,12 @@ export function usePcpSaveRevision({
 
       await editorRef.current?.commit()
       await flushPendingCellUpdates()
+      await preparePcpDraftForPublish(supabase, {
+        editLockMs,
+        nowMs: Date.now(),
+        projectId,
+        userId: uid,
+      })
 
       await publishPcpRevision(supabase, {
         authorId: uid,
@@ -89,7 +95,7 @@ export function usePcpSaveRevision({
       await loadEditSession()
       return true
     } catch (error) {
-      setError(errorMessage(error))
+      setError(errorText(error, 'Could not save PCP.'))
       return false
     } finally {
       setSaveBusy(false)
@@ -98,6 +104,7 @@ export function usePcpSaveRevision({
     clearAllPendingCellValues,
     currentAuthorName,
     editorRef,
+    editLockMs,
     flushPendingCellUpdates,
     isDirty,
     loadAll,

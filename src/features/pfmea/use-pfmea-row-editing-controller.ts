@@ -449,8 +449,10 @@ export function usePfmeaRowEditingController(params: UsePfmeaRowEditingControlle
         const localPatch: Partial<PfmeaRow> = { ...guarded, ...params.computeDerivedFromContext(merged).derived }
 
         if (isPlaceholder) {
+          const emptyPayload = makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row))
           const payload = {
-            ...makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row)),
+            ...emptyPayload,
+            risk_uid: row.risk_uid ?? emptyPayload.risk_uid,
             ...localPatch,
           }
           const insertPayload = params.pfmeaGroupIdsSupportedRef.current === false
@@ -484,27 +486,53 @@ export function usePfmeaRowEditingController(params: UsePfmeaRowEditingControlle
           const updatePayload = params.pfmeaGroupIdsSupportedRef.current === false
             ? stripPfmeaGroupIdsFromPayload(localPatch as Record<string, unknown>)
             : localPatch
-          const res = await params.supabase.from('pfmea_rows').update(updatePayload).eq('id', targetRow.id).eq('revision_id', finalRev)
-          if (res.error) throw res.error
+          let persistedRow = targetRow
+          const persistUpdate = async (rowToUpdate: PfmeaRow) => {
+            const res = await params.supabase
+              .from('pfmea_rows')
+              .update(updatePayload)
+              .eq('id', rowToUpdate.id)
+              .eq('revision_id', finalRev)
+              .select('id')
+              .maybeSingle()
+            if (res.error) throw res.error
+            const updatedId = (res.data as { id?: string | null } | null)?.id
+            if (!updatedId) throw new Error(`PFMEA row update did not persist for row ${rowToUpdate.id} in revision ${finalRev}.`)
+          }
 
-          const nextRow = { ...targetRow, ...localPatch } as PfmeaRow
-          if (params.transientCauseContinuationIdsRef.current.has(targetRow.id) && !isCauseContinuationEmpty(nextRow)) {
-            params.transientCauseContinuationIdsRef.current.delete(targetRow.id)
+          try {
+            await persistUpdate(targetRow)
+          } catch (updateError) {
+            await params.loadAll(finalRev)
+            reloadedDraftRows = true
+            const inferredRowNo = normalizePfmeaRowNo(row.row_no) ?? params.rowHierarchyByIdRef.current.get(row.id)?.rowLabel ?? null
+            const rowForMapping = inferredRowNo && inferredRowNo !== row.row_no ? ({ ...row, row_no: inferredRowNo } as PfmeaRow) : row
+            const remappedRow = findEquivalentPfmeaRow(params.rowsRef.current, rowForMapping)
+            if (!remappedRow || remappedRow.id === targetRow.id) throw updateError
+            await persistUpdate(remappedRow)
+            persistedRow = remappedRow
+            params.clearPendingCellValuesForRow(row.id, { refresh: true })
+            params.setEdit((prev) => (prev && prev.rowId === targetRow.id ? { ...prev, rowId: remappedRow.id } : prev))
+          }
+
+          const nextRow = { ...persistedRow, ...localPatch } as PfmeaRow
+          if (params.transientCauseContinuationIdsRef.current.has(persistedRow.id) && !isCauseContinuationEmpty(nextRow)) {
+            params.transientCauseContinuationIdsRef.current.delete(persistedRow.id)
           }
           if (
-            params.transientRecommendedActionContinuationIdsRef.current.has(targetRow.id) &&
+            params.transientRecommendedActionContinuationIdsRef.current.has(persistedRow.id) &&
             !isRecommendedActionContinuationEmpty(nextRow)
           ) {
-            params.transientRecommendedActionContinuationIdsRef.current.delete(targetRow.id)
+            params.transientRecommendedActionContinuationIdsRef.current.delete(persistedRow.id)
           }
-          if (params.transientFailureModeContinuationIdsRef.current.has(targetRow.id) && !isFailureModeContinuationEmpty(nextRow)) {
-            params.transientFailureModeContinuationIdsRef.current.delete(targetRow.id)
+          if (params.transientFailureModeContinuationIdsRef.current.has(persistedRow.id) && !isFailureModeContinuationEmpty(nextRow)) {
+            params.transientFailureModeContinuationIdsRef.current.delete(persistedRow.id)
           }
-          if (params.transientEffectContinuationIdsRef.current.has(targetRow.id) && !isEffectContinuationEmpty(nextRow)) {
-            params.transientEffectContinuationIdsRef.current.delete(targetRow.id)
+          if (params.transientEffectContinuationIdsRef.current.has(persistedRow.id) && !isEffectContinuationEmpty(nextRow)) {
+            params.transientEffectContinuationIdsRef.current.delete(persistedRow.id)
           }
-          params.markPfmeaDirty(targetRow.id)
-          const nextRows = params.rowsRef.current.map((item) => (item.id === targetRow.id ? ({ ...item, ...localPatch } as PfmeaRow) : item))
+          params.markPfmeaDirty(persistedRow.id)
+          const nextRows = params.rowsRef.current.map((item) => (item.id === persistedRow.id ? ({ ...item, ...localPatch } as PfmeaRow) : item))
           params.rowsRef.current = nextRows
           params.setRows(nextRows)
         }
@@ -566,8 +594,10 @@ export function usePfmeaRowEditingController(params: UsePfmeaRowEditingControlle
       }
 
       const merged = { ...row, ...pendingPatch } as PfmeaRow
+      const emptyPayload = makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row))
       const payload = {
-        ...makeEmptyPfmeaPayload(row.operation_id, finalRev, pickPfmeaGroupIds(row)),
+        ...emptyPayload,
+        risk_uid: row.risk_uid ?? emptyPayload.risk_uid,
         ...pendingPatch,
         ...computeDerived(merged),
       }

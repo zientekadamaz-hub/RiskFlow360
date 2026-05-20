@@ -67,12 +67,13 @@ const placeholder = model.makePcpPlaceholderRow(
   { id: 'op-1', project_id: 'project-1', operation_number: 10, name: 'Assembly', machine: 'Line 1', operation: 'Fit' },
   'rev-1',
   'op-1:seed-1',
-  { id: 'seed-1', failure_mode: 'Leak', characteristic: 'Torque', class: 'special characteristic', severity: '9', rpn: 300 }
+  { id: 'seed-1', failure_mode: 'Leak', characteristic: 'Torque', class: 'special characteristic', severity: '9', rpn: 300, rpn_current: 80 }
 )
 assert.equal(placeholder.id, `${pcpUtils.PCP_PLACEHOLDER_PREFIX}op-1:seed-1`)
 assert.equal(placeholder.revision_id, 'rev-1')
 assert.equal(placeholder.class, 'SC')
 assert.equal(placeholder.severity, 9)
+assert.equal(placeholder.rpn, 80)
 
 const now = Date.parse('2026-05-17T12:00:00.000Z')
 const activeSession = {

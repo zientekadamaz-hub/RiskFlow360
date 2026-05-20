@@ -20,6 +20,7 @@ function loadModule(relativePath) {
     require: (request) => {
       if (request === './pfmea-hierarchy-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-hierarchy-utils.ts'])
       if (request === './pfmea-row-factory-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-row-factory-utils.ts'])
+      if (request === './pfmea-risk-uid-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-risk-uid-utils.ts'])
       if (request === './pfmea-risk-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-risk-utils.ts'])
       if (request === './pfmea-value-utils') return loadModule(['src', 'features', 'pfmea', 'pfmea-value-utils.ts'])
       return require(request)
@@ -51,6 +52,7 @@ const sourceRow = {
   failure_mode_group_id: 'fm-1',
   failure_block_group_id: 'fb-1',
   action_plan_group_id: 'ap-1',
+  risk_uid: '11111111-1111-4111-8111-111111111111',
   failure_mode: 'Voids',
   effect: 'Reduced insulation strength',
   severity: '9',
@@ -91,6 +93,7 @@ assert.equal(actionPayload.rpn, 648)
 assert.equal(actionPayload.oxd, 72)
 assert.equal(actionPayload.rpn_current, 648)
 assert.equal(actionPayload.action_plan_group_id, 'ap-1')
+assert.equal(actionPayload.risk_uid, sourceRow.risk_uid)
 assert.equal(actionPayload.recommended_action, '')
 assert.equal(actionPayload.created_at, createdAt)
 

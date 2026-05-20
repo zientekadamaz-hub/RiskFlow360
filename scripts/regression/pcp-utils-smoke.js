@@ -32,6 +32,7 @@ const {
   isEquivalentPcpRow,
   isPfmeaSeedSelectedForPcp,
   isPlaceholderPcpRowId,
+  isSamePcpRiskContext,
   nextPcpRevisionLabel,
   normalizeClassValue,
   normalizePcpFlag,
@@ -52,6 +53,8 @@ assert.equal(asInt1to10('11'), null)
 assert.equal(isPfmeaSeedSelectedForPcp({ pcp: false, class: 'SC', severity: 10, rpn: 400 }, 168), false)
 assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 9, rpn: 20 }, 168), true)
 assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 3, rpn: 200 }, 168), true)
+assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 3, rpn: 300, rpn_current: 80 }, 168), false)
+assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 3, rpn: 80, rpn_current: 300 }, 168), true)
 assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 8, rpn: 200 }, 100, 'yellow'), false)
 assert.equal(isPfmeaSeedSelectedForPcp({ pcp: null, class: null, severity: 8, rpn: 200 }, 100, 'orange'), true)
 assert.equal(nextPcpRevisionLabel('1.2.3'), '1.2.4')
@@ -86,6 +89,15 @@ assert.equal(
   })
 )
 assert.equal(isEquivalentPcpRow({ pfmea_row_id: 'pfmea-1' }, { pfmea_row_id: 'pfmea-1' }), true)
+assert.equal(isEquivalentPcpRow({ risk_uid: 'risk-1', pfmea_row_id: 'old' }, { risk_uid: 'risk-1', pfmea_row_id: 'new' }), true)
+assert.equal(
+  isEquivalentPcpRow(
+    { risk_uid: 'risk-1', operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'P', current_detection: 'D' },
+    { risk_uid: 'risk-2', operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'P', current_detection: 'D' }
+  ),
+  false,
+  'Different stable risk_uid values must not fall back to text matching.'
+)
 assert.equal(
   isEquivalentPcpRow(
     { operation_id: 'op', pfmea_row_id: 'pfmea-action-1', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'P', current_detection: 'D' },
@@ -102,10 +114,42 @@ assert.equal(
   true
 )
 assert.equal(
+  isEquivalentPcpRow(
+    { operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'Old prevention', current_detection: 'Old detection' },
+    { operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'New prevention', current_detection: 'New detection' }
+  ),
+  false,
+  'Strict PCP equivalence must still distinguish different PFMEA current-control context.'
+)
+assert.equal(
+  isSamePcpRiskContext(
+    { risk_uid: 'risk-1', operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'Old prevention', current_detection: 'Old detection' },
+    { risk_uid: 'risk-1', operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'Special Characteristic', current_prevention: 'New prevention', current_detection: 'New detection' }
+  ),
+  true,
+  'Stable risk_uid must keep saved control-plan values attached to the same risk after PFMEA current controls change.'
+)
+assert.equal(
+  isSamePcpRiskContext(
+    { operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'SC', current_prevention: 'Old prevention', current_detection: 'Old detection' },
+    { operation_id: 'op', failure_mode: 'FM', characteristic: 'C', class: 'Special Characteristic', current_prevention: 'New prevention', current_detection: 'New detection' }
+  ),
+  false,
+  'Legacy PCP carry-over must not merge rows after PFMEA current controls change without risk_uid.'
+)
+assert.equal(
+  isSamePcpRiskContext(
+    { operation_id: 'op', failure_mode: '', characteristic: '', class: 'SC', current_prevention: 'Old prevention', current_detection: 'Old detection' },
+    { operation_id: 'op', failure_mode: '', characteristic: '', class: 'SC', current_prevention: 'New prevention', current_detection: 'New detection' }
+  ),
+  false,
+  'PCP carry-over must not merge blank risk rows by operation/class alone.'
+)
+assert.equal(
   JSON.stringify(uniqueSelectedPfmeaPcpSeedRows(
     [
-      { id: 'action-1', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 8, rpn: 220, current_prevention: 'P', current_detection: 'D', created_at: '2026-05-01T10:00:00.000Z' },
-      { id: 'action-2', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 8, rpn: 220, current_prevention: 'P', current_detection: 'D', created_at: '2026-05-01T10:01:00.000Z' },
+      { id: 'action-1', risk_uid: 'risk-1', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 8, rpn: 220, current_prevention: 'P', current_detection: 'D', created_at: '2026-05-01T10:00:00.000Z' },
+      { id: 'action-2', risk_uid: 'risk-1', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 8, rpn: 220, current_prevention: 'P changed', current_detection: 'D changed', created_at: '2026-05-01T10:01:00.000Z' },
       { id: 'other-risk', operation_id: 'op', pcp: null, failure_mode: 'FM', characteristic: 'C', class: null, severity: 3, rpn: 20, current_prevention: 'P2', current_detection: 'D2', created_at: '2026-05-01T10:02:00.000Z' },
     ],
     168

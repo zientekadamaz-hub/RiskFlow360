@@ -20,6 +20,7 @@ import {
   type PersistPfmeaRowOrderForSave,
 } from './pfmea-save-orchestration'
 import {
+  ensurePfmeaProcessDraft,
   fetchPfmeaRowsForRevision,
   restorePfmeaRowsSnapshotToRevision,
   type PfmeaEditSession,
@@ -85,6 +86,7 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
   const remapPfmeaSnapshotRowsToRevision = async (revisionId: string, sourceRows: PfmeaRow[]) => {
     return remapPfmeaSnapshotRowsToRevisionAfterSave({
       fetchRowsForRevisionScope: fetchPfmeaRowsForRevisionScope,
+      restoreSnapshotToRevision: restorePfmeaSnapshotToRevision,
       revisionId,
       sourceRows,
     })
@@ -172,7 +174,14 @@ export function usePfmeaSaveRevision(params: UsePfmeaSaveRevisionParams) {
       saveTiming.mark('auth session')
 
       const freshProjectView = await params.loadProjectView({ syncDraftOverride: false })
-      const freshDraftRevisionId = freshProjectView.current_draft_revision_id ?? draftRevisionId
+      let freshDraftRevisionId = freshProjectView.current_draft_revision_id ?? null
+      if (!freshDraftRevisionId) {
+        freshDraftRevisionId = await ensurePfmeaProcessDraft(params.supabase, params.projectId, uid)
+        saveTiming.mark('ensure fresh draft revision')
+      }
+      if (!freshDraftRevisionId) {
+        throw new Error('No draft revision found.')
+      }
       if (freshDraftRevisionId !== draftRevisionId) {
         draftRevisionId = freshDraftRevisionId
         params.setDraftRevisionIdOverride(freshDraftRevisionId)

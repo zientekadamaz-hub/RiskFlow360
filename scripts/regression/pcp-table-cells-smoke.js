@@ -7,6 +7,7 @@ const pageSource = fs.readFileSync(path.join(root, 'app', 'pcp', 'page.tsx'), 'u
 const layoutSource = fs.readFileSync(path.join(root, 'app', 'layout.tsx'), 'utf8')
 const cellsSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'pcp-table-cells.tsx'), 'utf8')
 const tableSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'pcp-table.tsx'), 'utf8')
+const pendingSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'use-pcp-pending-cell-values.ts'), 'utf8')
 
 assert.match(cellsSource, /export function SummaryCard/, 'PCP table cells must export SummaryCard.')
 assert.match(cellsSource, /export function Th/, 'PCP table cells must export table header cell.')
@@ -21,8 +22,14 @@ assert.match(cellsSource, /export function TdSelectPopup/, 'PCP table cells must
 assert.match(cellsSource, /createPortal/, 'PCP class popup must keep portal rendering.')
 assert.match(cellsSource, /CLASS_OPTION_DETAILS/, 'PCP class popup must keep SC\/CC descriptions.')
 assert.match(cellsSource, /PCP_CLASS_OPTIONS/, 'PCP class popup must keep class option list.')
-assert.match(cellsSource, /function PcpTextEditor/, 'PCP text cell must keep local draft state inside editor-only component.')
-assert.match(cellsSource, /const commitIfChanged = useCallback\(\(\) => \{[\s\S]*props\.onCancel\(\)[\s\S]*props\.onCommit\(val\)/, 'PCP text cell must keep blur commit behavior.')
+assert.match(cellsSource, /function PcpTextEditor/, 'PCP text cell must keep the editor-only component.')
+assert.doesNotMatch(cellsSource, /key=\{`\$\{props\.singleLine \? 'single' : 'multi'\}:\$\{displayValue\}`\}/, 'PCP text editor must not remount on every pending text change.')
+assert.match(cellsSource, /const \[initialEditValue\] = useState\(\(\) => props\.initialValue\)/, 'PCP text editor must preserve the initial edit value across pending re-renders.')
+assert.match(cellsSource, /node\.setSelectionRange\(end, end\)/, 'PCP text editor must place the caret at the end when editing starts.')
+assert.match(cellsSource, /resizeTextareaToContent\(event\.currentTarget\)/, 'PCP textarea editor must keep wrapping and resize while editing.')
+assert.match(cellsSource, /whiteSpace: 'pre-wrap'/, 'PCP textarea editor must preserve wrapped multi-line text while editing.')
+assert.match(cellsSource, /defaultValue=\{initialEditValue\}/, 'PCP text editor must use the same uncontrolled input pattern as PFMEA.')
+assert.match(cellsSource, /const commitValue = useCallback\(\(nextValue: string\) => \{[\s\S]*props\.onDraftChange\(nextValue\)[\s\S]*nextValue !== initialEditValue[\s\S]*props\.onCommit\(nextValue\)[\s\S]*props\.onCancel\(\)/, 'PCP text cell must commit the final DOM value like PFMEA.')
 assert.match(cellsSource, /onBlur=\{commitIfChanged\}/, 'PCP editor must commit on blur.')
 
 assert.match(pageSource, /SettingsPageShell/, 'PCP page must use the shared settings page shell for the top frame.')
@@ -44,5 +51,7 @@ assert.doesNotMatch(pageSource, /function TdClassPopup/, 'PCP page should not de
 assert.doesNotMatch(pageSource, /createPortal/, 'PCP page should not import portal directly after extraction.')
 assert.match(tableSource, /<TdClassPopup/, 'PCP table must still render class popup cells.')
 assert.match(tableSource, /<TdText/, 'PCP table must still render editable text cells.')
+assert.doesNotMatch(tableSource, /onCommit=\{\(v\) => void updateRow\(r,/, 'PCP table must return updateRow promises so the editor can keep pending text visible until commit finishes.')
+assert.match(pendingSource, /pendingCellRenderVersion/, 'PCP pending cell hook must expose a render version so visible rows refresh on every text change.')
 
 console.log('pcp table cells smoke passed')

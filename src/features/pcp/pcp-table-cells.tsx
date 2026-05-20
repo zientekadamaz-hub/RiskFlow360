@@ -1,4 +1,4 @@
-import React, { useCallback, useImperativeHandle, useState } from 'react'
+import React, { useCallback, useImperativeHandle, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { normalizeClassValue } from './pcp-utils'
 import {
@@ -123,7 +123,6 @@ export function TdText(props: {
   return (
     <td className={`${cellClassName} editable`.trim()} style={singleLineCellStyle}>
       <PcpTextEditor
-        key={`${props.singleLine ? 'single' : 'multi'}:${displayValue}`}
         initialValue={displayValue}
         editorRef={props.editorRef}
         onCancel={props.onCancel}
@@ -141,6 +140,11 @@ export type PcpEditorCommitTarget = {
   commit: () => void | Promise<void>
 }
 
+function resizeTextareaToContent(node: HTMLTextAreaElement) {
+  node.style.height = '0px'
+  node.style.height = `${Math.max(26, node.scrollHeight)}px`
+}
+
 function PcpTextEditor(props: {
   editorRef?: React.Ref<PcpEditorCommitTarget>
   initialValue: string
@@ -151,28 +155,45 @@ function PcpTextEditor(props: {
   singleLine?: boolean
   singleLineEditorStyle: React.CSSProperties
 }) {
-  const [val, setVal] = useState(props.initialValue)
-  const commitIfChanged = useCallback(() => {
+  const editorNodeRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+  const initialSelectionAppliedRef = useRef(false)
+  const [initialEditValue] = useState(() => props.initialValue)
+  const setEditorNode = useCallback((node: HTMLInputElement | HTMLTextAreaElement | null) => {
+    editorNodeRef.current = node
+    if (!node || initialSelectionAppliedRef.current) return
+    initialSelectionAppliedRef.current = true
+    if (node instanceof HTMLTextAreaElement) resizeTextareaToContent(node)
+    window.setTimeout(() => {
+      const end = node.value.length
+      node.focus()
+      node.setSelectionRange(end, end)
+    }, 0)
+  }, [])
+  const commitValue = useCallback((nextValue: string) => {
+    props.onDraftChange(nextValue)
+    if (nextValue !== initialEditValue) {
+      props.onCommit(nextValue)
+    } else {
+      props.onDraftClear()
+    }
     props.onCancel()
-    props.onDraftClear()
-    if (val !== props.initialValue) return props.onCommit(val)
-  }, [props, val])
+  }, [initialEditValue, props])
+
+  const commitIfChanged = useCallback(() => {
+    commitValue(editorNodeRef.current?.value ?? initialEditValue)
+  }, [commitValue, initialEditValue])
 
   useImperativeHandle(props.editorRef, () => ({ commit: commitIfChanged }), [commitIfChanged])
-
-  const handleChange = (value: string) => {
-    setVal(value)
-    props.onDraftChange(value)
-  }
 
   if (props.singleLine) {
     return (
       <input
         autoFocus
         className="pfmeaEditor"
+        defaultValue={initialEditValue}
+        ref={setEditorNode}
         style={props.singleLineEditorStyle}
-        value={val}
-        onChange={(event) => handleChange(event.target.value)}
+        onChange={(event) => props.onDraftChange(event.currentTarget.value)}
         onBlur={commitIfChanged}
       />
     )
@@ -182,10 +203,25 @@ function PcpTextEditor(props: {
     <textarea
       autoFocus
       className="pfmeaEditor"
+      defaultValue={initialEditValue}
+      ref={setEditorNode}
       rows={1}
-      value={val}
-      onChange={(event) => handleChange(event.target.value)}
+      onChange={(event) => {
+        resizeTextareaToContent(event.currentTarget)
+        props.onDraftChange(event.currentTarget.value)
+      }}
       onBlur={commitIfChanged}
+      style={{
+        display: 'block',
+        width: '100%',
+        minHeight: 26,
+        lineHeight: 1.25,
+        overflow: 'hidden',
+        overflowWrap: 'anywhere',
+        resize: 'none',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}
     />
   )
 }

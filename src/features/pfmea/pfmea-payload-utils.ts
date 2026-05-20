@@ -1,4 +1,5 @@
 import { normalizePfmeaGroupId, normalizePfmeaRowNo } from './pfmea-hierarchy-utils'
+import { createPfmeaRiskUid, normalizePfmeaRiskUid } from './pfmea-risk-uid-utils'
 import { asInt1to10 } from './pfmea-risk-utils'
 import { getPfmeaRowOperationId } from './pfmea-row-order-utils'
 import { normalizeClassValue, normalizePfmeaPcpValue } from './pfmea-value-utils'
@@ -11,6 +12,7 @@ export const PFMEA_GROUP_ID_FIELDS = [
 ] as const
 
 export const PFMEA_CLONE_FIELDS = [
+  'risk_uid',
   'operation_id',
   'row_no',
   'failure_mode_group_id',
@@ -62,6 +64,7 @@ export const PFMEA_SELECT_FIELDS_LEGACY = [
 
 export type PfmeaPayloadRow = {
   id: string
+  risk_uid?: string | null
   operation_id?: string | null
   row_no?: string | null
   failure_mode_group_id?: string | null
@@ -104,6 +107,7 @@ export type PfmeaPublishedMetadata = {
 
 export function buildPfmeaPublishedSyncPatch(row: PfmeaPayloadRow) {
   return {
+    risk_uid: normalizePfmeaRiskUid(row.risk_uid) ?? normalizePfmeaRiskUid(row.id) ?? createPfmeaRiskUid(),
     row_no: normalizePfmeaRowNo(row.row_no),
     failure_mode_group_id: normalizePfmeaGroupId(row.failure_mode_group_id),
     failure_block_group_id: normalizePfmeaGroupId(row.failure_block_group_id),

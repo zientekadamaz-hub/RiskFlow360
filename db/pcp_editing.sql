@@ -13,6 +13,18 @@ alter table if exists public.control_plan_rows
   add column if not exists pfmea_row_id uuid null references public.pfmea_rows(id) on delete set null;
 
 alter table if exists public.control_plan_rows
+  add column if not exists risk_uid uuid null;
+
+alter table if exists public.control_plan_rows
+  drop constraint if exists ux_pcp_auto_per_op_characteristic;
+
+drop index if exists public.ux_pcp_auto_per_op_characteristic;
+
+create unique index if not exists ux_control_plan_rows_revision_risk_uid
+  on public.control_plan_rows (revision_id, risk_uid)
+  where risk_uid is not null;
+
+alter table if exists public.control_plan_rows
   add column if not exists failure_mode text null;
 
 alter table if exists public.control_plan_rows

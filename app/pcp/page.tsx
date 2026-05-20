@@ -6,12 +6,14 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@app/lib/supabaseBrowser'
 import { hasCustomerModuleAccess, loadOwnCustomerAccessMap } from '@/lib/customer-access'
+import { errorText } from '@/lib/error-utils'
 import {
   asInt1to10,
   buildPcpRowPayload,
   getComparableTime,
   isEquivalentPcpRow,
   isPlaceholderPcpRowId,
+  isSamePcpRiskContext,
   normalizeClassValue,
   normalizeText,
   uniqueSelectedPfmeaPcpSeedRowsWithRiskColor,
@@ -54,8 +56,8 @@ import { projectsSummaryValueStyle } from '@/features/projects/view-styles'
 import {
   backfillPcpRowsFromPfmea,
   ensurePcpProcessDraft,
-  fetchLatestPfmeaRevisionIdForPcp,
   fetchPcpEditSession,
+  fetchPcpDraftDirtyState,
   fetchPcpOperations,
   fetchPcpProjectView,
   fetchPcpRevisionHistory,
@@ -67,6 +69,7 @@ import {
   getPcpSeedRiskColor,
   hydratePcpDraftRows,
   insertPcpRow,
+  resolvePcpRevisionContext,
   touchPcpEditSession,
   updatePcpRow,
   type PcpEditSession,
@@ -107,6 +110,7 @@ function PcpPageContent() {
 
   const [dirtyIds, setDirtyIds] = useState<string[]>([])
   const [deletedIds, setDeletedIds] = useState<string[]>([])
+  const [persistedDraftDirty, setPersistedDraftDirty] = useState(false)
 
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -164,15 +168,19 @@ function PcpPageContent() {
     clearAllPendingCellValues,
     clearPendingCellValue,
     clearPendingCellValuesForRow,
+    pendingCellRenderVersion,
     pendingCellValueCount,
     rowsRef,
     setPendingCellValue,
   } = usePcpPendingCellValues(rows)
 
-  const displayRows = useMemo(() => rows.map(applyPendingCellValues), [applyPendingCellValues, rows])
-  const rowsSorted = useMemo(() => sortPcpRows(displayRows), [displayRows])
   const hasPendingCellValues = pendingCellValueCount > 0
-  const isDirty = dirtyIds.length > 0 || deletedIds.length > 0 || hasPendingCellValues
+  const displayRows = useMemo(() => {
+    void pendingCellRenderVersion
+    return rows.map(applyPendingCellValues)
+  }, [applyPendingCellValues, rows, pendingCellRenderVersion])
+  const rowsSorted = useMemo(() => sortPcpRows(displayRows), [displayRows])
+  const isDirty = dirtyIds.length > 0 || deletedIds.length > 0 || hasPendingCellValues || persistedDraftDirty
 
   const loadProjectView = useCallback(async () => {
     const view = await fetchPcpProjectView(supabase, projectId)
@@ -201,6 +209,34 @@ function PcpPageContent() {
   const findEquivalentRowInRevision = useCallback(async (row: PcpRow, revisionId: string) => {
     return findEquivalentPcpRowInRevision(supabase, row, revisionId)
   }, [])
+
+  const commitMaterializedPlaceholderRow = useCallback((placeholderId: string, newRow: PcpRow) => {
+    const currentRows = rowsRef.current
+    let replaced = false
+    const nextRows: PcpRow[] = []
+
+    for (const currentRow of currentRows) {
+      if (currentRow.id === placeholderId) {
+        nextRows.push(newRow)
+        replaced = true
+        continue
+      }
+      if (currentRow.id === newRow.id) {
+        nextRows.push({ ...currentRow, ...newRow, __placeholder: false })
+        replaced = true
+        continue
+      }
+      nextRows.push(currentRow)
+    }
+
+    if (!replaced) {
+      const insertAt = Math.max(0, Math.min(newRow.__sortIndex ?? nextRows.length, nextRows.length))
+      nextRows.splice(insertAt, 0, newRow)
+    }
+
+    rowsRef.current = nextRows
+    setRows(nextRows)
+  }, [rowsRef])
 
   const loadUserContext = useCallback(async () => {
     if (!projectId || !userId) {
@@ -238,44 +274,43 @@ function PcpPageContent() {
     if (!projectId) return
     setErr('')
     try {
-      const pv = await loadProjectView()
+      const context = await resolvePcpRevisionContext(supabase, {
+        editLockMs: EDIT_LOCK_MS,
+        forcePcpRevisionId: forceRevisionId,
+        nowMs: Date.now(),
+        pcpDraftRevisionIdOverride: draftRevisionIdOverride,
+        pcpIsEditOwner: isEditOwner || !!forceRevisionId,
+        projectId,
+      })
+      const pv = context.projectView
+      setProject(pv)
+      if (pv.current_draft_revision_id) setDraftRevisionIdOverride(pv.current_draft_revision_id)
       const pcpRiskContext = await loadPcpRiskMatrixContext()
       const pcpYellowMax = pcpRiskContext?.thresholds.yellowMax ?? 168
       setPcpYellowMax(pcpYellowMax)
       const getSeedRiskColor = (seed: PfmeaPcpSeedRow) => pcpRiskContext ? getPcpSeedRiskColor(seed, pcpRiskContext) : null
       const operations = await fetchPcpOperations(supabase, projectId)
 
-      const openRevId = pv.current_open_revision_id ?? null
-      const draftRevId = draftRevisionIdOverride ?? pv.current_draft_revision_id ?? null
-      let revId = forceRevisionId ?? null
-      if (!revId) revId = isEditOwner ? draftRevId ?? openRevId : openRevId ?? draftRevId
+      const revId = context.pcpTargetRevisionId
 
       if (!revId) {
         setRows([])
+        setPersistedDraftDirty(false)
         return
       }
 
-      const normalizedRows = await fetchPcpRowsForRevision(supabase, projectId, revId)
+      let normalizedRows = await fetchPcpRowsForRevision(supabase, projectId, revId)
+
+      if (context.pcpHydrateSourceRevisionId && context.pcpTargetIsDraft) {
+        await ensureDraftRowsHydrated(revId, context.pcpHydrateSourceRevisionId)
+        normalizedRows = await fetchPcpRowsForRevision(supabase, projectId, revId)
+      }
+
       const loadPfmeaSeeds = async (seedRevisionId: string) => {
         return fetchPfmeaPcpSeedRows(supabase, projectId, seedRevisionId)
       }
 
-      const loadLatestPfmeaRevisionId = async () => {
-        return fetchLatestPfmeaRevisionIdForPcp(supabase, projectId)
-      }
-
-      let pfmeaSeedRows = revId ? await loadPfmeaSeeds(revId) : []
-      if (uniqueSelectedPfmeaPcpSeedRowsWithRiskColor(pfmeaSeedRows, pcpYellowMax, getSeedRiskColor).length === 0) {
-        const fallbackRevisionIds = [
-          pv.current_open_revision_id,
-          await loadLatestPfmeaRevisionId(),
-        ].filter((candidate, index, arr): candidate is string => !!candidate && arr.indexOf(candidate) === index && candidate !== revId)
-
-        for (const fallbackRevisionId of fallbackRevisionIds) {
-          pfmeaSeedRows = await loadPfmeaSeeds(fallbackRevisionId)
-          if (uniqueSelectedPfmeaPcpSeedRowsWithRiskColor(pfmeaSeedRows, pcpYellowMax, getSeedRiskColor).length > 0) break
-        }
-      }
+      const pfmeaSeedRows = context.pfmeaSourceRevisionId ? await loadPfmeaSeeds(context.pfmeaSourceRevisionId) : []
 
       const allSeedRowsByOperation = new Map<string, PfmeaPcpSeedRow[]>()
       for (const row of pfmeaSeedRows) {
@@ -303,92 +338,129 @@ function PcpPageContent() {
       const mergedRows: PcpRow[] = []
       const pfmeaBackfillCandidates: Array<{
         id: string
-        patch: Pick<PcpRow, 'pfmea_row_id' | 'failure_mode' | 'characteristic' | 'class' | 'current_prevention' | 'current_detection'>
+        patch: Pick<PcpRow, 'risk_uid' | 'pfmea_row_id' | 'failure_mode' | 'characteristic' | 'class' | 'current_prevention' | 'current_detection'>
       }> = []
       let sortIndex = 0
       for (const op of operations) {
         const existing = existingByOperation.get(op.id) ?? []
-        const allPfmeaSeedIds = new Set((allSeedRowsByOperation.get(op.id) ?? []).map((seed) => seed.id))
+        const allPfmeaSeeds = allSeedRowsByOperation.get(op.id) ?? []
         const pfmeaSeeds = seedRowsByOperation.get(op.id) ?? []
-        const selectedPfmeaSeedIds = new Set(pfmeaSeeds.map((seed) => seed.id))
         const pfmeaSeedById = new Map(pfmeaSeeds.map((seed) => [seed.id, seed] as const))
-        const getSeedIndexForExistingRow = (row: PcpRow) => {
-          if (row.pfmea_row_id) {
-            const directIndex = pfmeaSeeds.findIndex((seed) => seed.id === row.pfmea_row_id)
-            if (directIndex >= 0) return directIndex
+        const allPfmeaSeedById = new Map(allPfmeaSeeds.map((seed) => [seed.id, seed] as const))
+        const rowMatchesSeed = (row: PcpRow, seed: PfmeaPcpSeedRow) => {
+          const rowContext = {
+            operation_id: row.operation_id,
+            risk_uid: row.risk_uid ?? null,
+            pfmea_row_id: row.pfmea_row_id ?? null,
+            failure_mode: row.failure_mode,
+            characteristic: row.characteristic,
+            class: row.class,
+            current_prevention: row.current_prevention,
+            current_detection: row.current_detection,
           }
-          return pfmeaSeeds.findIndex((seed) =>
-            isEquivalentPcpRow(
-              {
-                operation_id: row.operation_id,
-                pfmea_row_id: row.pfmea_row_id ?? null,
-                failure_mode: row.failure_mode,
-                characteristic: row.characteristic,
-                class: row.class,
-                current_prevention: row.current_prevention,
-                current_detection: row.current_detection,
-              },
-              {
-                operation_id: seed.operation_id,
-                pfmea_row_id: seed.id,
-                failure_mode: seed.failure_mode,
-                characteristic: seed.characteristic ?? '',
-                class: seed.class,
-                current_prevention: seed.current_prevention,
-                current_detection: seed.current_detection,
-              }
-            )
-          )
+          const seedContext = {
+            operation_id: seed.operation_id,
+            risk_uid: seed.risk_uid ?? null,
+            pfmea_row_id: seed.id,
+            failure_mode: seed.failure_mode,
+            characteristic: seed.characteristic ?? '',
+            class: seed.class,
+            current_prevention: seed.current_prevention,
+            current_detection: seed.current_detection,
+          }
+          return isEquivalentPcpRow(rowContext, seedContext) || isSamePcpRiskContext(rowContext, seedContext)
         }
-        const existingSorted = existing.filter((row) => {
-          const linkedPfmeaRowId = normalizeText(row.pfmea_row_id)
-          if (!linkedPfmeaRowId || !allPfmeaSeedIds.has(linkedPfmeaRowId)) return true
-          return selectedPfmeaSeedIds.has(linkedPfmeaRowId)
-        }).sort((a, b) => {
-          const aSeedIndex = getSeedIndexForExistingRow(a)
-          const bSeedIndex = getSeedIndexForExistingRow(b)
-          const aHasSeed = aSeedIndex >= 0
-          const bHasSeed = bSeedIndex >= 0
-          if (aHasSeed && bHasSeed && aSeedIndex !== bSeedIndex) return aSeedIndex - bSeedIndex
-          if (aHasSeed !== bHasSeed) return aHasSeed ? -1 : 1
+        const findMatchingSeed = (row: PcpRow, seeds: PfmeaPcpSeedRow[], seedById: Map<string, PfmeaPcpSeedRow>) => {
+          const riskUid = normalizeText(row.risk_uid)
+          if (riskUid) {
+            const riskUidSeed = seeds.find((seed) => normalizeText(seed.risk_uid) === riskUid)
+            if (riskUidSeed) return riskUidSeed
+          }
+          const pfmeaRowIdSeed = row.pfmea_row_id ? seedById.get(row.pfmea_row_id) : null
+          if (pfmeaRowIdSeed) return pfmeaRowIdSeed
+          return seeds.find((seed) => rowMatchesSeed(row, seed)) ?? null
+        }
+        const shouldShowExistingRow = (row: PcpRow) => {
+          if (findMatchingSeed(row, pfmeaSeeds, pfmeaSeedById)) return true
+          const isKnownPfmeaLinkedRow =
+            !!normalizeText(row.risk_uid) ||
+            !!normalizeText(row.pfmea_row_id) ||
+            !!findMatchingSeed(row, allPfmeaSeeds, allPfmeaSeedById)
+          return !isKnownPfmeaLinkedRow
+        }
+        const getDefinedControlFieldCount = (row: PcpRow) =>
+          [
+            row.control_method,
+            row.sample_size,
+            row.frequency,
+            row.reaction_plan,
+          ].filter((value) => normalizeText(value)).length
+        const preferExistingPcpRow = (a: PcpRow, b: PcpRow) => {
+          const aControlCount = getDefinedControlFieldCount(a)
+          const bControlCount = getDefinedControlFieldCount(b)
+          if (aControlCount !== bControlCount) return bControlCount - aControlCount
+          const aUpdated = getComparableTime(a.updated_at)
+          const bUpdated = getComparableTime(b.updated_at)
+          if (aUpdated !== bUpdated) return bUpdated - aUpdated
+          const aCreated = getComparableTime(a.created_at)
+          const bCreated = getComparableTime(b.created_at)
+          if (aCreated !== bCreated) return bCreated - aCreated
+          return normalizeText(a.id).localeCompare(normalizeText(b.id))
+        }
+        const visibleExistingByKey = new Map<string, PcpRow>()
+        for (const row of existing.filter(shouldShowExistingRow)) {
+          const linkedSeed = findMatchingSeed(row, pfmeaSeeds, pfmeaSeedById)
+          const key = linkedSeed?.id ? `pfmea:${linkedSeed.id}` : `pcp:${row.id}`
+          const existingCandidate = visibleExistingByKey.get(key)
+          if (!existingCandidate || preferExistingPcpRow(row, existingCandidate) < 0) {
+            visibleExistingByKey.set(key, row)
+          }
+        }
+
+        const linkedExistingBySeedId = new Map<string, PcpRow>()
+        const manualExistingRows: PcpRow[] = []
+        for (const row of visibleExistingByKey.values()) {
+          const linkedSeed = findMatchingSeed(row, pfmeaSeeds, pfmeaSeedById)
+          if (linkedSeed?.id) {
+            linkedExistingBySeedId.set(linkedSeed.id, row)
+          } else {
+            manualExistingRows.push(row)
+          }
+        }
+        manualExistingRows.sort((a, b) => {
           const aTime = getComparableTime(a.created_at)
           const bTime = getComparableTime(b.created_at)
           if (aTime !== bTime) return aTime - bTime
           return normalizeText(a.id).localeCompare(normalizeText(b.id))
         })
-        const usedSeedIds = new Set<string>()
 
-        existingSorted.forEach((row, index) => {
-          const linkedSeed =
-            (row.pfmea_row_id ? pfmeaSeedById.get(row.pfmea_row_id) : null) ??
-            (pfmeaSeeds[index] ?? null)
-
-          if (linkedSeed?.id) usedSeedIds.add(linkedSeed.id)
+        const appendExistingRow = (row: PcpRow, linkedSeed: PfmeaPcpSeedRow | null) => {
 
           const mergedPatch = {
+            risk_uid: linkedSeed?.risk_uid ?? row.risk_uid ?? null,
             pfmea_row_id: linkedSeed?.id ?? row.pfmea_row_id ?? null,
-            failure_mode: normalizeText(row.failure_mode) || normalizeText(linkedSeed?.failure_mode) || null,
-            characteristic: normalizeText(row.characteristic) || normalizeText(linkedSeed?.characteristic),
-            class: normalizeClassValue(row.class) ?? normalizeClassValue(linkedSeed?.class) ?? null,
-            severity: asInt1to10(row.severity) ?? asInt1to10(linkedSeed?.severity),
-            rpn: typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : (typeof linkedSeed?.rpn === 'number' && Number.isFinite(linkedSeed.rpn) ? linkedSeed.rpn : null),
-            current_prevention: normalizeText(row.current_prevention) || normalizeText(linkedSeed?.current_prevention) || null,
-            current_detection: normalizeText(row.current_detection) || normalizeText(linkedSeed?.current_detection) || null,
+            failure_mode: normalizeText(linkedSeed?.failure_mode) || normalizeText(row.failure_mode) || null,
+            characteristic: normalizeText(linkedSeed?.characteristic) || normalizeText(row.characteristic),
+            class: normalizeClassValue(linkedSeed?.class) ?? normalizeClassValue(row.class) ?? null,
+            severity: asInt1to10(linkedSeed?.severity) ?? asInt1to10(row.severity),
+            rpn: typeof linkedSeed?.rpn_current === 'number' && Number.isFinite(linkedSeed.rpn_current)
+              ? linkedSeed.rpn_current
+              : (typeof linkedSeed?.rpn === 'number' && Number.isFinite(linkedSeed.rpn) ? linkedSeed.rpn : (typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : null)),
+            current_prevention: normalizeText(linkedSeed?.current_prevention) || normalizeText(row.current_prevention) || null,
+            current_detection: normalizeText(linkedSeed?.current_detection) || normalizeText(row.current_detection) || null,
           }
 
           if (
             isEditOwner &&
-            draftRevId &&
-            revId === draftRevId &&
+            context.pcpTargetIsDraft &&
             !isPlaceholderPcpRowId(row.id) &&
             linkedSeed &&
             (
               row.pfmea_row_id !== linkedSeed.id ||
+              row.risk_uid !== (mergedPatch.risk_uid ?? null) ||
               normalizeText(row.failure_mode) !== (mergedPatch.failure_mode ?? '') ||
               normalizeText(row.characteristic) !== mergedPatch.characteristic ||
               normalizeClassValue(row.class) !== mergedPatch.class ||
-              asInt1to10(row.severity) !== (mergedPatch.severity ?? null) ||
-              (typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : null) !== (mergedPatch.rpn ?? null) ||
               normalizeText(row.current_prevention) !== (mergedPatch.current_prevention ?? '') ||
               normalizeText(row.current_detection) !== (mergedPatch.current_detection ?? '')
             )
@@ -397,6 +469,7 @@ function PcpPageContent() {
               id: row.id,
               patch: {
                 pfmea_row_id: mergedPatch.pfmea_row_id,
+                risk_uid: mergedPatch.risk_uid,
                 failure_mode: mergedPatch.failure_mode,
                 characteristic: mergedPatch.characteristic,
                 class: mergedPatch.class,
@@ -407,38 +480,51 @@ function PcpPageContent() {
           }
 
           mergedRows.push({ ...row, ...mergedPatch, __sortIndex: sortIndex++ })
-        })
+        }
 
         for (const seed of pfmeaSeeds) {
-          if (usedSeedIds.has(seed.id)) continue
-          mergedRows.push(
-            makePcpPlaceholderRow(
-              op,
-              revId,
-              `${op.id}:${seed.id}`,
-              seed,
-              sortIndex++
+          const existingSeedRow = linkedExistingBySeedId.get(seed.id)
+          if (existingSeedRow) {
+            appendExistingRow(existingSeedRow, seed)
+          } else {
+            mergedRows.push(
+              makePcpPlaceholderRow(
+                op,
+                revId,
+                `${op.id}:${seed.id}`,
+                seed,
+                sortIndex++
+              )
             )
-          )
+          }
+        }
+
+        for (const row of manualExistingRows) {
+          appendExistingRow(row, null)
         }
       }
 
       if (pfmeaBackfillCandidates.length > 0) {
-        await backfillPcpRowsFromPfmea(supabase, pfmeaBackfillCandidates)
+        await backfillPcpRowsFromPfmea(supabase, revId, pfmeaBackfillCandidates)
+      }
 
-        setDirtyIds((prev) => {
-          const next = new Set(prev)
-          pfmeaBackfillCandidates.forEach((candidate) => next.add(candidate.id))
-          return Array.from(next)
+      if (context.pcpTargetIsDraft && context.projectView.current_open_revision_id && revId !== context.projectView.current_open_revision_id) {
+        const dirtyState = await fetchPcpDraftDirtyState(supabase, {
+          draftRevisionId: revId,
+          openRevisionId: context.projectView.current_open_revision_id,
+          projectId,
         })
+        setPersistedDraftDirty(dirtyState.isDirty)
+      } else {
+        setPersistedDraftDirty(false)
       }
 
       rowsRef.current = mergedRows
       setRows(mergedRows)
     } catch (e: any) {
-      setErr(e?.message ?? String(e))
+      setErr(errorText(e, 'Could not load PCP.'))
     }
-  }, [projectId, loadProjectView, loadPcpRiskMatrixContext, draftRevisionIdOverride, isEditOwner, rowsRef])
+  }, [projectId, loadPcpRiskMatrixContext, draftRevisionIdOverride, isEditOwner, ensureDraftRowsHydrated, rowsRef])
   const loadRevisionHistory = useCallback(async () => {
     if (!projectId) {
       setHistoryEntries([])
@@ -448,7 +534,7 @@ function PcpPageContent() {
     try {
       setHistoryEntries(await fetchPcpRevisionHistory(supabase, projectId))
     } catch (e: any) {
-      setErr(e?.message ?? String(e))
+      setErr(errorText(e, 'Could not load PCP revision history.'))
       setHistoryEntries([])
     } finally {
       setHistoryLoading(false)
@@ -508,9 +594,13 @@ function PcpPageContent() {
           await updatePcpRow(supabase, targetId, finalRev, payload)
           markDirty(targetId)
           clearPendingCellValuesForRow(effectiveRow.id, { refresh: false })
-          const updatedRows = rowsRef.current.map((x) => (x.id === targetId ? ({ ...x, ...payload } as PcpRow) : x))
-          rowsRef.current = updatedRows
-          setRows(updatedRows)
+          commitMaterializedPlaceholderRow(effectiveRow.id, {
+            ...effectiveRow,
+            ...payload,
+            id: targetId,
+            revision_id: finalRev,
+            __placeholder: false,
+          } as PcpRow)
           setEdit((prev) => (prev && prev.rowId === effectiveRow.id ? { ...prev, rowId: targetId } : prev))
           return
         }
@@ -519,6 +609,7 @@ function PcpPageContent() {
           operation_id: effectiveRow.operation_id,
           revision_id: finalRev,
           pfmea_row_id: effectiveRow.pfmea_row_id ?? null,
+          risk_uid: effectiveRow.risk_uid ?? null,
           failure_mode: payload.failure_mode ?? effectiveRow.failure_mode ?? '',
           characteristic: payload.characteristic ?? effectiveRow.characteristic ?? '',
           class: normalizeClassValue((payload.class as string | null | undefined) ?? effectiveRow.class ?? null),
@@ -556,34 +647,28 @@ function PcpPageContent() {
           revision_id: finalRev,
           __placeholder: false,
         } as PcpRow
-        const updatedRows = rowsRef.current.map((x) =>
-            x.id === effectiveRow.id
-              ? ({
-                  ...effectiveRow,
-                  ...insertPayload,
-                  id: newId,
-                  created_at: ins.created_at ?? new Date().toISOString(),
-                  updated_at: ins.updated_at ?? new Date().toISOString(),
-                  revision_id: finalRev,
-                  __placeholder: false,
-                } as PcpRow)
-              : x
-        )
-        if (!updatedRows.some((x) => x.id === newId)) {
-          rowsRef.current = updatedRows
-          setRows(updatedRows)
-        } else {
-          rowsRef.current = rowsRef.current.map((x) => (x.id === newId ? newRow : x)).filter((x) => x.id !== effectiveRow.id)
-          setRows(rowsRef.current)
-        }
+        commitMaterializedPlaceholderRow(effectiveRow.id, newRow)
         setEdit((prev) => (prev && prev.rowId === effectiveRow.id ? { ...prev, rowId: newId } : prev))
       } else {
-        await updatePcpRow(supabase, targetRow.id, finalRev, payload)
-        markDirty(targetRow.id)
+        let persistedRow = targetRow
+        try {
+          await updatePcpRow(supabase, targetRow.id, finalRev, payload)
+        } catch (updateError) {
+          await ensureDraftRowsHydrated(finalRev, effectiveRow.revision_id ?? project?.current_open_revision_id ?? workingRevisionId)
+          const remappedRow = await findEquivalentRowInRevision(effectiveRow, finalRev)
+          if (!remappedRow || remappedRow.id === targetRow.id) throw updateError
+          await updatePcpRow(supabase, remappedRow.id, finalRev, payload)
+          persistedRow = remappedRow
+          requiresReload = true
+          setEdit((prev) => (prev && prev.rowId === targetRow.id ? { ...prev, rowId: remappedRow.id } : prev))
+        }
+        markDirty(persistedRow.id)
         if (requiresReload) {
+          clearPendingCellValuesForRow(row.id, { refresh: false })
           await loadAll(finalRev)
         } else {
-          const updatedRows = rowsRef.current.map((x) => (x.id === targetRow.id ? ({ ...x, ...payload } as PcpRow) : x))
+          clearPendingCellValuesForRow(row.id, { refresh: false })
+          const updatedRows = rowsRef.current.map((x) => (x.id === persistedRow.id ? ({ ...x, ...payload } as PcpRow) : x))
           rowsRef.current = updatedRows
           setRows(updatedRows)
         }
@@ -592,9 +677,9 @@ function PcpPageContent() {
     try {
       await runPendingCellUpdate(task)
     } catch (e: any) {
-      setErr(e?.message ?? String(e))
+      setErr(errorText(e, 'Could not update PCP row.'))
     }
-  }, [readOnly, project?.current_draft_revision_id, ensureDraftIfNeeded, workingRevisionId, applyPendingCellValues, project?.current_open_revision_id, ensureDraftRowsHydrated, findEquivalentRowInRevision, markDirty, clearPendingCellValuesForRow, rowsRef, loadAll, runPendingCellUpdate])
+  }, [readOnly, project?.current_draft_revision_id, ensureDraftIfNeeded, workingRevisionId, applyPendingCellValues, project?.current_open_revision_id, ensureDraftRowsHydrated, findEquivalentRowInRevision, markDirty, clearPendingCellValuesForRow, commitMaterializedPlaceholderRow, rowsRef, loadAll, runPendingCellUpdate])
 
   const {
     handleSaveRevision,
@@ -603,6 +688,7 @@ function PcpPageContent() {
     currentAuthorName,
     clearAllPendingCellValues,
     editorRef: pcpEditorRef,
+    editLockMs: EDIT_LOCK_MS,
     flushPendingCellUpdates,
     isDirty,
     loadAll,
@@ -718,6 +804,15 @@ function PcpPageContent() {
   const card: React.CSSProperties = { ...settingsCardStyle, color: SURFACE_TEXT }
   const frame: React.CSSProperties = settingsFrameStyle
   const summaryValue: React.CSSProperties = { ...projectsSummaryValueStyle, color: '#f8fafc' }
+  const savePcpDisabled = readOnly || !isDirty
+  const savePcpButtonStyle: React.CSSProperties = {
+    ...actionBtn,
+    padding: '8px 12px',
+    height: 29,
+    cursor: savePcpDisabled ? 'not-allowed' : 'pointer',
+    opacity: savePcpDisabled ? 0.45 : 1,
+    borderColor: savePcpDisabled ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.28)',
+  }
   const processName = project?.name ?? '-'
   const processNameLength = processName.length
   const processSummaryFontSize = processNameLength > 42 ? 13 : processNameLength > 28 ? 15 : processNameLength > 18 ? 18 : 24
@@ -792,8 +887,8 @@ function PcpPageContent() {
           word-break: break-word !important;
           resize: none !important;
           overflow: hidden !important;
-          min-height: 1.25em !important;
-          height: 1.25em !important;
+          min-height: 26px !important;
+          height: auto;
         }
         .pfmeaTd {
           padding: 10px 10px !important;
@@ -863,7 +958,7 @@ function PcpPageContent() {
           <Link href={`/pfmea?project=${projectId}`} className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }}>PFMEA</Link>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {isEditOwner ? <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => { setSaveDescription(''); setShowSave(true) }} disabled={readOnly || !isDirty}>Save PCP</button> : null}
+          {isEditOwner ? <button className="rf-button" style={savePcpButtonStyle} onClick={() => { setSaveDescription(''); setShowSave(true) }} disabled={savePcpDisabled}>Save PCP</button> : null}
           <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29, opacity: sessionBusy ? 0.6 : 1 }} onClick={() => void (isEditOwner ? discardDraftAndCloseSession() : startEditSession())} disabled={sessionBusy || isObsolete || (!isEditOwner && isLockedByOther && !isChampion)}>{sessionBusy ? 'Please wait...' : isEditOwner ? 'Discard draft' : isLockedByOther ? (isChampion ? 'Take over PCP' : 'PCP locked') : 'Edit PCP'}</button>
           <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => void loadRevisionHistory().then(() => setHistoryOpen(true))} disabled={!projectId}>Revision History</button>
           <button className="rf-button" style={{ ...actionBtn, padding: '8px 12px', height: 29 }} onClick={() => setColumnFiltersOpen((v) => !v)}>{columnFiltersOpen ? 'Hide columns' : 'Set columns'}</button>

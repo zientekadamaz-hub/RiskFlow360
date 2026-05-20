@@ -15,13 +15,15 @@ const expectedModelMarkers = [
   'effectiveActionPlanOwnerRow',
   'getPfmeaPcpAutoReasons',
   'isPfmeaSelectedForPcp',
+  'effectiveCurrentRisk',
+  'pcpDecisionRisk',
   'pcpSourceRow',
   'isPfmeaCellHighlighted',
   'colorFill',
   'groupStart',
   'currentRiskMuted',
   'residualRiskMuted',
-  '!currentRiskMuted',
+  'pcpDecisionRisk ? { background: colorFill(pcpDecisionRisk) }',
   'MUTED_RISK_TEXT_COLOR',
   'closedActionRows.length > 0',
   'closedResidualCandidates',
@@ -38,7 +40,7 @@ const modelCall = tableBodySource.indexOf('buildPfmeaTableRowModel')
 const rowReturn = tableBodySource.indexOf('return (', modelCall)
 assert.notEqual(modelCall, -1, 'PFMEA table body must call buildPfmeaTableRowModel.')
 assert.ok(rowReturn > modelCall, 'PFMEA row model must be built before row JSX is returned.')
-assert.match(tableBodySource, /const \{\s*[\s\S]*currentRisk: a1,[\s\S]*residualRisk: a2,[\s\S]*\} = buildPfmeaTableRowModel/, 'PFMEA table body must keep existing a1/a2 row aliases from the model.')
+assert.match(tableBodySource, /const \{\s*[\s\S]*effectiveCurrentRisk,[\s\S]*residualRisk: a2,[\s\S]*\} = buildPfmeaTableRowModel/, 'PFMEA table body must read effective current risk and residual risk from the model.')
 assert.match(tableBodySource, /sourceRows: props\.rowsRef\.current/, 'PFMEA row model must receive latest source rows for highlights.')
 assert.match(tableBodySource, /tableRows: props\.tableRows,/, 'PFMEA row model must receive visible table rows for merge ownership.')
 

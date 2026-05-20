@@ -36,7 +36,7 @@ export function asInt1to10(value: unknown): number | null {
 }
 
 export function isPfmeaSeedSelectedForPcp(
-  row: { pcp: unknown; class: string | null | undefined; severity: unknown; rpn: number | null | undefined },
+  row: { pcp: unknown; class: string | null | undefined; severity: unknown; rpn: number | null | undefined; rpn_current?: number | null | undefined },
   yellowMax: number,
   riskColor?: 'green' | 'yellow' | 'orange' | 'red' | null
 ) {
@@ -46,12 +46,15 @@ export function isPfmeaSeedSelectedForPcp(
   const severity = asInt1to10(row.severity)
   if (severity != null && severity >= 9) return true
   if (riskColor) return riskColor === 'orange' || riskColor === 'red'
-  const rpn = typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : null
+  const rpn = typeof row.rpn_current === 'number' && Number.isFinite(row.rpn_current)
+    ? row.rpn_current
+    : (typeof row.rpn === 'number' && Number.isFinite(row.rpn) ? row.rpn : null)
   return rpn != null && rpn > yellowMax
 }
 
 type PcpSeedIdentitySource = {
   id?: string | null
+  risk_uid?: string | null
   operation_id?: string | null
   pcp?: unknown
   failure_mode?: string | null
@@ -59,6 +62,7 @@ type PcpSeedIdentitySource = {
   class?: string | null
   severity?: unknown
   rpn?: number | null
+  rpn_current?: number | null
   current_prevention?: string | null
   current_detection?: string | null
   created_at?: string | null
@@ -93,7 +97,14 @@ function hasPcpContext(row: Partial<PcpSeedIdentitySource>) {
   )
 }
 
+function hasPcpRiskContext(row: Partial<PcpSeedIdentitySource>) {
+  const parts = getPcpContextParts(row)
+  return !!(parts.operationId && (parts.failureMode || parts.characteristic))
+}
+
 export function getPcpSeedIdentityKey(row: PcpSeedIdentitySource) {
+  const riskUid = normalizeText(row.risk_uid)
+  if (riskUid) return `risk:${riskUid}`
   const parts = getPcpContextParts(row)
   if (!hasPcpContext(row)) {
     return `${parts.operationId}\u001f${normalizeText(row.id)}`
@@ -169,6 +180,7 @@ export type PcpPayloadSource = {
   pfmea_row_id?: string | null
   reaction_plan?: string | null
   revision_id: string | null
+  risk_uid?: string | null
   sample_size?: string | null
   source?: string | null
   status?: string | null
@@ -178,6 +190,7 @@ export function buildPcpRowPayload(row: PcpPayloadSource) {
   return {
     operation_id: row.operation_id,
     revision_id: row.revision_id,
+    risk_uid: row.risk_uid ?? undefined,
     pfmea_row_id: row.pfmea_row_id ?? null,
     failure_mode: row.failure_mode ?? '',
     characteristic: row.characteristic ?? '',
@@ -194,6 +207,9 @@ export function buildPcpRowPayload(row: PcpPayloadSource) {
 }
 
 export function isEquivalentPcpRow(a: Partial<PcpPayloadSource>, b: Partial<PcpPayloadSource>) {
+  const riskUidA = normalizeText(a.risk_uid)
+  const riskUidB = normalizeText(b.risk_uid)
+  if (riskUidA && riskUidB) return riskUidA === riskUidB
   if (hasPcpContext(a) && hasPcpContext(b) && getPcpSeedIdentityKey(a) === getPcpSeedIdentityKey(b)) {
     return true
   }
@@ -207,6 +223,26 @@ export function isEquivalentPcpRow(a: Partial<PcpPayloadSource>, b: Partial<PcpP
     normalizeClassValue(a.class ?? null) === normalizeClassValue(b.class ?? null) &&
     normalizeText(a.current_prevention) === normalizeText(b.current_prevention) &&
     normalizeText(a.current_detection) === normalizeText(b.current_detection)
+  )
+}
+
+export function isSamePcpRiskContext(a: Partial<PcpPayloadSource>, b: Partial<PcpPayloadSource>) {
+  const riskUidA = normalizeText(a.risk_uid)
+  const riskUidB = normalizeText(b.risk_uid)
+  if (riskUidA && riskUidB && riskUidA === riskUidB) return true
+  const pfmeaA = normalizeText(a.pfmea_row_id)
+  const pfmeaB = normalizeText(b.pfmea_row_id)
+  if (pfmeaA && pfmeaB && pfmeaA === pfmeaB) return true
+  if (!hasPcpRiskContext(a) || !hasPcpRiskContext(b)) return false
+  const aParts = getPcpContextParts(a)
+  const bParts = getPcpContextParts(b)
+  return (
+    aParts.operationId === bParts.operationId &&
+    aParts.failureMode === bParts.failureMode &&
+    aParts.characteristic === bParts.characteristic &&
+    aParts.classValue === bParts.classValue &&
+    aParts.currentPrevention === bParts.currentPrevention &&
+    aParts.currentDetection === bParts.currentDetection
   )
 }
 

@@ -10,9 +10,11 @@ assert.match(hookSource, /export function usePcpEditSessionActions/, 'PCP edit s
 assert.match(hookSource, /fetchPcpSessionLock/, 'PCP edit session actions must own lock checks.')
 assert.match(hookSource, /fetchCurrentPcpDraftRevisionId/, 'PCP edit session actions must resolve the current draft revision.')
 assert.match(hookSource, /deletePcpDraftRows/, 'PCP edit session actions must own draft row discard.')
+assert.match(hookSource, /ensurePcpProcessDraft/, 'PCP edit session start must ensure a concrete draft before loading rows.')
 assert.match(hookSource, /upsertPcpEditSession/, 'PCP edit session actions must own edit session start.')
 assert.match(hookSource, /deletePcpEditSession/, 'PCP edit session actions must own explicit session close.')
 assert.match(hookSource, /Previous PCP draft was discarded/, 'PCP edit session actions must preserve takeover timeout notice.')
+assert.match(hookSource, /loadAll\(draftId\)/, 'PCP edit session start must load the explicit draft revision to avoid stale read-only data.')
 assert.doesNotMatch(hookSource, /Draft discarded\. Session closed without publishing\./, 'PCP discard should not show a success notice, matching PFMEA.')
 
 assert.match(pageSource, /usePcpEditSessionActions\(\{/, 'PCP page must use edit session actions hook.')

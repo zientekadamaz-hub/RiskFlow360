@@ -15,6 +15,7 @@ export type Operation = {
 export type PfmeaRow = {
   id: string
   revision_id?: string | null
+  risk_uid?: string | null
   operation_id: string
   row_no?: string | null
   failure_mode_group_id?: string | null

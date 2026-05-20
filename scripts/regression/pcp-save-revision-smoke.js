@@ -8,11 +8,13 @@ const hookSource = fs.readFileSync(path.join(root, 'src', 'features', 'pcp', 'us
 
 assert.match(hookSource, /export function usePcpSaveRevision/, 'PCP save revision hook must be exported.')
 assert.match(hookSource, /publishPcpRevision/, 'PCP save revision hook must own publish calls.')
+assert.match(hookSource, /preparePcpDraftForPublish/, 'PCP save revision hook must prepare and validate the draft before publish.')
 assert.match(hookSource, /deletePcpEditSession/, 'PCP save revision hook must close edit session after publish.')
 assert.match(hookSource, /Change description is required\./, 'PCP save revision hook must preserve required description validation.')
 assert.match(hookSource, /Not authenticated\./, 'PCP save revision hook must preserve auth validation.')
 assert.match(hookSource, /await editorRef\.current\?\.commit\(\)/, 'PCP save revision hook must commit the active editor before publish.')
 assert.match(hookSource, /await flushPendingCellUpdates\(\)/, 'PCP save revision hook must flush queued cell updates before publish.')
+assert.match(hookSource, /await preparePcpDraftForPublish\(supabase,[\s\S]*editLockMs[\s\S]*projectId[\s\S]*userId: uid/, 'PCP save must block active PFMEA drafts and prune draft-only PCP rows before publish.')
 assert.match(hookSource, /setDirtyIds\(\[\]\)[\s\S]*setDeletedIds\(\[\]\)[\s\S]*setDraftRevisionIdOverride\(null\)/, 'PCP save revision hook must clear dirty, deleted and draft state after publish.')
 assert.match(hookSource, /clearAllPendingCellValues\(\{ refresh: false \}\)/, 'PCP save revision hook must clear pending cell values after successful publish.')
 assert.match(hookSource, /await loadAll\(\)[\s\S]*await loadRevisionHistory\(\)[\s\S]*await loadEditSession\(\)/, 'PCP save revision hook must preserve post-save refresh order.')

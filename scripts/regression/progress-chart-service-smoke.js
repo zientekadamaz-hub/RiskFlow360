@@ -27,6 +27,9 @@ function loadModule(relativePath) {
       if (request === '@/features/reports/pfmea-report-query') {
         return loadModule(['src', 'features', 'reports', 'pfmea-report-query.ts'])
       }
+      if (request === '@/features/reports/report-current-pfmea-rows') {
+        return {}
+      }
       if (
         request === '@/features/projects/projects-service' ||
         request === '@/features/reports/report-project-scope'
@@ -43,7 +46,7 @@ function loadModule(relativePath) {
 
 const { summarizeProgressCurrentRows } = loadModule(['src', 'features', 'reports', 'progress-chart', 'progress-chart-service.ts'])
 
-assert.match(serviceSource, /PFMEA_REPORT_RISK_SELECT/, 'Progress Chart current summary must use the same PFMEA row scope as RPN Matrix.')
+assert.match(serviceSource, /fetchCurrentPfmeaRowsForReportProjects/, 'Progress Chart current summary must use the same current PFMEA row fallback as RPN Matrix.')
 assert.doesNotMatch(serviceSource, /\.eq\('operations\.active', true\)/, 'Progress Chart must not exclude historical PFMEA rows from open-project trend scope.')
 assert.match(serviceSource, /const now = new Date\(\)/, 'Progress Chart must project the current open-risk state into the current date bucket.')
 

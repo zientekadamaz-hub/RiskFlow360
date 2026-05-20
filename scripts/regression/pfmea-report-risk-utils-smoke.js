@@ -74,6 +74,19 @@ currentRisk = getPfmeaCurrentOpenRisk({ severity: 8, occurrence: 9, detection: 9
 assert.equal(currentRisk.doValue, 10)
 assert.equal(currentRisk.rpn, 80)
 
+currentRisk = getPfmeaCurrentOpenRisk({
+  action_status: 'CLOSED',
+  severity: 9,
+  occurrence: 5,
+  detection: 6,
+  oxd_current: 30,
+  rpn_current: 270,
+  oxd2: 6,
+  rpn2: 54,
+})
+assert.equal(currentRisk.doValue, 6)
+assert.equal(currentRisk.rpn, 54)
+
 const collectedRisks = collectPfmeaCurrentOpenRisks([
   {
     id: 'risk-a-owner',

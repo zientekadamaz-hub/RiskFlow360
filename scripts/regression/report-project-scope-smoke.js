@@ -4,6 +4,7 @@ const path = require('node:path')
 
 const root = path.join(__dirname, '..', '..')
 const helperSource = fs.readFileSync(path.join(root, 'src', 'features', 'reports', 'report-project-scope.ts'), 'utf8')
+const currentRowsSource = fs.readFileSync(path.join(root, 'src', 'features', 'reports', 'report-current-pfmea-rows.ts'), 'utf8')
 const rpnServiceSource = fs.readFileSync(path.join(root, 'src', 'features', 'reports', 'rpn-matrix', 'rpn-matrix-service.ts'), 'utf8')
 const progressServiceSource = fs.readFileSync(path.join(root, 'src', 'features', 'reports', 'progress-chart', 'progress-chart-service.ts'), 'utf8')
 
@@ -14,14 +15,21 @@ assert.match(helperSource, /requireRevision/, 'Report project scope helper must 
 assert.match(helperSource, /includeProjectFilter/, 'Report project scope helper must support project option lists independent of selected project filter.')
 assert.match(helperSource, /export function normalizeReportOptionList/, 'Report project scope helper must export option list normalizer.')
 
+assert.match(currentRowsSource, /export async function fetchCurrentPfmeaRowsForReportProjects/, 'Reports must share current PFMEA row resolution.')
+assert.match(currentRowsSource, /\.in\('revision_id', revisionIds\)/, 'Reports must first query PFMEA rows by the project view revision ids.')
+assert.match(currentRowsSource, /\.in\('operations\.project_id', missingProjectIds\)/, 'Reports must fall back to PFMEA rows by project when revision ids are stale or empty.')
+assert.match(currentRowsSource, /latestRevisionRowsByProject/, 'Reports fallback must choose the latest PFMEA revision rows per project.')
+
 assert.match(rpnServiceSource, /buildOpenReportProjectScope/, 'RPN Matrix service must use shared project scope helper.')
-assert.match(rpnServiceSource, /requireRevision: true/, 'RPN Matrix service must require revision-backed open projects.')
+assert.doesNotMatch(rpnServiceSource, /requireRevision: true/, 'RPN Matrix service must not drop open projects before PFMEA row fallback can resolve their revision.')
 assert.match(rpnServiceSource, /normalizeReportOptionList/, 'RPN Matrix service must use shared option list normalizer.')
+assert.match(rpnServiceSource, /fetchCurrentPfmeaRowsForReportProjects/, 'RPN Matrix service must use current PFMEA row fallback resolution.')
 assert.match(rpnServiceSource, /collectPfmeaCurrentOpenRisks/, 'RPN Matrix service must use the same current-open-risk definition as Projects List.')
 assert.doesNotMatch(rpnServiceSource, /getPfmeaReportRisk/, 'RPN Matrix service should not use residual closed-action risk for the current open-risk summary.')
 assert.doesNotMatch(rpnServiceSource, /function buildProjectRows/, 'RPN Matrix service should not keep duplicated project row builder.')
 
 assert.match(progressServiceSource, /buildOpenReportProjectScope/, 'Progress Chart service must use shared project scope helper.')
+assert.match(progressServiceSource, /fetchCurrentPfmeaRowsForReportProjects/, 'Progress Chart service must use current PFMEA row fallback resolution.')
 assert.doesNotMatch(progressServiceSource, /normalizeProjectText\(project\.status\)/, 'Progress Chart service should not duplicate OPEN project filtering.')
 assert.doesNotMatch(progressServiceSource, /getReportRevisionId\(project\)/, 'Progress Chart service should not duplicate revision selection.')
 

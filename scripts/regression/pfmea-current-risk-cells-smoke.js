@@ -23,7 +23,7 @@ assert.match(currentRiskCellsSource, /cellKey="pcp"/, 'PFMEA PCP cell must prese
 assert.match(currentRiskCellsSource, /rowSpan=\{actionPlanBlockSpan\}/, 'PFMEA PCP cell must preserve one PCP decision per current risk block.')
 
 assert.match(tableBodySource, /import \{ PfmeaCurrentRiskCells \}/, 'PFMEA table body must import PfmeaCurrentRiskCells.')
-assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*actionPlanBlockSpan=\{actionPlanBlockSpan\}[\s\S]*currentRpn=\{a1\.rpn\}/, 'PFMEA table body must pass current RPN and span from the row model.')
+assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*actionPlanBlockSpan=\{actionPlanBlockSpan\}[\s\S]*currentRpn=\{effectiveCurrentRisk\.rpn\}/, 'PFMEA table body must pass effective current RPN and span from the row model.')
 assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*operationId=\{r\.operation_id \|\| r\.operations\?\.id \|\| null\}/, 'PFMEA table body must preserve existing operation id for expand behavior.')
 assert.match(tableBodySource, /<PfmeaCurrentRiskCells[\s\S]*void props\.updateCellWithDerived\(pcpSourceRow, \{ pcp: !pcpChecked \}\)/, 'PFMEA table body must write PCP toggles to the merged source row.')
 

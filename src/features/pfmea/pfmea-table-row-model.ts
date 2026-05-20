@@ -48,6 +48,7 @@ export type PfmeaTableRowModel = {
   canAddFailureModeRow: boolean
   canAddRecommendedActionRow: boolean
   currentRisk: PfmeaRiskValues
+  effectiveCurrentRisk: PfmeaRiskValues
   effectiveActionPlanOwnerRow: PfmeaRow
   effectiveCurrentRow: PfmeaRow
   effectiveFailureBlockOwnerRow: PfmeaRow
@@ -126,10 +127,6 @@ export function buildPfmeaTableRowModel(params: {
     class: normalizeClassValue(effectiveFailureModeOwnerRow.class),
     severity: asInt1to10(effectiveFailureBlockOwnerRow.severity),
   } as PfmeaRow
-  const pcpRisk = risk1 as PfmeaPcpRiskColor | null
-  const pcpAutoReasons = getPfmeaPcpAutoReasons(effectivePcpSourceRow, pcpRisk)
-  const pcpChecked = isPfmeaSelectedForPcp(effectivePcpSourceRow, pcpRisk)
-  const pcpDisabled = params.readOnly || isPlaceholder || !hasFailureModeContext(effectiveFailureModeOwnerRow)
 
   const prevOpNo = rowIndex > 0 ? tableRows[rowIndex - 1]?.operations?.operation_number ?? null : null
   const span = params.mergeInfo[rowIndex]?.span ?? 0
@@ -144,15 +141,23 @@ export function buildPfmeaTableRowModel(params: {
   const closedResidualCandidates = closedActionRows
     .map((item) => ({
       rowId: item.id,
+      risk: params.computeDerivedFromContext(item).residualRisk,
       rpn: params.computeDerivedFromContext(item).residualRisk.rpn,
     }))
-    .filter((item): item is { rowId: string; rpn: number } => item.rpn != null)
-  const bestClosedResidualRowId =
+    .filter((item): item is { rowId: string; risk: PfmeaRiskValues; rpn: number } => item.rpn != null)
+  const bestClosedResidual =
     closedResidualCandidates.reduce<(typeof closedResidualCandidates)[number] | null>((best, item) => {
       if (!best) return item
       if (item.rpn < best.rpn) return item
       return best
-    }, null)?.rowId ?? null
+    }, null)
+  const bestClosedResidualRowId = bestClosedResidual?.rowId ?? null
+  const effectiveCurrentRisk = bestClosedResidual?.risk ?? (hasRecommendedAction(effectiveCurrentRow) && isActionClosed(effectiveCurrentRow) ? residualRisk : currentRisk)
+  const pcpDecisionRisk = params.getRiskColorFor(effectiveCurrentRisk.sev, effectiveCurrentRisk.doVal)
+  const pcpRisk = pcpDecisionRisk as PfmeaPcpRiskColor | null
+  const pcpAutoReasons = getPfmeaPcpAutoReasons(effectivePcpSourceRow, pcpRisk)
+  const pcpChecked = isPfmeaSelectedForPcp(effectivePcpSourceRow, pcpRisk)
+  const pcpDisabled = params.readOnly || isPlaceholder || !hasFailureModeContext(effectiveFailureModeOwnerRow)
   const currentRiskMuted = closedActionRows.length > 0
   const residualRiskMuted =
     hasRecommendedAction(effectiveCurrentRow) &&
@@ -163,8 +168,8 @@ export function buildPfmeaTableRowModel(params: {
   const groupStart = isFirstOfMergedRun && rowIndex > 0 && opNo != null && prevOpNo != null && opNo !== prevOpNo
 
   const riskRpnStyle: CSSProperties = {
-    ...(risk1 && !currentRiskMuted ? { background: colorFill(risk1) } : {}),
-    color: currentRiskMuted ? MUTED_RISK_TEXT_COLOR : '#e1e5ec',
+    ...(pcpDecisionRisk ? { background: colorFill(pcpDecisionRisk) } : {}),
+    color: '#e1e5ec',
     fontSize: 16,
     fontWeight: 700,
   }
@@ -183,6 +188,7 @@ export function buildPfmeaTableRowModel(params: {
     canAddFailureModeRow: hasPfmeaTextValue(effectiveFailureModeOwnerRow.failure_mode),
     canAddRecommendedActionRow: hasPfmeaTextValue(effectiveCurrentRow.recommended_action),
     currentRisk,
+    effectiveCurrentRisk,
     effectiveActionPlanOwnerRow,
     effectiveCurrentRow,
     effectiveFailureBlockOwnerRow,

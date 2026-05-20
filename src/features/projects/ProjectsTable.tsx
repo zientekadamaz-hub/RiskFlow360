@@ -415,7 +415,14 @@ export function ProjectsTable({
                   <td style={projectCellStyle(hiddenColumns.risks, hiddenColumnCellStyle)}>{hiddenColumns.risks ? '' : project.riskCount}</td>
                   <td style={projectCellStyle(hiddenColumns.updated, hiddenColumnCellStyle)}>{hiddenColumns.updated ? '' : '-'}</td>
                   <td style={hiddenColumns.revision ? hiddenColumnCellStyle : { ...projectsTableCellStyle, overflow: 'visible', textAlign: 'center' }}>
-                    {hiddenColumns.revision ? '' : <RevisionDetailsPopover projectId={project.id} revisionLabel={project.revision} popup={revisionDataFor(project.id)} />}
+                    {hiddenColumns.revision ? '' : (
+                      <RevisionDetailsPopover
+                        editingModules={project.editingModules}
+                        projectId={project.id}
+                        revisionLabel={project.revision}
+                        popup={revisionDataFor(project.id)}
+                      />
+                    )}
                   </td>
                   <td style={projectCellStyle(hiddenColumns.status, hiddenColumnCellStyle)}>
                     {hiddenColumns.status ? '' : (
@@ -475,7 +482,14 @@ export function ProjectsTable({
                   <td style={projectCellStyle(hiddenColumns.risks, hiddenColumnCellStyle)}>{hiddenColumns.risks ? '' : project.riskCount}</td>
                   <td style={projectCellStyle(hiddenColumns.updated, hiddenColumnCellStyle)}>{hiddenColumns.updated ? '' : formatDatePL(project.updated)}</td>
                   <td style={hiddenColumns.revision ? hiddenColumnCellStyle : { ...projectsTableCellStyle, overflow: 'visible', textAlign: 'center' }}>
-                    {hiddenColumns.revision ? '' : <RevisionDetailsPopover projectId={project.id} revisionLabel={project.revision} popup={revisionDataFor(project.id)} />}
+                    {hiddenColumns.revision ? '' : (
+                      <RevisionDetailsPopover
+                        editingModules={project.editingModules}
+                        projectId={project.id}
+                        revisionLabel={project.revision}
+                        popup={revisionDataFor(project.id)}
+                      />
+                    )}
                   </td>
                   <td style={projectCellStyle(hiddenColumns.status, hiddenColumnCellStyle)}>
                     {hiddenColumns.status ? '' : <span style={projectsStatusStyle(project.status)}>{project.status}</span>}

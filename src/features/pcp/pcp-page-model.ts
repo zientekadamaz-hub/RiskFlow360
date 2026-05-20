@@ -202,12 +202,15 @@ export function makePcpPlaceholderRow(
     id: `${PCP_PLACEHOLDER_PREFIX}${seedKey}`,
     revision_id: revisionId,
     operation_id: operation.id,
+    risk_uid: seed?.risk_uid ?? null,
     pfmea_row_id: seed?.id ?? null,
     failure_mode: normalizeText(seed?.failure_mode) || null,
     characteristic: normalizeText(seed?.characteristic),
     class: normalizeClassValue((seed?.class as string | null | undefined) ?? null),
     severity: asInt1to10(seed?.severity),
-    rpn: typeof seed?.rpn === 'number' && Number.isFinite(seed.rpn) ? seed.rpn : null,
+    rpn: typeof seed?.rpn_current === 'number' && Number.isFinite(seed.rpn_current)
+      ? seed.rpn_current
+      : (typeof seed?.rpn === 'number' && Number.isFinite(seed.rpn) ? seed.rpn : null),
     current_prevention: normalizeText(seed?.current_prevention) || null,
     current_detection: normalizeText(seed?.current_detection) || null,
     control_method: null,
